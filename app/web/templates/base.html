@@ -46,28 +46,20 @@
 
       <div class="sidebar-status">
         <span class="connection-dot" aria-hidden="true"></span>
-        <span><strong>UI Foundation</strong><small>데이터 연결 전</small></span>
+        <span><strong>데이터 연결 전</strong></span>
       </div>
     </aside>
 
     <div class="app-main">
       <header class="top-header">
-        <div class="global-search" role="search" aria-label="통합 검색 준비 중">
+        <div class="global-search" role="search" aria-label="통합 검색">
           {{ icon('search', 20) }}
-          <input type="search" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." readonly aria-label="통합 검색 (구현 예정)">
-          <span class="control-note">구현 예정</span>
+          <input type="search" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." readonly aria-label="통합 검색 (읽기 전용)">
         </div>
         <div class="header-actions">
           <button class="button button--primary quick-register" type="button" aria-disabled="true" title="빠른 등록은 다음 단계에서 연결됩니다">
             {{ icon('plus', 18) }}<span>빠른 등록</span>
           </button>
-          <button class="icon-button" type="button" aria-disabled="true" aria-label="알림 (구현 예정)" title="알림 구현 예정">
-            {{ icon('bell', 21) }}
-          </button>
-          <div class="user-placeholder" aria-label="사용자 영역 (구현 예정)">
-            <span class="user-avatar">{{ icon('user', 18) }}</span>
-            <span>관리자</span>
-          </div>
         </div>
       </header>
 

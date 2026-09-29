@@ -49,7 +49,7 @@
 .quick-action-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--color-blue-600); background: var(--color-blue-100); }
 .quick-action > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
 .quick-action strong { font-size: 13px; }
-.quick-action small { color: var(--color-text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-action small { color: var(--color-text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-action > .icon { color: #a0acba; }
 
 @media (max-width: 1500px) {

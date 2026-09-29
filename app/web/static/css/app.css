@@ -20,10 +20,7 @@
 .global-search:focus-within { border-color: var(--color-blue-500); box-shadow: 0 0 0 3px rgba(52,120,246,.11); }
 .global-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--color-text); background: transparent; }
 .global-search input::placeholder { color: #8594a9; opacity: 1; }
-.control-note { padding: 2px 7px; border-radius: 999px; color: #728198; background: #eef2f6; font-size: 9px; font-weight: 700; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
-.user-placeholder { display: flex; align-items: center; gap: 8px; margin-left: 2px; color: #344258; font-weight: 700; white-space: nowrap; }
-.user-avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #718197; }
 .page-content { min-width: 0; padding: 26px 28px 36px; }
 
 @media (max-width: 1280px) {
@@ -39,7 +36,7 @@
 }
 
 @media (max-width: 1100px) {
-  .quick-register span, .user-placeholder > span:last-child, .control-note { display: none; }
+  .quick-register span { display: none; }
   .quick-register { width: var(--control-height); padding: 0; }
   .global-search { width: min(520px, 62vw); }
 }
