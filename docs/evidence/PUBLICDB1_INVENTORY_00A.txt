@@ -1,0 +1,206 @@
+# PUBLICDB2-LEGACY-UI-FUNCTION-INVENTORY-00A
+
+## 1. PROJECT
+
+| 항목 | 확인 결과 |
+|---|---|
+| 작업 폴더 | `C:\PublicDB2` — Git 저장소 아님 |
+| 분석 대상 | `C:\PublicDB` — 소스 존재 및 읽기 가능 |
+| Git 루트 | `C:/PublicDB` |
+| Branch | `main` |
+| HEAD | `1319ae31ddf7234a1a8632271b5ff899006d47de` |
+| 시작/종료 상태 | 양쪽 모두 `git status --short` 출력 없음 |
+| 최근 UI 커밋 | `1319ae3`, 2026-09-28 17:23 KST, `feat(ui): make dashboard source-centric` |
+| 기술 스택 | Python 3.12+, FastAPI, Uvicorn, Jinja2, JavaScript/CSS, SQLAlchemy 2, Alembic, SQLite, HTTPX, BeautifulSoup, pytest |
+| 기본 DB | `data/db/publicdb.sqlite3`; `PUBLICDB_DATABASE_URL`로 대체 가능. [config.py](C:/PublicDB/app/core/config.py:9) |
+| RAW 증거 | DB blob이 아니라 `data/raw/` 파일과 DB의 경로·SHA-256으로 관리. [ARCHITECTURE.md](C:/PublicDB/docs/ARCHITECTURE.md:53) |
+
+의존성 근거는 [pyproject.toml](C:/PublicDB/pyproject.toml:1)이다. README의 “Phase 0이며 런타임 미구현” 설명은 현재 코드보다 오래된 문서로, 현 HEAD의 DB·수집·UI 구현 상태와 일치하지 않는다. [README.md](C:/PublicDB/README.md:25)
+
+실행 진입점은 [run_web.py](C:/PublicDB/scripts/run_web.py:15)이며 의도된 명령은 저장소 루트에서 다음과 같다.
+
+```powershell
+python scripts/run_web.py
+# 선택: --host 127.0.0.1 --port 8000
+```
+
+내부적으로 `app.web.app:app`을 Uvicorn으로 실행한다. 이번 분석에서는 실행하지 않았다.
+
+---
+
+## 2. APP PURPOSE
+
+PublicDB1은 시민 민원 라우팅 앱이 아니라, 정부·공공기관이 공식 공개한 다음 정보를 수집하고 증거·이력과 함께 유지하는 로컬 DB 관리 시스템이다. [PROJECT_SCOPE.md](C:/PublicDB/docs/PROJECT_SCOPE.md:3)
+
+핵심 데이터는 다음과 같다.
+
+- 기관 `Agency`와 상위 기관 관계
+- 계층형 부서·조직 `OrgUnit`
+- 업무 `Duty`
+- 사람 `Person`과 재직·소속 `PersonAssignment`
+- 전화·이메일·팩스 등의 `ContactPoint`
+- 공식 URL `Source`, 수집 방법·형식·범위 정책
+- 수집 실행 `CrawlRun`, 원문 증거 `Observation`
+- 연락처·직원명부 추출 후보
+- Master 데이터와 증거를 잇는 `SourceOccurrence`
+- 변경 감지 후보, 최종 변경 사건, 연락처 이력
+
+모델 근거: [source.py](C:/PublicDB/app/models/source.py:30), [agency.py](C:/PublicDB/app/models/agency.py:15), [org_unit.py](C:/PublicDB/app/models/org_unit.py:15), [duty.py](C:/PublicDB/app/models/duty.py:12), [person.py](C:/PublicDB/app/models/person.py:12), [contact.py](C:/PublicDB/app/models/contact.py:19), [observation.py](C:/PublicDB/app/models/observation.py:22).
+
+현재 주요 사용자 흐름은 두 종류로 분리되어 있다.
+
+1. 웹 UI: Source 운영 현황 조회 → 단일 Source 등록 → 대시보드 재조회
+2. CLI/서비스: 기관 등록 → Source 연결 → 단일 URL 수집 → 추출 → Master 계획/반영 → 변경 감지
+
+웹 UI는 두 번째 흐름을 시작하거나 승인하는 통합 관리 화면이 아니다.
+
+---
+
+## 3. CURRENT UI INVENTORY
+
+현재 페이지 라우트는 `/` 하나뿐이다. [pages.py](C:/PublicDB/app/web/routes/pages.py:11)
+
+| 화면 | 주요 영역·입력·버튼·상태 | 활성 경로 근거 |
+|---|---|---|
+| Source 운영 대시보드 | 등록 Source, Source 연결 기관, 발견 연락정보, Master 연락처 KPI | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:15), `/api/dashboard/summary` |
+| 발견/확정 비교 | 전화·이메일·팩스별 발견 후보와 Master 확정 수 | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:34), [dashboard_query_service.py](C:/PublicDB/app/web/services/dashboard_query_service.py:191) |
+| 수집 방식/기관 유형 현황 | API, 웹페이지, 웹 크롤링, 파일, 문서별 수; 기관 유형별 수 | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:59) |
+| 수집 Source 표 | 기관, Source 링크, 수집 방법/형식, 발견 수, 이메일 수, Master 수, 최근 수집, 상태 | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:74), [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:196) |
+| Source 필터 | 전체/API/웹페이지/웹 크롤링/파일/문서; 클라이언트 측 단일 필터 | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:86), [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:263) |
+| 최근 수집 이력 | Source명, HTTP 상태, Observation 수, 실행 상태·시각; 최근 6건 표시 | [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:232) |
+| 변경 감지 | Source명, 범위, 후보 수, 실행 시각; 최근 6건 표시 | [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:244) |
+| 검토 대기 | 전체 pending 후보 수와 단순 안내문 | [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:134). 후보 목록·승인/거절 UI는 없음 |
+| DB 상태 | `/health`에서 `SELECT 1`; DB 정상/확인 필요 배지 | [api.py](C:/PublicDB/app/web/routes/api.py:44) |
+| Source 등록 drawer | URL, 제목, 기존 기관 선택/미지정, Source 역할, 수집 방법, 데이터 형식 | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:117) |
+| 웹 크롤링 정책 입력 | 범위, 경로, 깊이, 최대 페이지, 지연, 문서 포함, robots 준수 | [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:136) |
+| 성공/오류 표시 | 등록 성공 toast, 폼 오류, 대시보드 로드 오류 toast | [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:305) |
+
+활성 메뉴는 `대시보드` 하나다. 기관·조직, 연락처 DB, 수집 소스, 수집 이력, 변경 감지, 검토 대기, 설정은 링크가 아닌 `disabled` `<span>`이다. [base.html](C:/PublicDB/app/web/templates/base.html:26)
+
+주의할 UI 불일치:
+
+- 사이드바에는 “읽기 전용”이라고 표시하지만, Source 등록은 실제 `POST /api/sources`로 DB를 변경한다. [base.html](C:/PublicDB/app/web/templates/base.html:48), [api.py](C:/PublicDB/app/web/routes/api.py:91)
+- 기관은 기존 기관 선택만 가능하고 새 기관명 입력은 없다.
+- Source 표에는 수정·제외·삭제·수집 실행 버튼이 없다.
+- Source URL 링크는 새 브라우저 탭으로 외부 사이트를 여는 링크다.
+
+### 비활성 이전 UI
+
+커밋 `9de1a24`(2026-09-28 16:04 KST)에는 기관 선택, 조직도, 기관 흐름, 조직·업무 상세 패널이 있었다. `지역 지도`는 “준비 중” placeholder였다. 현재 커밋 `1319ae3`에서 Source 중심 대시보드로 대체되어 활성 템플릿/JS에는 존재하지 않는다.
+
+다만 과거 화면이 사용하던 기관 상세·조직 트리 API는 현재도 남아 있다. [api.py](C:/PublicDB/app/web/routes/api.py:60), [dashboard_query_service.py](C:/PublicDB/app/web/services/dashboard_query_service.py:290) 현재 JavaScript는 이 API를 호출하지 않는다.
+
+---
+
+## 4. FUNCTION & INHERITANCE MATRIX
+
+아래 테스트 근거는 모두 현 HEAD의 테스트 코드 존재만 뜻한다. 이번 작업에서 테스트를 실행하지 않았으며 PASS 기록으로 간주하지 않았다. 확인 가능한 별도 완료 보고서나 실행 로그는 발견하지 못했다.
+
+| 기능 | 실제 처리 경로 | 구현 상태 | 검증 근거·시점 | 계승 제안 |
+|---|---|---|---|---|
+| 대시보드 조회 | `/` → JS 병렬 GET → `DashboardQueryService` → ORM 조회 → DOM 렌더 | 구현·연결 있음 / 실행 검증 미확인 | 현 HEAD 테스트가 페이지·API 계약을 검사함. [test_web_dashboard.py](C:/PublicDB/tests/test_web_dashboard.py:213); 테스트 미실행 | UI 의존성 분리 후 쿼리 의미 계승 후보 |
+| 단일 Source 등록 | drawer 제출 → `POST /api/sources` → `SourceAdministrationService` → `SourceRegistry`/정책 서비스 → `sources`, `source_crawl_policies` → 대시보드 재로드 | 구현·연결 있음 / 실행 검증 미확인 | 원격 호출이 없다는 격리 테스트 코드 존재. [test_source_dashboard.py](C:/PublicDB/tests/test_source_dashboard.py:286); 2026-09-28 구현 커밋 | 기존 로직 계승 후보 |
+| URL 검증·정규화·중복 | HTTP(S)와 public host 검증 → fragment 제거·host 정규화 → `normalized_url` 조회 | 구현·연결 있음 / 실행 검증 미확인 | [source_registry.py](C:/PublicDB/app/services/source_registry.py:71), 중복 테스트 [test_source_dashboard.py](C:/PublicDB/tests/test_source_dashboard.py:426) | 기존 로직 계승 후보 |
+| 기관 직접 등록 | CLI `register_agency.py` → `AgencyRegistry` → `Agency` | 백엔드 구현 / 현재 UI 미연결 | 명시적 등록과 이름 충돌 처리 코드. [agency_registry.py](C:/PublicDB/app/services/agency_registry.py:31) | UI 의존성 분리 후 계승 후보 |
+| Source-기관 연결 | 등록 시 `agency_id` 또는 CLI bind → 1회 연결; 다른 기관으로 묵시 재배정 금지 | 백엔드 구현 / UI는 등록 시 선택만 가능 | [source_agency_binding.py](C:/PublicDB/app/services/source_agency_binding.py:23) | 기존 로직 계승 후보 |
+| 단일 웹페이지 수집 | CLI → `CollectionService` → `HTTPFetcher` → RAW 파일 → `CrawlRun`+`Observation` → 대시보드 | 구현·연결 존재 / 실환경 검증 미확인 | Mock HTTP 테스트 코드 존재. [test_collection_service.py](C:/PublicDB/tests/test_collection_service.py:52); 2026-09-23 구현 커밋 | 기존 로직 계승 후보 |
+| API/WEB_CRAWL/FILE/DOCUMENT 수집 | Source 등록과 정책 저장까지만 가능 | 부분 구현 또는 미연결 | 실제 `CollectionService`는 `WEB_PAGE` 이외를 요청 전에 거부. [collection_service.py](C:/PublicDB/app/services/collection_service.py:77) | 신규 구현 필요 |
+| 연락처 후보 추출 | CLI → Observation RAW 검증 → HTML extractor → `ExtractionRun`+후보 → 대시보드 발견 수 | 구현, UI 실행 미연결 / 실행 검증 미확인 | HTML·hash·실패 이력 테스트 코드. [contact_extraction_service.py](C:/PublicDB/app/services/contact_extraction_service.py:78), [test_contact_extraction_service.py](C:/PublicDB/tests/test_contact_extraction_service.py:88) | 기존 로직 계승 후보 |
+| 직원명부 구조 추출 | CLI → RAW 검증 → table extractor → `ExtractedDirectoryRecord` | 구현, UI 미연결 / 실행 검증 미확인 | [directory_extraction_service.py](C:/PublicDB/app/services/directory_extraction_service.py:74), 테스트 [test_directory_extraction_service.py](C:/PublicDB/tests/test_directory_extraction_service.py:88) | 기존 로직 계승 후보 |
+| Master 계획 | CLI preview → 기관 범위 exact match → 생성/매칭/검토 필요 계획; DB read-only | 구현, UI 미연결 / 실행 검증 미확인 | [master_promotion_planner.py](C:/PublicDB/app/services/master_promotion_planner.py:73) | 기존 로직 계승 후보 |
+| Master 반영 | CLI apply → 소유권·최신 계획 재검사 → 원자적 OrgUnit/Duty/Contact 생성 → SourceOccurrence/ChangeEvent/ContactHistory | 구현, UI 미연결 / 실행 검증 미확인 | [master_promotion_apply_service.py](C:/PublicDB/app/services/master_promotion_apply_service.py:87); 격리 DB 테스트 코드 존재 | 기존 로직 계승 후보 |
+| 사람/재직 반영 | 명시적 사람 이름은 검토 필요로 분류; apply는 사람·재직을 0건 생성 | 부분 구현 | [master_promotion_planner.py](C:/PublicDB/app/services/master_promotion_planner.py:440), [master_promotion_apply_service.py](C:/PublicDB/app/services/master_promotion_apply_service.py:367) | 근거 부족으로 보류 |
+| Source 범위 변경 감지 | CLI → 성공한 직원명부 추출 → 같은 Source의 과거 occurrence만 비교 → pending 후보 저장 | 구현, UI는 결과 요약만 연결 / 실행 검증 미확인 | [source_change_detection_service.py](C:/PublicDB/app/services/source_change_detection_service.py:100); 2026-09-28 구현 커밋 | 기존 로직 계승 후보 |
+| 검토·승인/거절 | pending 수와 상태 enum/model만 있음 | 부분 구현 또는 미연결 | 후보는 `PENDING_REVIEW`로 저장되지만 UI/API 처리 동작 없음. [change_detection.py](C:/PublicDB/app/models/change_detection.py:87) | 신규 구현 필요 |
+| Source coverage 설정 | CLI에서 UNKNOWN/ADDITIVE_ONLY/COMPLETE_SNAPSHOT 지정 | 백엔드 구현 / UI 미연결 | [source_coverage_service.py](C:/PublicDB/app/services/source_coverage_service.py:24) | 기존 로직 계승 후보 |
+| 내보내기 | 화면·API·서비스 없음 | 미구현 | export/download 구현 검색 결과 없음 | 신규 구현 필요 |
+| 이전 조직 탐색 UI | 현재 트리에는 없음; 일부 조회 API만 잔존 | 비활성 legacy | 이전 커밋 `9de1a24`; 현 HEAD에서 화면 제거 | 기존 UI는 계승 제외 제안, 조회 API는 보류 |
+
+### 단계별 성공 의미
+
+- 접속 성공: HTTP 2xx이고 크기 제한을 통과한 경우에만 가능하다. 비-2xx는 `FAILED`. [http_fetcher.py](C:/PublicDB/app/collectors/http_fetcher.py:86)
+- 저장 성공: RAW 파일 저장 후 Observation과 CrawlRun을 DB에 commit해야 `SUCCESS`. [collection_service.py](C:/PublicDB/app/services/collection_service.py:112)
+- 추출 성공: 별도 CLI/서비스 실행이 필요하며, 수집 성공이 추출 성공을 뜻하지 않는다.
+- 화면 반영 성공: 대시보드가 DB의 기존 상태를 읽는 별도 단계다. 수집·추출·변경 감지 후 자동 push는 없으며 재조회 시 표시된다.
+- Master 반영 성공: 추출 후보 생성과 별개이며 명시적인 apply가 필요하다.
+
+---
+
+## 5. PUBLICDB2 REQUIREMENT GAP
+
+| 요구사항 | 현재 상태 | 부족한 부분 |
+|---|---|---|
+| A. 기관명 직접 입력 | 백엔드 CLI에서는 가능. Source drawer는 기존 기관 선택 또는 미지정만 가능 | 웹 기관 생성·검증·충돌 확인 흐름 신규 구현 필요 |
+| B. 기관/부서에 여러 URL | 한 기관에 여러 Source 연결 가능. 그러나 Source는 `agency_id`만 있고 `org_unit_id`가 없음 | 부서별 Source 관계가 없음. 동일 URL을 여러 기관/부서에 연결하는 구조도 없음 |
+| C. URL 엑셀 일괄 업로드 | `XLSX`는 데이터 형식 enum/선택지일 뿐 업로드 기능이 아님 | 파일 선택, 파싱, 컬럼 매핑, 미리보기, 일괄 저장 전부 미구현 |
+| D. 파일·기존값 중복/충돌 | 단건 URL 정규화와 기존 Source 충돌 검사는 있음 | 파일 내부 중복, 행별 충돌, 기관·부서 충돌, 일괄 결과 보고 없음 |
+| E. 자료없음/오류/미확인 URL | 수집 상태와 일부 단계별 실패 모델은 있음. UI에는 `정상/실패/진행 중/미수집/비활성/부분 완료`만 표시 | `자료없음` 전용 상태가 없고, 접근 성공·추출 실패·미지원·미검사를 한 화면에서 구분하지 못함 |
+| F. URL 검토·제외·삭제 | Source에 `active` 필드는 있으나 이를 변경하는 UI/API/CLI가 없음 | 검토 큐, 제외 사유, 비활성화, 복구, 삭제 영향 확인 모두 미구현 |
+
+### 질문별 결론
+
+- 기관/부서가 다를 때 동일 URL:
+  `normalized_url`이 전역 `unique=True`다. [source.py](C:/PublicDB/app/models/source.py:36) 따라서 같은 URL은 다른 기관으로 별도 등록할 수 없고, 기존 기관과 다른 `agency_id`로 요청하면 충돌한다. [source_administration_service.py](C:/PublicDB/app/services/source_administration_service.py:148)
+
+- 0건을 무조건 자료없음으로 처리하는가:
+  아니다. `자료없음` 상태 자체가 없다. 연락처/명부 extractor는 정상 처리 결과가 0건이어도 추출 실행을 `SUCCESS`로 저장할 수 있다. 반면 변경 감지는 직원명부 record가 0건이면 실행을 거부한다. [source_change_detection_service.py](C:/PublicDB/app/services/source_change_detection_service.py:215)
+
+- 접근 실패·추출 실패·미지원·미검사 구분:
+  DB 내부에서는 일부 구분된다. `CrawlRun`, `ExtractionRun`, 오류 요약과 미수집 상태가 별도로 존재한다. 그러나 Source 표의 상태 계산은 최신 `CrawlRun`만 보므로, 접근 성공 뒤 추출 실패·0건·미검사를 표시하지 않는다. [dashboard_query_service.py](C:/PublicDB/app/web/services/dashboard_query_service.py:509) API/크롤링/파일/문서는 등록할 수 있지만 collector가 없어 계속 `미수집`으로 보일 수 있다.
+
+- URL 삭제 영향:
+  삭제 기능이 없다. ORM 관계와 FK에는 destructive cascade 및 `ON DELETE`가 의도적으로 없다. [test_models.py](C:/PublicDB/tests/test_models.py:289) 따라서 기존 Observation·수집 이력·출처 관계를 자동 삭제하는 계약도 없다. 의존 데이터가 있는 Source의 물리 삭제는 일반적으로 FK에 의해 거부될 구조지만, 실제 삭제 서비스가 없으므로 정확한 제품 동작은 미정이다.
+
+---
+
+## 6. UI 설계에 영향을 주는 사실
+
+- Source와 기관은 다대일이지만 Source와 부서의 직접 관계는 없다.
+- 하나의 기관은 API·웹페이지·파일·문서 등 여러 Source를 가질 수 있도록 설계되어 있다. [ARCHITECTURE.md](C:/PublicDB/docs/ARCHITECTURE.md:133)
+- Source 역할, 수집 방법, 데이터 형식은 독립 차원이다. 등록 가능한 방법이 실제 수집 가능한 방법이라는 뜻은 아니다.
+- Source 등록은 수집을 시작하지 않는다. UI에도 이 사실이 명시되어 있다. [dashboard.html](C:/PublicDB/app/web/templates/dashboard.html:121)
+- 발견 후보와 Master 확정값은 의도적으로 분리된다.
+- 연락처의 Master 승격은 기관·부서·업무 문맥을 요구하며, 사람과 연결된 연락처 승격은 현재 완성되지 않았다.
+- `UNKNOWN`과 `ADDITIVE_ONLY` coverage에서는 누락 후보를 만들지 않는다. `COMPLETE_SNAPSHOT`에서만 같은 Source의 과거 증거에 대해 missing 후보를 만든다. [source_change_detection_service.py](C:/PublicDB/app/services/source_change_detection_service.py:304)
+- missing 후보는 자동 비활성화나 삭제가 아니다.
+- 현재 검토 대기 화면은 집계만 제공하는 mock에 가까우며 실제 검토 작업 공간이 아니다.
+- 과거 조직도·기관 흐름 UI는 승인된 현재 UI가 아니며, 지역 지도는 당시에도 placeholder였다.
+- README/ROADMAP 일부는 현재 구현보다 오래되어 구현 여부 판단 근거로 단독 사용하면 안 된다.
+
+---
+
+## 7. USER VISUAL CHECK
+
+직접 실행·스크린샷 촬영은 하지 않았다.
+
+시작 시 자동 수집은 없다.
+
+- 앱 시작은 FastAPI 라우터와 DB 세션 팩토리만 구성한다. [app.py](C:/PublicDB/app/web/app.py:18)
+- 브라우저 로드는 health와 대시보드 조회 API만 호출한다. [dashboard.js](C:/PublicDB/app/web/static/js/dashboard.js:362)
+- Source 등록 후에도 수집하지 않고 대시보드만 다시 조회한다.
+- 자동 스케줄러, startup 수집 hook, background task는 코드에서 확인되지 않았다.
+
+향후 사용자가 실제 시각 확인할 화면은 다음 두 가지면 충분하다.
+
+1. `/` Source 운영 대시보드: KPI, 발견/확정 비교, Source 표, 수집/변경/검토 요약
+2. `+ Source 추가` drawer: 기관 선택, 수집 방법별 입력 변화, WEB_CRAWL 정책 필드, 중복·오류 메시지
+
+비활성 사이드바 메뉴나 과거 조직 탐색 화면은 현재 앱의 시각 검증 대상이 아니다.
+
+---
+
+## 8. SAFETY
+
+- 파일 변경: 0
+- 파일 생성·삭제·이동: 0
+- DB write/open/migration: 0
+- 외부 호출: 0
+- 앱 실행: 0
+- 빌드·테스트·수집 실행: 0
+- Git mutation: 0
+- 비밀키·토큰·개인정보 출력: 0
+- `C:\PublicDB` 시작/종료: 동일 `main` / 동일 HEAD / 양쪽 모두 clean
+- `C:\PublicDB2`: Git 저장소가 아니므로 Git 기반 무변경 검증은 불가하나 어떤 쓰기 작업도 수행하지 않음
+- `.pytest_cache` 내부는 읽기 권한이 거부되어 우회하지 않았으며, 따라서 과거 pytest 성공 상태를 주장하지 않음
+
+Goal 상태: 완료. 사용량 130,054 tokens, 약 4분 29초.

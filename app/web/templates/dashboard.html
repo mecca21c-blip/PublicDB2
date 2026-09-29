@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "components.html" import icon, status_badge %}
+
+{% block title %}Dashboard · PublicDB2{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}">{% endblock %}
+
+{% block content %}
+<header class="page-heading">
+  <div>
+    <div class="heading-kicker"><span>OPERATIONS OVERVIEW</span>{% if dashboard.is_demo %}<span class="demo-badge">샘플 데이터 · UI 검증용</span>{% endif %}</div>
+    <h1>운영 대시보드</h1>
+    <p>공공기관 정보 수집과 관리 상태를 한눈에 확인합니다.</p>
+  </div>
+  <div class="page-meta"><span class="meta-dot"></span>데이터 연결 전 · {{ dashboard.as_of }}</div>
+</header>
+
+<section class="kpi-grid" aria-label="운영 핵심 지표">
+  {% for kpi in dashboard.kpis %}
+  <article class="kpi-card">
+    <span class="kpi-icon kpi-icon--{{ kpi.tone }}">{{ icon(kpi.icon, 23) }}</span>
+    <div class="kpi-copy"><span>{{ kpi.label }}</span><strong>{{ kpi.value }}</strong><small>{{ kpi.note }}</small></div>
+  </article>
+  {% endfor %}
+</section>
+
+<div class="dashboard-primary-grid">
+  <section class="panel">
+    <header class="panel-heading">
+      <div><span class="section-label">RECENT COLLECTION</span><h2>최근 수집 현황</h2></div>
+      <a class="text-link" href="/runs">전체보기 {{ icon('arrow', 15) }}</a>
+    </header>
+    <div class="table-scroll">
+      <table class="data-table compact-table">
+        <thead><tr><th>수집 시각</th><th>기관명</th><th>Source</th><th>상태</th></tr></thead>
+        <tbody>
+          {% for run in dashboard.recent_runs %}
+          <tr><td class="muted-cell">{{ run.time }}</td><td><strong>{{ run.agency }}</strong></td><td>{{ run.source }}</td><td>{{ status_badge(run.status, run.tone) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel trend-panel">
+    <header class="panel-heading">
+      <div><span class="section-label">7-DAY TREND</span><h2>수집 추이</h2></div>
+      <span class="sample-label">최근 7일 · 샘플</span>
+    </header>
+    <div class="trend-summary">
+      <div><i class="legend-dot legend-dot--success"></i><span>성공</span><strong>{{ dashboard.trend.success_total }}</strong></div>
+      <div><i class="legend-dot legend-dot--danger"></i><span>오류</span><strong>{{ dashboard.trend.error_total }}</strong></div>
+    </div>
+    <figure class="trend-chart" aria-label="최근 7일 성공 및 오류 추이 샘플 차트">
+      <svg viewBox="0 0 520 170" role="img">
+        <line class="chart-grid" x1="14" y1="40" x2="506" y2="40"/><line class="chart-grid" x1="14" y1="90" x2="506" y2="90"/><line class="chart-grid" x1="14" y1="140" x2="506" y2="140"/>
+        <polyline class="chart-line chart-line--success" points="{{ dashboard.trend.success_points }}"/>
+        <polyline class="chart-line chart-line--danger" points="{{ dashboard.trend.error_points }}"/>
+      </svg>
+      <figcaption>{% for label in dashboard.trend.labels %}<span>{{ label }}</span>{% endfor %}</figcaption>
+    </figure>
+  </section>
+</div>
+
+<div class="dashboard-secondary-grid">
+  <section class="panel review-panel">
+    <header class="panel-heading">
+      <div><span class="section-label">REVIEW PENDING</span><h2>최근 검토 대상</h2></div>
+      <a class="text-link" href="/review">전체보기 {{ icon('arrow', 15) }}</a>
+    </header>
+    <div class="table-scroll">
+      <table class="data-table review-table">
+        <thead><tr><th>기관명</th><th>변경 항목</th><th>이전 값</th><th>새 값</th><th>발견 시각</th><th>상태</th></tr></thead>
+        <tbody>
+          {% for item in dashboard.pending_reviews %}
+          <tr><td><strong>{{ item.agency }}</strong></td><td>{{ item.field }}</td><td class="comparison-value comparison-value--before">{{ item.before }}</td><td class="comparison-value comparison-value--after">{{ item.after }}</td><td class="muted-cell">{{ item.detected }}</td><td>{{ status_badge(item.status, 'warning') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <aside class="panel quick-actions-panel">
+    <header class="panel-heading"><div><span class="section-label">SHORTCUTS</span><h2>빠른 이동</h2></div></header>
+    <div class="quick-action-list">
+      {% for action in dashboard.quick_actions %}
+      <a class="quick-action" href="{{ action.href }}"><span class="quick-action-icon">{{ icon(action.icon, 19) }}</span><span><strong>{{ action.label }}</strong><small>{{ action.description }}</small></span>{{ icon('arrow', 16) }}</a>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

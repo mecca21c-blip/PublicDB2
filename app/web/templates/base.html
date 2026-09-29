@@ -1,0 +1,82 @@
+{% from "components.html" import icon %}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}PublicDB2{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
+  {% block styles %}{% endblock %}
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="icon-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="icon-building" viewBox="0 0 24 24"><path d="M4 21h16M6 21V8l6-4 6 4v13M9 11h1m4 0h1m-6 4h1m4 0h1m-4 6v-3h2v3"/></symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24"><path d="m10 13 4-4m-6.5 7.5-1 1a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0m7-2 1-1a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="icon-contacts" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0m2-9a3 3 0 0 1 0 6m1.5-8a3 3 0 0 1 0 6m-1 5a4.5 4.5 0 0 0-2-3.7"/></symbol>
+    <symbol id="icon-review" viewBox="0 0 24 24"><path d="M7 3h10v3H7zM5 5h14v16H5zM8 11h8m-8 4h5"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1-2.8 2.8-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1.1 1.6v.2h-4V21A1.8 1.8 0 0 0 8.8 19.4a1.8 1.8 0 0 0-2 .4l-.1.1-2.8-2.8.1-.1a1.8 1.8 0 0 0 .4-2A1.8 1.8 0 0 0 2.8 14h-.2v-4h.2A1.8 1.8 0 0 0 4.4 9a1.8 1.8 0 0 0-.4-2l-.1-.1 2.8-2.8.1.1a1.8 1.8 0 0 0 2 .4A1.8 1.8 0 0 0 10 3V2.8h4V3a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.4l.1-.1 2.8 2.8-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.6 1h.2v4H21a1.8 1.8 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8h18c0-1-3-1-3-8M10 21h4"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5m0 3h.01"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="PublicDB2 홈">
+        <span class="brand-name">Public<span>DB2</span></span>
+        <span class="brand-subtitle">공공기관 정보 수집·관리 시스템</span>
+      </a>
+
+      <nav class="sidebar-nav" aria-label="주요 메뉴">
+        {% for item in navigation %}
+        <a class="nav-link{% if active_page == item.key %} is-active{% endif %}" href="{{ item.href }}"{% if active_page == item.key %} aria-current="page"{% endif %}>
+          {{ icon(item.icon, 21) }}
+          <span>{{ item.label }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+
+      <div class="sidebar-status">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span><strong>UI Foundation</strong><small>데이터 연결 전</small></span>
+      </div>
+    </aside>
+
+    <div class="app-main">
+      <header class="top-header">
+        <div class="global-search" role="search" aria-label="통합 검색 준비 중">
+          {{ icon('search', 20) }}
+          <input type="search" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." readonly aria-label="통합 검색 (구현 예정)">
+          <span class="control-note">구현 예정</span>
+        </div>
+        <div class="header-actions">
+          <button class="button button--primary quick-register" type="button" aria-disabled="true" title="빠른 등록은 다음 단계에서 연결됩니다">
+            {{ icon('plus', 18) }}<span>빠른 등록</span>
+          </button>
+          <button class="icon-button" type="button" aria-disabled="true" aria-label="알림 (구현 예정)" title="알림 구현 예정">
+            {{ icon('bell', 21) }}
+          </button>
+          <div class="user-placeholder" aria-label="사용자 영역 (구현 예정)">
+            <span class="user-avatar">{{ icon('user', 18) }}</span>
+            <span>관리자</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <script src="{{ url_for('static', path='/js/app.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

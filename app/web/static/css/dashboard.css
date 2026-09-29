@@ -1,0 +1,4 @@
+@import url("dashboard-base.css");
+
+.compact-table { min-width: 660px; }
+.compact-table th:last-child { width: 122px; }
