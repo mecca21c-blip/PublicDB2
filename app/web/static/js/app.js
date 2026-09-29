@@ -122,4 +122,87 @@
     agencySelect.addEventListener("change", filterUnits);
     filterUnits();
   });
+
+  const importWorkflow = document.querySelector("[data-import-workflow]");
+  if (importWorkflow) {
+    const form = importWorkflow.querySelector("[data-import-preview]");
+    const errorBox = importWorkflow.querySelector("[data-import-error]");
+    const previewBox = importWorkflow.querySelector("[data-import-preview-result]");
+    const rowsBox = importWorkflow.querySelector("[data-import-rows]");
+    const summaryBox = importWorkflow.querySelector("[data-import-summary]");
+    const confirmButton = importWorkflow.querySelector("[data-import-confirm]");
+    const completeBox = importWorkflow.querySelector("[data-import-complete]");
+    const completeSummary = importWorkflow.querySelector("[data-import-complete-summary]");
+    let previewToken = null;
+    const labels = {
+      READY: "등록 가능", NEW_AGENCY: "신규 기관", NEW_ORG_UNIT: "신규 부서",
+      EXACT_DUPLICATE: "중복", EXISTING_SOURCE_NEW_BINDING: "기존 URL 새 연결",
+      CONFLICT: "충돌", INVALID: "오류",
+    };
+    const setStep = (name) => {
+      importWorkflow.querySelectorAll("[data-import-step]").forEach((step) => {
+        step.classList.toggle("is-active", step.dataset.importStep === name);
+      });
+    };
+    const discardPreview = () => {
+      if (!previewToken) return;
+      fetch("/api/source-bindings/imports/" + previewToken, {method: "DELETE", keepalive: true});
+      previewToken = null;
+    };
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      discardPreview();
+      errorBox.hidden = true;
+      confirmButton.disabled = true;
+      setStep("columns");
+      try {
+        const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "파일을 확인하지 못했습니다.");
+        previewToken = result.token;
+        rowsBox.replaceChildren();
+        result.rows.forEach((row) => {
+          const tr = document.createElement("tr");
+          [row.row_number, row.resolved_agency || row.raw_agency, row.resolved_org_unit || "기관 공통", row.normalized_url || row.raw_url, labels[row.classification], row.message].forEach((value) => {
+            const td = document.createElement("td");
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          rowsBox.appendChild(tr);
+        });
+        const s = result.summary;
+        summaryBox.textContent = "전체 " + s.total + " · 등록 가능 " + s.importable + " · 신규 기관 " + s.new_agencies + " · 신규 부서 " + s.new_org_units + " · 중복 " + s.duplicates + " · 충돌 " + s.conflicts + " · 오류 " + s.invalid;
+        previewBox.hidden = false;
+        completeBox.hidden = true;
+        confirmButton.disabled = s.importable === 0;
+        setStep("preview");
+      } catch (error) {
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+        previewBox.hidden = true;
+        setStep("select");
+      }
+    });
+    confirmButton.addEventListener("click", async () => {
+      if (!previewToken) return;
+      confirmButton.disabled = true;
+      setStep("result");
+      try {
+        const response = await fetch("/api/source-bindings/imports/" + previewToken + "/confirm", {method: "POST"});
+        const result = await response.json();
+        previewToken = null;
+        if (!response.ok) throw new Error(result.detail || "등록을 완료하지 못했습니다.");
+        const s = result.summary;
+        completeSummary.textContent = "연결 " + s.created_bindings + "건 등록 · 중복 " + s.duplicates_skipped + "건 건너뜀 · 오류 " + (s.invalid_rows + s.conflicts + s.unexpected_failures) + "건";
+        previewBox.hidden = true;
+        completeBox.hidden = false;
+        setStep("complete");
+      } catch (error) {
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+      }
+    });
+    importWorkflow.closest("[data-modal]").querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", discardPreview));
+    importWorkflow.querySelector("[data-import-refresh]").addEventListener("click", () => window.location.reload());
+  }
 })();

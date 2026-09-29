@@ -46,6 +46,7 @@ class SourceService:
         agency_id: uuid.UUID,
         org_unit_id: uuid.UUID | None = None,
         description: str | None = None,
+        commit: bool = True,
     ) -> tuple[dict, bool]:
         try:
             agency, unit = self._validate_scope(agency_id, org_unit_id)
@@ -67,10 +68,11 @@ class SourceService:
                 description=collapse_whitespace(description or "") or None,
             )
             self.repository.add_binding(binding)
-            self.session.commit()
+            self.session.commit() if commit else self.session.flush()
             return self.binding_projection(binding), True
         except Exception:
-            self.session.rollback()
+            if commit:
+                self.session.rollback()
             raise
 
     def get_binding(self, binding_id: uuid.UUID) -> dict:

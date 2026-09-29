@@ -16,11 +16,12 @@ from app.models.enums import (
 )
 from app.models.evidence import ChangeDetection, ChangeEvent, ContactHistory, CrawlRun, Observation, SourceOccurrence
 from app.models.source import Source, SourceBinding
+from app.models.source_import import SourceImportLog
 
 __all__ = [
     "Agency", "AgencyType", "ChangeDetection", "ChangeEvent", "ChangeEventType",
     "CollectionMethod", "ContactHistory", "ContactPoint", "ContactType", "CrawlRun",
     "DataFormat", "Duty", "EntityType", "Observation", "OrgUnit", "OrgUnitType",
     "Person", "PersonAssignment", "ReviewStatus", "RunStatus", "Source",
-    "SourceBinding", "SourceOccurrence", "SourceType", "StageStatus",
+    "SourceBinding", "SourceImportLog", "SourceOccurrence", "SourceType", "StageStatus",
 ]

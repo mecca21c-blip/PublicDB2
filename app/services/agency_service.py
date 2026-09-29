@@ -39,6 +39,7 @@ class AgencyService:
         agency_type: AgencyType,
         external_identifier: str | None = None,
         address: str | None = None,
+        commit: bool = True,
     ) -> tuple[dict, bool]:
         displayed = collapse_whitespace(official_name)
         normalized = normalize_agency_name(official_name)
@@ -62,9 +63,10 @@ class AgencyService:
         )
         try:
             self.repository.add(agency)
-            self.session.commit()
+            self.session.commit() if commit else self.session.flush()
         except Exception:
-            self.session.rollback()
+            if commit:
+                self.session.rollback()
             raise
         return self.agency_summary(agency), True
 
@@ -101,6 +103,7 @@ class AgencyService:
         name: str,
         unit_type: OrgUnitType,
         parent_org_unit_id: uuid.UUID | None = None,
+        commit: bool = True,
     ) -> dict:
         agency = self.repository.get(agency_id)
         if agency is None:
@@ -131,9 +134,10 @@ class AgencyService:
         )
         try:
             self.session.add(unit)
-            self.session.commit()
+            self.session.commit() if commit else self.session.flush()
         except Exception:
-            self.session.rollback()
+            if commit:
+                self.session.rollback()
             raise
         return self.org_unit_projection(unit)
 

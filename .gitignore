@@ -5,6 +5,15 @@ __pycache__/
 .coverage
 htmlcov/
 .env
-data/
+*.sqlite3
+data/db/*
+data/raw/*
+data/imports/*
+data/exports/*
+data/temp/*
+data/visual_checks/
+logs/
+backups/
+config/local.*
 dist/
 build/

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session
 from app.api.schemas import ExclusionRequest, SourceBindingCreate, SourceBindingUpdate
 from app.services.normalization import SourceURLValidationError
 from app.services.source_service import SourceBindingConflict, SourceService, SourceServiceError
+from app.services.source_import_service import MAX_IMPORT_BYTES, SourceImportError, SourceImportService
 
 
 router = APIRouter(prefix="/api/source-bindings", tags=["sources"])
@@ -70,3 +72,39 @@ def reactivate_binding(binding_id: uuid.UUID, session: Session = Depends(get_ses
         return {"item": SourceService(session).reactivate_binding(binding_id)}
     except SourceServiceError as error:
         raise _failure(error) from error
+
+
+@router.post("/imports/preview")
+async def preview_import(request: Request, file: UploadFile = File(...), session: Session = Depends(get_session)) -> dict:
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    try:
+        service = SourceImportService(session, request.app.state.runtime_paths)
+        preview = service.preview(file.filename or "upload", content)
+        entry = request.app.state.source_import_previews.save(file.filename or "upload", content)
+        return {"token": entry.token, "filename": entry.original_filename, **preview}
+    except SourceImportError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/imports/{token}/confirm")
+def confirm_import(token: str, request: Request, session: Session = Depends(get_session)) -> dict:
+    store = request.app.state.source_import_previews
+    try:
+        entry = store.get(token)
+        return SourceImportService(session, request.app.state.runtime_paths).confirm(entry)
+    except SourceImportError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+    finally:
+        store.discard(token)
+
+
+@router.delete("/imports/{token}")
+def discard_import(token: str, request: Request) -> dict[str, bool]:
+    request.app.state.source_import_previews.discard(token)
+    return {"discarded": True}
+
+
+@router.get("/imports/template.csv")
+def download_import_template() -> Response:
+    content = "\ufeff기관명,부서명,URL,소스 설명\r\n"
+    return Response(content=content.encode("utf-8"), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="publicdb2-source-import-template.csv"'})

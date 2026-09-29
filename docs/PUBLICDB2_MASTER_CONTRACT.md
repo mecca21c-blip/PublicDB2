@@ -7,7 +7,7 @@
 PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직/부서, 업무, 사람/재직과
 연락처를 출처 및 변경 근거와 함께 관리하는 로컬 운영 도구다. 03A부터 PublicDB2
 소유 DB와 기관/부서/업무 및 수집 소스 등록·조회가 활성화됐다. 수집, 추출,
-Excel 처리와 검토 반영은 아직 활성화하지 않는다.
+Excel/CSV Source import가 활성화됐다. 수집, 추출과 검토 반영은 아직 활성화하지 않는다.
 
 PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통째로
 복사하거나 직접 연결하지 않으며, 확인된 의미와 재검증 가능한 로직만 별도 Goal에서
@@ -58,6 +58,33 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 발견 데이터는 수집·추출로 관찰된 후보이고, 확정 데이터는 사용자 검토 또는 승인된
 규칙을 거친 운영값이다. 두 값은 UI와 저장 계약에서 분리한다.
 
+## PORTABLE PROJECT CONTRACT
+
+PublicDB2 설치 폴더가 application과 data의 이동 단위다. 기본 runtime 경로는 모두
+PROJECT_ROOT 아래의 data/db, data/raw, data/imports, data/exports, data/temp,
+logs, backups, config다. 사용자 profile, AppData, Desktop, Documents 또는
+PublicDB1 경로를 runtime 소유 위치로 사용하지 않는다.
+
+runtime DB, RAW, import/export/temp 파일, logs, backups, .env와 local config는
+Git에서 제외한다. DB에 보존하는 import 파일 경로는 project-relative POSIX 경로다.
+PUBLICDB2_DATABASE_URL과 PUBLICDB2_PROJECT_ROOT 환경 override를 지원한다.
+배포 목표는 향후 publicdb.rhythmus.co.kr Windows Server web application이며,
+PublicDB2 폴더 전체를 application/data migration unit으로 취급한다.
+
+## 03B Source Import Contract
+
+XLSX와 CSV import는 PREVIEW와 CONFIRM 두 단계다. Preview는 production DB를
+쓰지 않으며 서버 token과 data/temp 원본만 사용한다. Confirm은 원본을 다시 파싱하고
+현재 DB에 대해 재분류한 뒤 importable 행만 처리한다. 최대 행 수는 10,000개다.
+
+행의 primary classification은 READY, NEW_AGENCY, NEW_ORG_UNIT,
+EXACT_DUPLICATE, EXISTING_SOURCE_NEW_BINDING, CONFLICT, INVALID 중 하나다.
+필수 컬럼은 기관명과 URL이고 부서명과 소스 설명은 선택이다. 기관과 부서는 정규화
+exact match만 권한 있는 일치로 사용하며 fuzzy match나 타 기관 부서 cross-binding을
+허용하지 않는다. EXACT_DUPLICATE는 건너뛰고 INVALID/CONFLICT는 쓰지 않는다.
+확정 원본은 data/imports/YYYY/MM/DD 아래 충돌 안전 파일명으로 보존하며 원본명,
+project-relative 저장 경로, SHA-256, 확정 시각과 결과 집계를 기록한다.
+
 ## 향후 action ownership
 
 - 기관/부서 등록·수정: 기관/조직 기능이 소유한다.
@@ -67,5 +94,5 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 반영·유지·보류: 변경/검토 기능이 소유하며 이력 보존을 전제로 한다.
 - 운영 설정 저장: 설정 기능이 소유한다.
 
-03A에서는 기관/부서/업무와 SourceBinding의 등록·수정·제외·복구 action만
-활성화한다. 수집, Excel import, 검토 반영 및 설정 action은 후속 Goal에서 연결한다.
+기관/부서/업무, SourceBinding 등록·수정·제외·복구와 03B Excel/CSV import만
+활성화한다. 수집, 검토 반영 및 설정 action은 후속 Goal에서 연결한다.

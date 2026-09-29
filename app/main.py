@@ -14,11 +14,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.agencies import router as agencies_api
 from app.api.sources import router as sources_api
+from app.core.config import runtime_paths
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
 from app.models import AgencyType, OrgUnit
 from app.services.agency_service import AgencyService
 from app.services.source_service import SourceService
+from app.services.source_import_service import PreviewStore
 
 from app.web.dashboard_fixture import DASHBOARD_FIXTURE
 from app.web.workspace_fixtures import WORKSPACE_FIXTURES
@@ -75,7 +77,7 @@ def _uuid_or_none(value: str | None) -> uuid.UUID | None:
         return None
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
+def create_app(database_url: str | None = None, project_root: Path | None = None) -> FastAPI:
     """Create the application without schema creation or collection side effects."""
 
     application = FastAPI(
@@ -86,6 +88,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
     engine = create_db_engine(database_url)
     application.state.engine = engine
     application.state.session_factory = create_session_factory(engine)
+    application.state.runtime_paths = runtime_paths(project_root)
+    application.state.source_import_previews = PreviewStore(application.state.runtime_paths)
     application.include_router(agencies_api)
     application.include_router(sources_api)
     application.mount(
