@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "components.html" import status_badge %}
+{% block title %}수집 이력 · PublicDB2{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
+
+{% block content %}
+<div class="workspace-page">
+  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">샘플 데이터</span><h1>수집 이력</h1><p>수집 시도별 접속, RAW 저장, 추출과 발견 결과를 단계별로 확인합니다.</p></div></header>
+  <section class="panel toolbar" aria-label="수집 이력 필터">
+    <div class="toolbar-field"><label for="run-from">시작일</label><input class="control" id="run-from" type="date" value="2026-09-23"></div>
+    <div class="toolbar-field"><label for="run-to">종료일</label><input class="control" id="run-to" type="date" value="2026-09-29"></div>
+    <div class="toolbar-field"><label for="run-agency">기관</label><select class="control" id="run-agency"><option>전체 기관</option><option>한빛시청</option><option>새봄환경공단</option><option>누리문화재단</option></select></div>
+    <div class="toolbar-field"><label for="run-state">상태</label><select class="control" id="run-state"><option>전체 상태</option><option>추출 성공</option><option>대상 자료 없음</option><option>접속 오류</option><option>추출 오류</option></select></div>
+    <div class="toolbar-field toolbar-field--search"><label for="run-search">검색</label><input class="control" id="run-search" type="search" placeholder="기관 또는 소스 검색"></div>
+  </section>
+
+  <div class="workspace-layout">
+    <section class="panel workspace-list-panel">
+      <header class="panel-heading"><div class="panel-heading-copy"><h2>실행 목록</h2><p>최종 문구와 상세 단계를 함께 확인하세요.</p></div><span class="table-count">{{ workspace['items']|length }}건</span></header>
+      <div class="table-scroll">
+        <table class="data-table workspace-table">
+          <thead><tr><th>수집 시각</th><th>기관</th><th>소스</th><th>수집 결과</th><th>발견 수</th><th>소요 시간</th></tr></thead>
+          <tbody>{% for item in workspace['items'] %}
+            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{ item.id }}" tabindex="0" aria-selected="{{ 'true' if loop.first else 'false' }}"><td class="muted-cell">{{ item.time }}</td><td><strong>{{ item.agency }}</strong></td><td>{{ item.source }}</td><td>{{ status_badge(item.result, item.tone) }}</td><td>{{ item.found }}</td><td>{{ item.duration }}</td></tr>
+          {% endfor %}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="panel detail-panel" aria-label="선택 수집 실행 상세">
+      {% for detail in workspace.details %}
+      <article class="detail-view" data-detail-id="{{ detail.id }}"{% if not loop.first %} hidden{% endif %}>
+        <header class="detail-panel-heading"><div><small>수집 단계 상세</small><h2>{{ detail.title }}</h2></div><span class="demo-badge">샘플</span></header>
+        <div class="detail-content">
+          <section class="detail-section"><h3>처리 단계</h3><div class="stage-list">{% for label, value, tone in detail.stages %}<div class="stage-row"><strong>{{ label }}</strong>{{ status_badge(value, tone) }}</div>{% endfor %}</div></section>
+          <section class="detail-section"><h3>상세 사유</h3><p class="detail-note">{{ detail.reason }}</p></section>
+        </div>
+      </article>
+      {% endfor %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

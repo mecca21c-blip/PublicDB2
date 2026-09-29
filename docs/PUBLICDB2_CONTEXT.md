@@ -1,9 +1,9 @@
 # PublicDB2 — 프로젝트 컨텍스트
 
 작성일: 2026-09-29
-문서 상태: Dashboard UI foundation
-전체 UI Freeze: Dashboard shell만 구현, 업무 탭은 미완료
-Production 기능 구현 승인: UI foundation만 승인
+문서 상태: 전체 workspace UI complete
+전체 UI Freeze: Dashboard 시각 foundation 동결, 업무 화면 intended layout 동결
+Production 기능 구현 승인: UI only
 
 ## 목적
 
@@ -24,18 +24,19 @@ PublicDB1은 model/service/data contract를 확인할 때만 참고한다.
 
 ## 현재 구현 범위
 
-`PUBLICDB2-DASHBOARD-UI-FOUNDATION-01A`에서 다음을 구현했다.
+01A, 01B와 PUBLICDB2-ALL-WORKSPACE-UI-COMPLETE-02A에서 다음을 구현했다.
 
 - FastAPI/Jinja2 application shell
 - 어두운 sidebar와 top header
 - 운영 Dashboard
 - 공통 design token과 component
 - `/`, `/agencies`, `/sources`, `/runs`, `/contacts`, `/review`, `/settings`
-- Dashboard 외 route의 최소 `구현 예정` 화면
+- 기관/조직, 수집 소스, 수집 이력, 연락처 DB, 변경/검토, 설정 workspace
+- 목록 선택, 상세 패널과 Excel import 정적 미리보기
 
-이번 단계에서는 DB, 수집, crawling, 추출, Master apply, migration, legacy DB import를
-연결하지 않았다. Dashboard 값은 `app/web/dashboard_fixture.py`의 명시적 샘플이며
-실제 운영 상태가 아니다.
+DB, 수집, crawling, 추출, 확정값 반영, Excel 처리, migration과 legacy DB import는
+연결하지 않았다. 모든 화면 값은 명시적으로 분리된 fixture 샘플이며 실제 운영
+상태가 아니다.
 
 ## 새 프로젝트 원칙
 
@@ -61,7 +62,6 @@ PublicDB1은 model/service/data contract를 확인할 때만 참고한다.
 
 ## 진행 방식
 
-1. Dashboard shell의 시각 수용 여부를 확인한다.
-2. 수집 소스, 연락처 DB, 변경/검토 화면의 계약을 차례로 확정한다.
-3. 필요한 legacy 서비스는 PublicDB2 경계에서 다시 검증한다.
-4. DB와 실제 업무 기능은 별도 Goal에서 연결한다.
+1. 6개 workspace의 전체 시각 수용 여부를 확인한다.
+2. 필요한 legacy 서비스는 PublicDB2 경계에서 다시 검증한다.
+3. DB와 실제 업무 기능은 별도 Goal에서 연결한다.

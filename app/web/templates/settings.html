@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}설정 · PublicDB2{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
+
+{% block content %}
+<div class="workspace-page">
+  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">설정 미연결</span><h1>설정</h1><p>PublicDB2 운영에 필요한 최소한의 저장 및 웹 수집 기본값을 확인합니다.</p></div></header>
+  <div class="settings-grid">
+    <section class="panel settings-card"><h2>데이터 저장</h2><p>운영 데이터와 수집 원문의 기본 저장 위치입니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">데이터 저장 위치</span><input class="control" value="{{ workspace.storage_path }}" readonly></label><label class="settings-field"><span class="field-label">RAW 파일 저장 위치</span><input class="control" value="{{ workspace.raw_path }}" readonly></label></div></section>
+    <section class="panel settings-card"><h2>수집 기본값</h2><p>새 수집 소스에 적용할 기본 요청 조건입니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">기본 제한 시간</span><input class="control" value="{{ workspace.default_timeout }}" readonly></label><label class="settings-field"><span class="field-label">요청 간격</span><input class="control" value="{{ workspace.default_interval }}" readonly></label></div></section>
+    <section class="panel settings-card"><h2>파일 저장 위치</h2><p>내보내기와 업로드 파일을 다룰 기본 경로는 기능 연결 단계에서 확정합니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">내보내기 기본 위치</span><input class="control" value="기능 연결 시 지정" readonly></label><label class="settings-field"><span class="field-label">업로드 임시 위치</span><input class="control" value="기능 연결 시 지정" readonly></label></div></section>
+    <section class="panel settings-card"><h2>웹 수집 정책</h2><p>기관 웹사이트 접근 시 지켜야 할 기본 운영 정책입니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">접속 식별 정책</span><input class="control" value="{{ workspace.user_agent_policy }}" readonly></label><label class="settings-field"><span class="field-label">사이트 정책</span><input class="control" value="{{ workspace.robots_policy }}" readonly></label></div></section>
+  </div>
+  <div class="settings-footer"><button class="button button--primary" type="button" disabled>저장</button></div>
+</div>
+{% endblock %}

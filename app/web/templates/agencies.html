@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "components.html" import icon, status_badge %}
+{% block title %}기관/조직 · PublicDB2{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
+
+{% block content %}
+<div class="workspace-page">
+  <header class="page-heading">
+    <div class="page-heading-copy"><span class="demo-badge">샘플 데이터</span><h1>기관/조직</h1><p>기관에서 부서와 업무, 연결된 수집 소스까지 한 흐름으로 확인합니다.</p></div>
+    <div class="page-actions"><button class="button button--primary" type="button" disabled>{{ icon('plus', 18) }} 기관 추가</button></div>
+  </header>
+
+  <section class="panel toolbar" aria-label="기관 검색">
+    <div class="toolbar-field toolbar-field--search"><label for="agency-search">기관명 / 부서명</label><input class="control" id="agency-search" type="search" placeholder="기관명 또는 부서명을 입력하세요"></div>
+    <div class="toolbar-field"><label for="agency-type">기관 유형</label><select class="control" id="agency-type"><option>전체 유형</option><option>지방자치단체</option><option>지방공기업</option><option>공공기관</option></select></div>
+    <button class="button button--secondary" type="button" disabled>검색</button>
+  </section>
+
+  <div class="workspace-layout">
+    <section class="panel workspace-list-panel">
+      <header class="panel-heading"><div class="panel-heading-copy"><h2>기관 목록</h2><p>행을 선택하면 기관의 조직 관계를 확인할 수 있습니다.</p></div><span class="table-count">{{ workspace['items']|length }}개 기관</span></header>
+      <div class="table-scroll">
+        <table class="data-table workspace-table">
+          <thead><tr><th>기관명</th><th>기관 유형</th><th>부서 수</th><th>연락처 수</th><th>수집 소스 수</th><th>상태</th></tr></thead>
+          <tbody>
+          {% for item in workspace['items'] %}
+            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{ item.id }}" tabindex="0" aria-selected="{{ 'true' if loop.first else 'false' }}">
+              <td><strong>{{ item.name }}</strong></td><td>{{ item.type }}</td><td>{{ item.departments }}</td><td>{{ item.contacts }}</td><td>{{ item.sources }}</td><td>{{ status_badge(item.status, item.tone) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="panel detail-panel" aria-label="선택 기관 상세">
+      {% for detail in workspace.details %}
+      <article class="detail-view" data-detail-id="{{ detail.id }}"{% if not loop.first %} hidden{% endif %}>
+        <header class="detail-panel-heading"><div><small>기관 기본 정보</small><h2>{{ detail.name }}</h2></div><span class="demo-badge">샘플</span></header>
+        <div class="detail-content">
+          <section class="detail-section"><dl class="detail-grid"><dt>기관 유형</dt><dd>{{ detail.type }}</dd><dt>기관 식별값</dt><dd>{{ detail.identifier }}</dd><dt>주소</dt><dd>{{ detail.address }}</dd></dl></section>
+          <section class="detail-section"><h3>조직/부서</h3><ul class="detail-list">{% for value in detail.departments %}<li>{{ value }}</li>{% endfor %}</ul></section>
+          <section class="detail-section"><h3>업무</h3><ul class="detail-list">{% for value in detail.tasks %}<li>{{ value }}</li>{% endfor %}</ul></section>
+          <section class="detail-section"><h3>연결된 수집 소스</h3><ul class="detail-list">{% for value in detail.sources %}<li>{{ value }}</li>{% endfor %}</ul></section>
+        </div>
+      </article>
+      {% endfor %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

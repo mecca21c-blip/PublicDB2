@@ -1,80 +1,64 @@
 # PublicDB2 UI Contract
 
-상태: Dashboard UI foundation 기준 계약
+상태: PUBLICDB2_UI_FOUNDATION_FREEZE=YES
 
-## 1. Visual SSOT
+## 공통 시각 계약
 
-Dashboard가 PublicDB2 공통 application shell과 시각 언어의 기준이다.
-`design/01-dashboard-reference-v0.1.png`의 어두운 남색 sidebar, 밝은 본문,
-파란 primary accent, 카드·표·badge의 밀도를 참고한다. 이미지 안의 기관명,
-수치, URL, 날짜와 수집 결과는 샘플이며 기능 또는 데이터 계약이 아니다.
+Dashboard가 application shell과 시각 언어의 SSOT다. 어두운 sidebar, 밝은
+workspace, 파란 primary accent, 표·badge·form control의 밀도를 모든 화면에서
+공유한다. 공통 token과 component는 tokens.css, components.css, app.css,
+workspace.css, templates/components.html이 소유한다.
 
-공통 token은 `app/web/static/css/tokens.css`, 공통 component는
-`components.css`와 `templates/components.html`, shell은 `app.css`와
-`templates/base.html`이 소유한다. 화면 전용 CSS는 공통 규칙을 재정의하지 않는다.
+Sidebar 메뉴는 대시보드, 기관/조직, 수집 소스, 수집 이력, 연락처 DB, 변경/검토,
+설정의 7개만 유지한다. Dashboard만 KPI와 chart를 갖는 overview다. 나머지 화면은
+제목 → 검색/필터/작업 → 목록 → 선택 상세 순서를 따른다.
 
-## 2. Application shell
+모든 현재 workspace 값은 별도 fixture의 샘플이다. 실제 DB 연결 전에는 화면에
+샘플 또는 미연결 상태를 표시하고, 버튼이 실제 작업을 완료한 것처럼 보이지 않게 한다.
 
-- Sidebar: Dashboard, 기관/조직, 수집 소스, 수집 이력, 연락처 DB, 변경/검토, 설정.
-- Top header: 통합 검색, 빠른 등록, 알림, 사용자 영역의 위치만 제공한다.
-- 아직 연결되지 않은 header control은 동작하는 기능처럼 표시하지 않는다.
-- Dashboard 외 route는 현재 제목과 `구현 예정` 안내만 보여준다.
-- desktop admin layout을 우선하며 1920, 1600, 1366 폭에서 shell을 유지한다.
-- 폭이 좁아지면 sidebar는 축약되고 KPI와 panel은 wrap한다. 표는 자체 영역에서
-  가로 스크롤하며 전체 shell 폭을 밀지 않는다.
+## 동결 workspace
 
-## 3. Dashboard contract
+### /agencies 기관/조직
 
-Dashboard만 overview 화면이다. 포함 범위는 다음과 같다.
+기관 검색과 기관 목록을 제공한다. 목록은 기관명, 유형, 부서·연락처·소스 수와
+상태만 표시한다. 선택 상세는 기관 기본 정보, 조직/부서, 업무, 연결된 수집 소스를
+한 패널에서 보여준다.
 
-- KPI 최대 5개: 등록 기관, 수집 Source, 연락처 DB, 검토 대기, 수집 오류.
-- 최근 수집: 수집 시각, 기관명, Source, 상태만 요약한다.
-- 최근 7일 성공/오류 추이 chart 하나.
-- 최근 검토 대상: 기관, 변경 항목, 이전 값, 새 값, 발견 시각, 상태.
-- Quick Action: 기관 등록, Source 등록, 수집 이력, 검토 대상 route 이동.
+### /sources 수집 소스
 
-실제 DB가 연결되기 전 sample은 별도 fixture에 격리하고 화면에 샘플임을 표시한다.
-발견 후보와 Master 확정 데이터는 같은 상태나 수치로 표현하지 않는다.
+기관·부서·상태 필터와 URL 목록을 중심으로 한다. 상태는 미확인, 정상, 자료없음,
+오류, 제외를 사용한다. 선택 상세에서 설명, 최근 확인·수집 결과, 발견 수, 오류
+사유를 확인한다. Excel 진입 화면은 파일 선택부터 등록까지의 단계와 정상·중복·
+충돌·오류 미리보기만 제공한다. 실제 파싱, 수집, 수정, 제외는 연결하지 않는다.
 
-## 4. Future tab contract
+### /runs 수집 이력
 
-Dashboard 이외 화면은 `검색 → 목록 → 선택 → 작업` 흐름을 우선한다. KPI, graph,
-마케팅형 widget을 반복하지 않는다.
+기간·기관·상태·검색 필터와 실행 목록을 제공한다. 선택 상세에서 접속, RAW 저장,
+추출, 발견 결과, 확정 DB 반영 여부를 분리한다. 접속 성공은 추출 성공이나 확정
+DB 반영을 의미하지 않는다.
 
-### 기관/조직
+### /contacts 연락처 DB
 
-기관 검색과 목록을 제공하고 선택 기관 상세에서 부서, 업무, 연결 Source를 확인한다.
-업무는 별도 전역 메뉴가 아니라 기관/조직 문맥에 포함한다.
+확정 연락처 검색과 기관·부서·연락처 유형 필터를 제공한다. 목록은 기관, 부서,
+업무, 담당자, 전화, 이메일만 표시한다. 조직 연락처에는 사람 값을 강제하지 않는다.
+선택 상세에서 팩스, 공식 출처, 확인일과 최근 변경 이력을 확인한다.
 
-### 수집 소스
+### /review 변경/검토
 
-검색/필터와 Source 목록을 중심으로 URL 추가, Excel upload, 단계별 상태 확인,
-검토·제외를 제공한다. URL과 기관/부서 연결 관계의 중복을 구분한다.
+현재 확정값과 새 발견값을 비교한다. 목록은 기관, 대상, 항목, 두 값, 발견 시각과
+상태를 표시한다. 선택 상세에서 출처와 근거를 확인하고 향후 반영, 유지, 보류 판단을
+준비한다. 검토 대기, 확인 필요, 보류는 서로 다른 semantic tone을 사용한다.
 
-### 수집 이력
+### /settings 설정
 
-수집 실행별로 접속, RAW 저장, 추출, 결과 상태를 분리해 표시한다. HTTP 성공을
-추출 성공이나 Master 반영 성공으로 표시하지 않는다.
+데이터 저장, 수집 기본값, 파일 저장 위치와 웹 수집 정책만 제공한다. 개발자 옵션,
+내부 class, DB 구현 세부사항은 노출하지 않는다. 저장 기능은 실제 설정 저장 계약이
+확정될 때까지 비활성이다.
 
-### 연락처 DB
+## 상호작용과 접근성
 
-검색/필터와 핵심 연락처 table을 제공한다. 상세에서 공식 출처, 관찰 근거,
-소속·업무 문맥, 변경 이력을 확인한다.
-
-### 변경/검토
-
-기존 값과 발견 값을 비교해 반영, 유지, 보류를 명시적으로 결정한다. 검토 대기는
-이 화면 안에 포함하며 자동 반영을 기본값으로 삼지 않는다.
-
-### 설정
-
-실제 운영에 필요한 최소 설정만 제공한다. 구현 근거가 없는 계정, 테마, 자동화,
-백업 기능을 임의로 추가하지 않는다.
-
-## 5. Status and accessibility
-
-- 상태는 색상과 텍스트를 함께 사용한다.
-- 로딩 실패를 0건 또는 자료없음으로 바꾸지 않는다.
-- 미수집, 접근 오류, 추출 오류, 미지원, 미확인, 자료없음을 구분한다.
-- 긴 URL과 명칭은 shell을 밀지 않도록 잘라 표시하되 전체 값 접근 경로를 둔다.
-- 가짜 기능 버튼은 활성 상태로 두지 않는다.
+- 행 선택, 상세 전환, 검토 유형 선택과 Excel 정적 modal만 client-side demo다.
+- 상태는 색과 텍스트를 함께 사용한다.
+- 긴 URL은 표에서 줄이되 선택 상세에서 전체 값을 제공한다.
+- 표는 자체 가로 스크롤로 shell 너비를 보호한다.
+- 실제 기능이 없는 작업 버튼은 disabled 또는 aria-disabled 상태다.

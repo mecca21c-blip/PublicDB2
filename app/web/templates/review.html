@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "components.html" import icon, status_badge %}
+{% block title %}변경/검토 · PublicDB2{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
+
+{% block content %}
+<div class="workspace-page">
+  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">샘플 데이터</span><h1>변경/검토</h1><p>새로 발견된 값과 현재 확정값을 비교하고 향후 처리 판단을 준비합니다.</p></div></header>
+  <section class="panel toolbar" aria-label="변경 후보 필터">
+    <div class="toolbar-field toolbar-field--search"><label for="review-search">검색</label><input class="control" id="review-search" type="search" placeholder="기관, 대상 또는 항목 검색"></div>
+    <div class="toolbar-field"><label for="review-agency">기관</label><select class="control" id="review-agency"><option>전체 기관</option><option>한빛시청</option><option>새봄환경공단</option><option>누리문화재단</option></select></div>
+    <div class="toolbar-field"><label for="review-state">상태</label><select class="control" id="review-state"><option>전체 상태</option><option>검토 대기</option><option>확인 필요</option><option>보류</option></select></div>
+    <div class="segmented-filter" aria-label="변경 유형">
+      <button class="segment-button is-active" type="button" data-segment>전체</button><button class="segment-button" type="button" data-segment>변경</button><button class="segment-button" type="button" data-segment>신규</button><button class="segment-button" type="button" data-segment>확인 필요</button>
+    </div>
+  </section>
+
+  <div class="workspace-layout">
+    <section class="panel workspace-list-panel">
+      <header class="panel-heading"><div class="panel-heading-copy"><h2>검토 대상</h2><p>발견값은 검토 전까지 확정 DB 값이 아닙니다.</p></div><span class="table-count">{{ workspace['items']|length }}건</span></header>
+      <div class="table-scroll">
+        <table class="data-table workspace-table">
+          <thead><tr><th>기관</th><th>대상</th><th>항목</th><th>기존 값</th><th>발견 값</th><th>발견 시각</th><th>상태</th></tr></thead>
+          <tbody>{% for item in workspace['items'] %}
+            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{ item.id }}" tabindex="0" aria-selected="{{ 'true' if loop.first else 'false' }}"><td><strong>{{ item.agency }}</strong></td><td>{{ item.target }}</td><td>{{ item.field }}</td><td>{{ item.current }}</td><td>{{ item.discovered }}</td><td class="muted-cell">{{ item.detected }}</td><td>{{ status_badge(item.state, item.tone) }}</td></tr>
+          {% endfor %}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="panel detail-panel" aria-label="선택 변경 후보 비교">
+      {% for detail in workspace.details %}
+      <article class="detail-view" data-detail-id="{{ detail.id }}"{% if not loop.first %} hidden{% endif %}>
+        <header class="detail-panel-heading"><div><small>값 비교</small><h2>{{ detail.title }}</h2></div><span class="demo-badge">샘플</span></header>
+        <div class="detail-content">
+          <section class="detail-section">
+            <div class="comparison-box"><div class="comparison-card"><span>CURRENT VALUE</span><strong>{{ detail.current }}</strong></div><div class="comparison-arrow">{{ icon('arrow', 20) }}</div><div class="comparison-card comparison-card--new"><span>DISCOVERED VALUE</span><strong>{{ detail.discovered }}</strong></div></div>
+          </section>
+          <section class="detail-section"><dl class="detail-grid"><dt>출처 URL</dt><dd class="url-cell">{{ detail.source }}</dd><dt>발견 시각</dt><dd>{{ detail.detected }}</dd></dl></section>
+          <section class="detail-section"><h3>근거 요약</h3><p class="detail-note">{{ detail.evidence }}</p></section>
+          <div class="detail-action-bar"><button class="button button--primary" type="button" disabled>반영</button><button class="button button--secondary" type="button" disabled>유지</button><button class="button button--ghost" type="button" disabled>보류</button></div>
+        </div>
+      </article>
+      {% endfor %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

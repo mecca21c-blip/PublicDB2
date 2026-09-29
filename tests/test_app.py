@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app.main import PLACEHOLDERS, create_app
+from app.main import WORKSPACE_PAGES, create_app
 from app.web.dashboard_fixture import _chart_points
+from app.web.workspace_fixtures import WORKSPACE_FIXTURES
 
 
 def test_dashboard_and_static_assets_render() -> None:
@@ -58,11 +59,45 @@ def test_health_has_no_database_claim() -> None:
     }
 
 
-def test_required_placeholders_are_minimal_and_routable() -> None:
+def test_all_workspace_routes_render_without_placeholders() -> None:
+    required_content = {
+        "agencies": ("기관/조직", "기관 추가", "조직/부서", "연결된 수집 소스"),
+        "sources": ("수집 소스", "엑셀 업로드", "URL 추가", "자료없음", "제외"),
+        "runs": ("수집 이력", "RAW 저장", "확정 DB 반영", "추출 오류"),
+        "contacts": ("연락처 DB", "엑셀 내보내기", "공식 출처", "최근 변경 이력"),
+        "review": ("변경/검토", "CURRENT VALUE", "DISCOVERED VALUE", "반영", "보류"),
+        "settings": ("설정", "데이터 저장", "웹 수집 정책", "저장"),
+    }
+
     with TestClient(create_app()) as client:
-        for route_key, (title, _description) in PLACEHOLDERS.items():
+        for route_key, markers in required_content.items():
             response = client.get(f"/{route_key}")
             assert response.status_code == 200
-            assert title in response.text
-            assert "구현 예정" in response.text
-            assert "data-table" not in response.text
+            assert "구현 예정" not in response.text
+            for marker in markers:
+                assert marker in response.text
+
+
+def test_workspace_templates_and_static_assets_are_registered() -> None:
+    assert set(WORKSPACE_PAGES) == {
+        "agencies",
+        "sources",
+        "runs",
+        "contacts",
+        "review",
+        "settings",
+    }
+    assert set(WORKSPACE_FIXTURES) == set(WORKSPACE_PAGES)
+
+    with TestClient(create_app()) as client:
+        workspace_css = client.get("/static/css/workspace.css")
+        script = client.get("/static/js/app.js")
+        dashboard = client.get("/")
+        sources = client.get("/sources")
+
+    assert workspace_css.status_code == 200
+    assert script.status_code == 200
+    assert "data-detail-target" in sources.text
+    assert 'data-modal="excel-import"' in sources.text
+    assert "workspace.css" not in dashboard.text
+    assert "kpi-grid" in dashboard.text
