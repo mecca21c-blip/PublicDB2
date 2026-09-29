@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.api.agencies import router as agencies_api
+from app.api.sources import router as sources_api
+from app.db.engine import create_db_engine
+from app.db.session import create_session_factory
+from app.models import AgencyType, OrgUnit
+from app.services.agency_service import AgencyService
+from app.services.source_service import SourceService
 
 from app.web.dashboard_fixture import DASHBOARD_FIXTURE
 from app.web.workspace_fixtures import WORKSPACE_FIXTURES
@@ -58,14 +68,26 @@ def _workspace_endpoint(
     return endpoint
 
 
-def create_app() -> FastAPI:
-    """Create the UI-only application without DB or collection side effects."""
+def _uuid_or_none(value: str | None) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value) if value else None
+    except ValueError:
+        return None
+
+
+def create_app(database_url: str | None = None) -> FastAPI:
+    """Create the application without schema creation or collection side effects."""
 
     application = FastAPI(
         title="PublicDB2",
         description="PublicDB2 local administration workspace UI",
     )
     templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
+    engine = create_db_engine(database_url)
+    application.state.engine = engine
+    application.state.session_factory = create_session_factory(engine)
+    application.include_router(agencies_api)
+    application.include_router(sources_api)
     application.mount(
         "/static",
         StaticFiles(directory=str(WEB_ROOT / "static")),
@@ -74,7 +96,7 @@ def create_app() -> FastAPI:
 
     @application.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "app": "PublicDB2", "mode": "ui-foundation"}
+        return {"status": "ok", "app": "PublicDB2", "mode": "agency-source-live"}
 
     @application.get("/", response_class=HTMLResponse)
     def dashboard(request: Request) -> HTMLResponse:
@@ -84,7 +106,40 @@ def create_app() -> FastAPI:
             context=_page_context("dashboard", dashboard=DASHBOARD_FIXTURE),
         )
 
+    @application.get('/agencies', response_class=HTMLResponse, name='agencies')
+    def agencies(request: Request, search: str | None = None, agency_type: AgencyType | None = None) -> HTMLResponse:
+        session = application.state.session_factory()
+        try:
+            workspace = AgencyService(session).list_page(search=search, agency_type=agency_type)
+            db_error = None
+        except SQLAlchemyError:
+            session.rollback()
+            workspace = {'items': (), 'details': ()}
+            db_error = '기관 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
+        finally:
+            session.close()
+        return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context('agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': agency_type.value if agency_type else ''}, agency_types=AgencyType))
+
+    @application.get('/sources', response_class=HTMLResponse, name='sources')
+    def sources(request: Request, search: str | None = None, agency_id: str | None = None, org_unit_id: str | None = None, source_status: str | None = None) -> HTMLResponse:
+        session = application.state.session_factory()
+        try:
+            options = AgencyService(session).list_page()
+            units = list(session.query(OrgUnit).filter(OrgUnit.active.is_(True)).order_by(OrgUnit.name))
+            workspace = SourceService(session).list_page(search=search, agency_id=_uuid_or_none(agency_id), org_unit_id=_uuid_or_none(org_unit_id), status=source_status)
+            db_error = None
+        except SQLAlchemyError:
+            session.rollback()
+            options, units = {'items': (), 'details': ()}, []
+            workspace = {'items': (), 'details': ()}
+            db_error = '수집 소스 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
+        finally:
+            session.close()
+        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context('sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
+
     for route_key, template_name in WORKSPACE_PAGES.items():
+        if route_key in {'agencies', 'sources'}:
+            continue
         application.add_api_route(
             f"/{route_key}",
             _workspace_endpoint(templates, route_key, template_name),

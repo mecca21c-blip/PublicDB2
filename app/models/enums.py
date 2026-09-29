@@ -1,0 +1,106 @@
+"""Stored domain enumerations."""
+
+from enum import Enum
+
+
+class AgencyType(str, Enum):
+    CENTRAL_GOVERNMENT = "CENTRAL_GOVERNMENT"
+    AGENCY = "AGENCY"
+    COMMISSION = "COMMISSION"
+    METROPOLITAN_GOVERNMENT = "METROPOLITAN_GOVERNMENT"
+    BASIC_LOCAL_GOVERNMENT = "BASIC_LOCAL_GOVERNMENT"
+    PUBLIC_INSTITUTION = "PUBLIC_INSTITUTION"
+    OTHER = "OTHER"
+
+
+class OrgUnitType(str, Enum):
+    OFFICE = "OFFICE"
+    BUREAU = "BUREAU"
+    DEPARTMENT = "DEPARTMENT"
+    DIVISION = "DIVISION"
+    TEAM = "TEAM"
+    CENTER = "CENTER"
+    BRANCH = "BRANCH"
+    OTHER = "OTHER"
+
+
+class ContactType(str, Enum):
+    PHONE = "PHONE"
+    EMAIL = "EMAIL"
+    FAX = "FAX"
+    WEB_FORM = "WEB_FORM"
+    URL = "URL"
+    ADDRESS = "ADDRESS"
+    OTHER = "OTHER"
+
+
+class SourceType(str, Enum):
+    STAFF_DIRECTORY = "STAFF_DIRECTORY"
+    ORG_CHART = "ORG_CHART"
+    DEPARTMENT_PAGE = "DEPARTMENT_PAGE"
+    OFFICIAL_API = "OFFICIAL_API"
+    PUBLIC_DATA = "PUBLIC_DATA"
+    GENERAL_PAGE = "GENERAL_PAGE"
+    DOCUMENT = "DOCUMENT"
+    OTHER = "OTHER"
+
+
+class CollectionMethod(str, Enum):
+    API = "API"
+    WEB_PAGE = "WEB_PAGE"
+    WEB_CRAWL = "WEB_CRAWL"
+    FILE = "FILE"
+    DOCUMENT = "DOCUMENT"
+
+
+class DataFormat(str, Enum):
+    HTML = "HTML"
+    JSON = "JSON"
+    XML = "XML"
+    CSV = "CSV"
+    XLSX = "XLSX"
+    PDF = "PDF"
+    TEXT = "TEXT"
+    UNKNOWN = "UNKNOWN"
+
+
+class RunStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
+class StageStatus(str, Enum):
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+
+
+class EntityType(str, Enum):
+    AGENCY = "AGENCY"
+    ORG_UNIT = "ORG_UNIT"
+    DUTY = "DUTY"
+    PERSON = "PERSON"
+    PERSON_ASSIGNMENT = "PERSON_ASSIGNMENT"
+    CONTACT_POINT = "CONTACT_POINT"
+    SOURCE = "SOURCE"
+    SOURCE_BINDING = "SOURCE_BINDING"
+
+
+class ReviewStatus(str, Enum):
+    PENDING_REVIEW = "PENDING_REVIEW"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    IGNORED = "IGNORED"
+
+
+class ChangeEventType(str, Enum):
+    ENTITY_ADDED = "ENTITY_ADDED"
+    ENTITY_CHANGED = "ENTITY_CHANGED"
+    ENTITY_MISSING = "ENTITY_MISSING"
+    ENTITY_RESTORED = "ENTITY_RESTORED"
+    CONTACT_CHANGED = "CONTACT_CHANGED"
+    OTHER = "OTHER"

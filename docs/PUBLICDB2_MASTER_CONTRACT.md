@@ -5,8 +5,9 @@
 ## 제품 목적과 경계
 
 PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직/부서, 업무, 사람/재직과
-연락처를 출처 및 변경 근거와 함께 관리하는 로컬 운영 도구다. 현재 구현은 UI와
-격리된 demo fixture뿐이며 실제 DB, 수집, 추출, Excel 처리와 검토 반영은 없다.
+연락처를 출처 및 변경 근거와 함께 관리하는 로컬 운영 도구다. 03A부터 PublicDB2
+소유 DB와 기관/부서/업무 및 수집 소스 등록·조회가 활성화됐다. 수집, 추출,
+Excel 처리와 검토 반영은 아직 활성화하지 않는다.
 
 PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통째로
 복사하거나 직접 연결하지 않으며, 확인된 의미와 재검증 가능한 로직만 별도 Goal에서
@@ -33,6 +34,18 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 추출 결과는 발견 후보이며 검토 전 확정 연락처가 아니다.
 - 확정 연락처는 공식 출처와 확인일, 변경 이력을 유지한다.
 
+## 03A Source/Binding SSOT
+
+- Source는 정규화 URL과 기술 수집 메타데이터를 소유하는 canonical identity다.
+- Source.normalized_url은 전역 unique이며 URL fragment는 identity에서 제외한다.
+- SourceBinding은 Source와 기관, 선택적 부서의 업무 관계를 소유한다.
+- 같은 canonical Source를 여러 기관/부서 context에 연결할 수 있으나 동일 Source와
+  동일 context의 중복 binding은 만들지 않는다.
+- 부서 binding은 반드시 지정 기관 소속이어야 하며 기관 공통 binding도 지원한다.
+- 제외 사유·시각·활성 상태는 canonical Source가 아니라 binding이 소유한다.
+- 등록은 metadata transaction이며 HTTP 요청이나 수집을 시작하지 않는다.
+- 기본 DB는 data/db/publicdb2.sqlite3이고 PUBLICDB2_DATABASE_URL로 재정의한다.
+
 ## 상태와 처리 의미
 
 소스 상태는 미확인, 정상, 자료없음, 오류, 제외다. 자료없음은 정상 접근과 정상
@@ -54,4 +67,5 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 반영·유지·보류: 변경/검토 기능이 소유하며 이력 보존을 전제로 한다.
 - 운영 설정 저장: 설정 기능이 소유한다.
 
-실제 action은 각 기능의 데이터 계약과 검증 절차가 승인된 뒤 별도 Goal에서 연결한다.
+03A에서는 기관/부서/업무와 SourceBinding의 등록·수정·제외·복구 action만
+활성화한다. 수집, Excel import, 검토 반영 및 설정 action은 후속 Goal에서 연결한다.

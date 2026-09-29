@@ -3,9 +3,9 @@
 PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직, 업무, 사람, 연락처를
 공식 출처와 이력에 연결해 관리하는 로컬 운영 도구다.
 
-현재 구현 범위는 첫 UI foundation이다. FastAPI/Jinja2 기반 application shell,
-Dashboard, 공통 디자인 시스템, 향후 업무 탭의 route placeholder만 포함한다.
-DB, 수집, 추출, 검토 반영 기능은 아직 연결하지 않았다.
+FastAPI/Jinja2 application shell과 SQLAlchemy 2/Alembic 기반 독립 DB를 사용한다.
+기관/부서/업무 및 수집 소스 binding은 실 DB에 연결됐다. Dashboard와 나머지
+업무 화면은 명시적 sample/demo 상태이며 수집·추출은 아직 실행하지 않는다.
 
 ## 실행
 

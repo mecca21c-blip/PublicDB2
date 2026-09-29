@@ -5,6 +5,8 @@ description = "PublicDB2 local administration UI foundation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "SQLAlchemy>=2.0,<2.1",
+    "Alembic>=1.20,<2",
     "fastapi>=0.116,<1",
     "jinja2>=3.1,<4",
     "uvicorn>=0.35,<1",

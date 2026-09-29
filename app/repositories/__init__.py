@@ -1,0 +1,1 @@
+"""Persistence query boundaries."""

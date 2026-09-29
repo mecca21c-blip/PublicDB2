@@ -2,69 +2,13 @@
 {% from "components.html" import icon, status_badge %}
 {% block title %}수집 소스 · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
-
 {% block content %}
-<div class="workspace-page">
-  <header class="page-heading">
-    <div class="page-heading-copy"><span class="demo-badge">샘플 데이터</span><h1>수집 소스</h1><p>기관·부서별 수집 URL의 확인 상태와 최근 결과를 관리합니다.</p></div>
-    <div class="page-actions">
-      <button class="button button--secondary" type="button" data-modal-open="excel-import">엑셀 업로드</button>
-      <button class="button button--primary" type="button" disabled>{{ icon('plus', 18) }} URL 추가</button>
-    </div>
-  </header>
-
-  <section class="panel toolbar" aria-label="수집 소스 필터">
-    <div class="toolbar-field toolbar-field--search"><label for="source-search">통합 검색</label><input class="control" id="source-search" type="search" placeholder="기관, 부서 또는 URL 검색"></div>
-    <div class="toolbar-field"><label for="source-agency">기관</label><select class="control" id="source-agency"><option>전체 기관</option><option>한빛시청</option><option>새봄환경공단</option><option>누리문화재단</option></select></div>
-    <div class="toolbar-field"><label for="source-department">부서</label><select class="control" id="source-department"><option>전체 부서</option><option>디지털정보과</option><option>민원서비스과</option><option>환경사업부</option></select></div>
-    <div class="toolbar-field"><label for="source-state">상태</label><select class="control" id="source-state"><option>전체 상태</option><option>미확인</option><option>정상</option><option>자료없음</option><option>오류</option><option>제외</option></select></div>
-  </section>
-
-  <div class="workspace-layout">
-    <section class="panel workspace-list-panel">
-      <header class="panel-heading"><div class="panel-heading-copy"><h2>URL 목록</h2><p>삭제 대신 검토 가능한 제외 상태를 사용합니다.</p></div><span class="table-count">{{ workspace['items']|length }}개 소스</span></header>
-      <div class="table-scroll">
-        <table class="data-table workspace-table workspace-table--sources">
-          <thead><tr><th>기관</th><th>부서</th><th>수집 URL</th><th>최근 확인</th><th>발견 수</th><th>상태</th></tr></thead>
-          <tbody>
-          {% for item in workspace['items'] %}
-            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{ item.id }}" tabindex="0" aria-selected="{{ 'true' if loop.first else 'false' }}">
-              <td><strong>{{ item.agency }}</strong></td><td>{{ item.department }}</td><td class="url-cell" title="{{ item.url }}">{{ item.url }}</td><td class="muted-cell">{{ item.checked }}</td><td>{{ item.found }}</td><td>{{ status_badge(item.status, item.tone) }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <aside class="panel detail-panel" aria-label="선택 수집 소스 상세">
-      {% for detail in workspace.details %}
-      <article class="detail-view" data-detail-id="{{ detail.id }}"{% if not loop.first %} hidden{% endif %}>
-        <header class="detail-panel-heading"><div><small>수집 소스 상세</small><h2>{{ detail.agency }}</h2></div><span class="demo-badge">샘플</span></header>
-        <div class="detail-content">
-          <section class="detail-section"><dl class="detail-grid"><dt>기관</dt><dd>{{ detail.agency }}</dd><dt>부서</dt><dd>{{ detail.department }}</dd><dt>URL</dt><dd class="url-cell">{{ detail.url }}</dd><dt>소스 설명</dt><dd>{{ detail.description }}</dd><dt>최근 확인</dt><dd>{{ detail.checked }}</dd><dt>최근 수집 결과</dt><dd>{{ detail.result }}</dd><dt>발견 수</dt><dd>{{ detail.found }}</dd><dt>오류 사유</dt><dd>{{ detail.error }}</dd></dl></section>
-          <div class="detail-action-bar"><button class="button button--primary" type="button" disabled>수집</button><button class="button button--secondary" type="button" disabled>수정</button><button class="button button--danger-quiet" type="button" disabled>제외</button></div>
-        </div>
-      </article>
-      {% endfor %}
-    </aside>
-  </div>
-</div>
-
-<div class="modal-backdrop" data-modal="excel-import" hidden>
-  <section class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="excel-modal-title">
-    <header class="modal-heading"><div><h2 id="excel-modal-title">소스 URL 엑셀 업로드</h2><p>파싱이나 등록을 수행하지 않는 정적 workflow 미리보기입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
-    <div class="modal-body">
-      <div class="import-steps" aria-label="엑셀 업로드 단계"><span class="import-step">파일 선택</span><span class="import-step">컬럼 확인</span><span class="import-step is-active">미리보기</span><span class="import-step">결과 구분</span><span class="import-step">등록</span></div>
-      <div class="file-drop"><div><strong>publicdb2_sources_sample.xlsx</strong><small>기관명 · 부서명 · URL · 소스 설명 컬럼</small></div><button class="button button--secondary" type="button" disabled>파일 선택</button></div>
-      <div class="table-scroll">
-        <table class="data-table import-table">
-          <thead><tr><th>기관명</th><th>부서명</th><th>URL</th><th>소스 설명</th><th>판정</th></tr></thead>
-          <tbody>{% for row in workspace.import_rows %}<tr><td>{{ row.agency }}</td><td>{{ row.department }}</td><td class="url-cell">{{ row.url }}</td><td>{{ row.description }}</td><td>{{ status_badge(row.result, row.tone) }}</td></tr>{% endfor %}</tbody>
-        </table>
-      </div>
-      <div class="modal-actions"><button class="button button--secondary" type="button" data-modal-close>닫기</button><button class="button button--primary" type="button" disabled>등록</button></div>
-    </div>
-  </section>
-</div>
+<div class="workspace-page"><header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">PublicDB2 DB</span><h1>수집 소스</h1><p>기관·부서별 수집 URL의 확인 상태와 최근 결과를 관리합니다.</p></div><div class="page-actions"><button class="button button--secondary" data-modal-open="excel-import">엑셀 업로드</button><button class="button button--primary" data-modal-open="source-create">{{icon('plus',18)}} URL 추가</button></div></header>
+{% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}
+<form class="panel toolbar" method="get"><label>통합 검색<input class="control" name="search" value="{{filters.search}}"></label><label>기관<select class="control" name="agency_id"><option value="">전체 기관</option>{% for a in agencies %}<option value="{{a.id}}"{% if filters.agency_id==a.id %} selected{% endif %}>{{a.name}}</option>{% endfor %}</select></label><label>부서<select class="control" name="org_unit_id"><option value="">전체 부서</option>{% for u in org_units %}<option value="{{u.id}}"{% if filters.org_unit_id==u.id|string %} selected{% endif %}>{{u.name}}</option>{% endfor %}</select></label><label>상태<select class="control" name="source_status"><option value="">전체 상태</option>{% for code,label in [('unchecked','미확인'),('success','정상'),('empty','자료없음'),('error','오류'),('excluded','제외')] %}<option value="{{code}}"{% if filters.source_status==code %} selected{% endif %}>{{label}}</option>{% endfor %}</select></label><button class="button button--secondary">검색</button></form>
+<div class="workspace-layout"><section class="panel workspace-list-panel"><header class="panel-heading"><div><h2>URL 목록</h2><p>삭제 대신 검토 가능한 제외 상태를 사용합니다.</p></div><span>{{workspace['items']|length}}개 소스</span></header><div class="table-scroll"><table class="data-table workspace-table workspace-table--sources"><thead><tr><th>기관</th><th>부서</th><th>수집 URL</th><th>최근 확인</th><th>발견 수</th><th>상태</th></tr></thead><tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}"><td><strong>{{item.agency}}</strong></td><td>{{item.department}}</td><td class="url-cell">{{item.url}}</td><td>{{item.checked}}</td><td>{{item.found}}</td><td>{{status_badge(item.status,item.tone)}}</td></tr>{% else %}<tr><td colspan="6" class="empty-state-cell">등록된 수집 소스가 없습니다. URL 추가에서 첫 소스를 등록하세요.</td></tr>{% endfor %}</tbody></table></div></section>
+<aside class="panel detail-panel">{% for d in workspace.details %}<article class="detail-view" data-detail-id="{{d.id}}"{% if not loop.first %} hidden{% endif %}><header class="detail-panel-heading"><div><small>수집 소스 상세</small><h2>{{d.agency}}</h2></div><span class="demo-badge">실데이터</span></header><div class="detail-content"><dl class="detail-grid"><dt>기관</dt><dd>{{d.agency}}</dd><dt>부서</dt><dd>{{d.department}}</dd><dt>URL</dt><dd class="url-cell">{{d.url}}</dd><dt>소스 설명</dt><dd>{{d.description}}</dd><dt>최근 확인</dt><dd>{{d.checked}}</dd><dt>최근 수집 결과</dt><dd>{{d.result}}</dd><dt>발견 수</dt><dd>{{d.found}}</dd><dt>오류 사유</dt><dd>{{d.error}}</dd></dl><div class="detail-action-bar"><button class="button button--primary" disabled>수집</button><button class="button button--secondary" data-modal-open="edit-{{d.id}}">수정</button>{% if d.active %}<button class="button button--danger-quiet" data-api-action="/api/source-bindings/{{d.id}}/exclude" data-body='{"reason":"사용자 제외"}'>제외</button>{% else %}<button class="button button--secondary" data-api-action="/api/source-bindings/{{d.id}}/reactivate">복구</button>{% endif %}</div></div></article>
+<div class="modal-backdrop" data-modal="edit-{{d.id}}" hidden><section class="modal-shell"><header class="modal-heading"><h2>URL 연결 수정</h2><button data-modal-close>×</button></header><form class="modal-body" data-api-form action="/api/source-bindings/{{d.id}}" data-method="PATCH"><label>기관<select class="control" name="agency_id" data-agency-select>{% for a in agencies %}<option value="{{a.id}}"{% if a.id==d.agency_id %} selected{% endif %}>{{a.name}}</option>{% endfor %}</select></label><label>부서(선택)<select class="control" name="org_unit_id"><option value="">기관 공통</option>{% for u in org_units %}<option value="{{u.id}}" data-agency-id="{{u.agency_id}}"{% if u.id|string==d.org_unit_id %} selected{% endif %}>{{u.name}}</option>{% endfor %}</select></label><label>URL<input class="control" name="url" value="{{d.url}}" required></label><label>소스 설명<input class="control" name="description" value="{{'' if d.description=='-' else d.description}}"></label><p data-form-error hidden></p><button class="button button--primary">저장</button></form></section></div>{% else %}<p class="detail-content">URL을 등록하면 소스 상세가 표시됩니다.</p>{% endfor %}</aside></div></div>
+<div class="modal-backdrop" data-modal="source-create" hidden><section class="modal-shell"><header class="modal-heading"><h2>URL 추가</h2><button data-modal-close>×</button></header><form class="modal-body" data-api-form action="/api/source-bindings" data-method="POST"><label>기관<select class="control" name="agency_id" data-agency-select required><option value="">선택</option>{% for a in agencies %}<option value="{{a.id}}">{{a.name}}</option>{% endfor %}</select></label><label>부서(선택)<select class="control" name="org_unit_id"><option value="">기관 공통</option>{% for u in org_units %}<option value="{{u.id}}" data-agency-id="{{u.agency_id}}">{{u.name}}</option>{% endfor %}</select></label><label>URL<input class="control" name="url" type="url" required></label><label>소스 설명<input class="control" name="description"></label><p data-form-error hidden></p><button class="button button--primary">등록</button></form></section></div>
+<div class="modal-backdrop" data-modal="excel-import" hidden><section class="modal-shell"><header class="modal-heading"><h2>소스 URL 엑셀 업로드</h2><button data-modal-close>×</button></header><div class="modal-body"><p>03B에서 구현할 정적 workflow 미리보기입니다. 현재 파일 선택과 등록은 비활성입니다.</p><button disabled>파일 선택</button><button disabled>등록</button></div></section></div>
 {% endblock %}

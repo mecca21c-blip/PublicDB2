@@ -55,13 +55,13 @@ def test_health_has_no_database_claim() -> None:
     assert response.json() == {
         "status": "ok",
         "app": "PublicDB2",
-        "mode": "ui-foundation",
+        "mode": "agency-source-live",
     }
 
 
 def test_all_workspace_routes_render_without_placeholders() -> None:
     required_content = {
-        "agencies": ("기관/조직", "기관 추가", "조직/부서", "연결된 수집 소스"),
+        "agencies": ("기관/조직", "기관 추가", "데이터베이스 오류"),
         "sources": ("수집 소스", "엑셀 업로드", "URL 추가", "자료없음", "제외"),
         "runs": ("수집 이력", "RAW 저장", "확정 DB 반영", "추출 오류"),
         "contacts": ("연락처 DB", "엑셀 내보내기", "공식 출처", "최근 변경 이력"),
@@ -97,7 +97,7 @@ def test_workspace_templates_and_static_assets_are_registered() -> None:
 
     assert workspace_css.status_code == 200
     assert script.status_code == 200
-    assert "data-detail-target" in sources.text
+    assert 'data-modal="source-create"' in sources.text
     assert 'data-modal="excel-import"' in sources.text
     assert "workspace.css" not in dashboard.text
     assert "kpi-grid" in dashboard.text

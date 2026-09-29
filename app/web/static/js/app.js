@@ -67,4 +67,59 @@
   document.querySelectorAll('[aria-disabled="true"]').forEach((control) => {
     control.addEventListener("click", (event) => event.preventDefault());
   });
+
+  const jsonFromForm = (form) => {
+    const payload = {};
+    new FormData(form).forEach((value, key) => {
+      const cleaned = typeof value === "string" ? value.trim() : value;
+      payload[key] = cleaned === "" ? null : cleaned;
+    });
+    return payload;
+  };
+
+  document.querySelectorAll("[data-api-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const errorBox = form.querySelector("[data-form-error]");
+      try {
+        const response = await fetch(form.action, {
+          method: form.dataset.method || "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(jsonFromForm(form)),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "요청을 처리하지 못했습니다.");
+        window.location.reload();
+      } catch (error) {
+        if (errorBox) {
+          errorBox.textContent = error.message;
+          errorBox.hidden = false;
+        }
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-api-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const response = await fetch(button.dataset.apiAction, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: button.dataset.body || "{}",
+      });
+      if (response.ok) window.location.reload();
+    });
+  });
+
+  document.querySelectorAll("[data-agency-select]").forEach((agencySelect) => {
+    const orgSelect = agencySelect.form?.querySelector('[name="org_unit_id"]');
+    if (!orgSelect) return;
+    const filterUnits = () => {
+      orgSelect.querySelectorAll("[data-agency-id]").forEach((option) => {
+        option.hidden = option.dataset.agencyId !== agencySelect.value;
+      });
+      if (orgSelect.selectedOptions[0]?.hidden) orgSelect.value = "";
+    };
+    agencySelect.addEventListener("change", filterUnits);
+    filterUnits();
+  });
 })();

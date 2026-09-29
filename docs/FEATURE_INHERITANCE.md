@@ -1,33 +1,32 @@
 # PublicDB2 Feature Inheritance
 
-기준: PublicDB1 감사 HEAD `1319ae31ddf7234a1a8632271b5ff899006d47de`.
-이번 UI foundation에서는 아래 기능을 이식하거나 DB에 연결하지 않는다.
+기준: PublicDB1 감사 HEAD 1319ae31ddf7234a1a8632271b5ff899006d47de.
+03A는 legacy 의미와 검증된 로직을 선택적으로 옮겼으며 PublicDB1 runtime module이나
+production DB를 참조하지 않는다.
 
-분류는 `REUSE`, `REUSE_AFTER_VERIFICATION`, `NEW_IMPLEMENTATION`,
-`DO_NOT_INHERIT` 네 가지로만 한다.
-
-| PublicDB1 자산/기능 | 분류 | 이유 |
+| PublicDB1 자산/기능 | 03A 분류 | PublicDB2 위치 / 결정 |
 |---|---|---|
-| Agency, OrgUnit, Duty 기본 개념 | REUSE_AFTER_VERIFICATION | 제품의 핵심 데이터 계약이나 PublicDB2 관계 모델 확정 전 재검증 필요 |
-| Person / PersonAssignment | REUSE_AFTER_VERIFICATION | 모델은 있으나 기존 promotion apply가 사람·재직을 생성하지 않음 |
-| ContactPoint와 발견 후보 분리 | REUSE | 발견과 Master 확정을 분리하는 의미는 유지 |
-| Source, CrawlRun, Observation, SourceOccurrence | REUSE_AFTER_VERIFICATION | provenance 계약은 유효하나 Source-기관/부서 관계는 새 요구와 불일치 |
-| ChangeEvent, ChangeDetection, ContactHistory | REUSE_AFTER_VERIFICATION | 후보/이력 모델은 참고하되 승인·반영 workflow가 미완성 |
-| HTTP 단일 페이지 수집 로직 | REUSE_AFTER_VERIFICATION | 격리 테스트는 있으나 현장 실행 검증 근거가 없음 |
-| HTML 연락처·직원명부 추출 | REUSE_AFTER_VERIFICATION | 결정론적 로직과 테스트는 있으나 PublicDB2 연결 전 재검증 필요 |
-| Master preview/apply 서비스 | REUSE_AFTER_VERIFICATION | 원자적 경계는 참고하되 사람 처리와 review writer가 미완성 |
-| Source URL 정규화 | REUSE_AFTER_VERIFICATION | 검증 로직은 유용하지만 URL 전역 unique 계약은 그대로 계승 불가 |
-| 기관명 직접 입력 UI | NEW_IMPLEMENTATION | PublicDB1 웹 UI에는 없음 |
-| 기관/부서별 복수 URL 연결 | NEW_IMPLEMENTATION | Source에 부서 연결이 없고 URL이 전역 unique임 |
-| Excel URL 일괄 upload와 충돌 검토 | NEW_IMPLEMENTATION | 구현 없음 |
-| 단계별 상태와 자료없음 판정 | NEW_IMPLEMENTATION | 기존 Dashboard는 최신 CrawlRun 중심이라 추출/미지원 상태를 충분히 구분하지 못함 |
-| Source 제외·비활성·삭제 영향 workflow | NEW_IMPLEMENTATION | 사용자 UI/API 없음 |
-| 검토 후보 승인·유지·보류 UI와 writer | NEW_IMPLEMENTATION | 기존에는 pending 집계/후보 저장까지만 존재 |
-| PublicDB1 Dashboard HTML/CSS/JS | DO_NOT_INHERIT | PublicDB2 visual foundation을 새로 구성하며 legacy 화면을 복구하지 않음 |
-| 비활성 legacy 조직 탐색 UI | DO_NOT_INHERIT | 현재 활성 경로가 아니고 승인된 PublicDB2 설계가 아님 |
-| 지역 지도 placeholder와 가상 workflow | DO_NOT_INHERIT | 실제 기능 계약이나 검증 근거 없음 |
+| Agency, OrgUnit, Duty 모델 의미 | INHERITED_AND_ACTIVE | app/models/entities.py; PublicDB2 DB 소유 |
+| AgencyRegistry 이름 정규화·등록 규칙 | ADAPTED_AND_ACTIVE | app/services/agency_service.py; repository/API/UI 경계 추가 |
+| Person / PersonAssignment / ContactPoint | INHERITED_AND_ACTIVE | schema foundation 활성, 현재 UI writer는 STILL_PENDING |
+| Source URL validation/normalization | ADAPTED_AND_ACTIVE | app/services/normalization.py; fragment 제거, public host 검증 유지 |
+| legacy Source의 직접 Agency ownership | DO_NOT_INHERIT | 다중 context 요구와 충돌 |
+| Canonical Source | ADAPTED_AND_ACTIVE | 전역 unique normalized_url은 물리 URL identity만 소유 |
+| SourceBinding | NEW_PUBLICDB2 | Source와 Agency/optional OrgUnit 관계, context별 active/excluded 소유 |
+| SourceRegistry / SourceAdministrationService | ADAPTED_AND_ACTIVE | app/services/source_service.py; metadata-only transaction, HTTP 없음 |
+| CrawlRun / Observation / SourceOccurrence | INHERITED_AND_ACTIVE | provenance schema foundation; 실행 writer는 STILL_PENDING |
+| ChangeEvent / ChangeDetection / ContactHistory | INHERITED_AND_ACTIVE | 이력 schema foundation; review/apply는 STILL_PENDING |
+| SQLAlchemy base/session/config | ADAPTED_AND_ACTIVE | app/db, app/core; 독립 DB와 환경 override |
+| Alembic migration | NEW_PUBLICDB2 | migrations/versions/68ed1d36c20d_initial_publicdb2_core_schema.py |
+| 기관/부서/업무 API와 live UI | NEW_PUBLICDB2 | app/api/agencies.py, /agencies |
+| SourceBinding API와 live UI | NEW_PUBLICDB2 | app/api/sources.py, /sources |
+| binding 제외·복구 | NEW_PUBLICDB2 | 물리 삭제 없이 binding 상태와 사유/시각 보존 |
+| HTTP 수집·RAW·추출·Master promotion | STILL_PENDING | 03A 실행 경로 없음 |
+| Excel URL import와 충돌 검토 | STILL_PENDING | 기존 정적 preview만 유지 |
+| Dashboard/runs/contacts/review/settings live read model | STILL_PENDING | 명시적 fixture/demo 유지 |
+| PublicDB1 Dashboard/UI/지도 placeholder | DO_NOT_INHERIT | PublicDB2 동결 UI 계약과 무관 |
 | PublicDB1 production DB와 RAW 파일 | DO_NOT_INHERIT | 직접 연결·복사·import 금지 |
 
-`REUSE`는 의미 계약의 유지이며 코드 전체 복사를 뜻하지 않는다.
-`REUSE_AFTER_VERIFICATION`은 현재 코드, 격리 테스트, 실제 운영 검증을 분리해 확인한
-뒤 PublicDB2 경계에 맞게 가져온다는 뜻이다.
+INHERITED_AND_ACTIVE는 schema/domain 의미가 PublicDB2 코드와 migration에 포함됐다는
+뜻이며, 해당 entity의 모든 writer나 수집 실행이 활성화됐다는 뜻은 아니다.
+ADAPTED_AND_ACTIVE는 PublicDB2 계약에 맞게 변경되어 PublicDB2가 소유한다.
