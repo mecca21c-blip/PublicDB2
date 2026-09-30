@@ -16,9 +16,13 @@ dependencies = [
     "uvicorn>=0.35,<1",
     "argon2-cffi>=23.1,<26",
     "itsdangerous>=2.2,<3",
+    "tzdata>=2025.2,<2027",
 ]
 
 [project.optional-dependencies]
+desktop = [
+    "pywebview>=5.4,<7",
+]
 dev = [
     "pytest>=9,<10",
 ]

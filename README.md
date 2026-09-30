@@ -1,5 +1,31 @@
 # PublicDB2
 
+## Desktop and server launch
+
+For a normal Windows desktop session, install the desktop extra once and then
+double-click `PublicDB2.cmd` in the project root.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[desktop]"
+```
+
+The desktop launcher starts an internal loopback-only Uvicorn server on an
+available port, waits for `/health` and `/ready`, and opens one PublicDB2
+window. Closing that window stops the server owned by the launcher. It does not
+install packages or run database migrations automatically. For startup
+diagnostics with a console, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_desktop.py
+```
+
+For development or independent web-server operation, continue to use the
+existing server launcher:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web.py
+```
+
 PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직, 업무, 사람, 연락처를
 공식 출처와 이력에 연결해 관리하는 로컬 운영 도구다.
 
