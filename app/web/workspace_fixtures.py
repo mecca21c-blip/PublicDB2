@@ -57,21 +57,6 @@ SOURCES_FIXTURE: Final = {
     ),
 }
 
-RUNS_FIXTURE: Final = {
-    "items": (
-        {"id": "run-a", "time": "오늘 14:20", "agency": "한빛시청", "source": "직원 안내 페이지", "result": "추출 성공", "tone": "success", "found": 18, "duration": "4.2초"},
-        {"id": "run-b", "time": "오늘 12:36", "agency": "한빛시청", "source": "민원 업무 안내", "result": "대상 자료 없음", "tone": "info", "found": 0, "duration": "2.8초"},
-        {"id": "run-c", "time": "오늘 11:54", "agency": "새봄환경공단", "source": "환경사업부 연락처", "result": "접속 오류", "tone": "danger", "found": 0, "duration": "15.0초"},
-        {"id": "run-d", "time": "어제 16:08", "agency": "누리문화재단", "source": "조직도", "result": "추출 오류", "tone": "warning", "found": 0, "duration": "3.6초"},
-    ),
-    "details": (
-        {"id": "run-a", "title": "한빛시청 · 직원 안내 페이지", "reason": "-", "stages": (("접속", "성공", "success"), ("RAW 저장", "완료", "success"), ("추출", "성공", "success"), ("발견 결과", "18건", "info"), ("확정 DB 반영", "미반영", "neutral"))},
-        {"id": "run-b", "title": "한빛시청 · 민원 업무 안내", "reason": "정상 확인 후 대상 자료가 발견되지 않았습니다.", "stages": (("접속", "성공", "success"), ("RAW 저장", "완료", "success"), ("추출", "성공", "success"), ("발견 결과", "0건", "info"), ("확정 DB 반영", "해당 없음", "neutral"))},
-        {"id": "run-c", "title": "새봄환경공단 · 환경사업부 연락처", "reason": "요청 제한 시간 안에 응답이 도착하지 않았습니다.", "stages": (("접속", "오류", "danger"), ("RAW 저장", "미수행", "neutral"), ("추출", "미수행", "neutral"), ("발견 결과", "미확인", "neutral"), ("확정 DB 반영", "미반영", "neutral"))},
-        {"id": "run-d", "title": "누리문화재단 · 조직도", "reason": "접속과 RAW 저장은 성공했지만 지원되는 구조를 찾지 못했습니다.", "stages": (("접속", "성공", "success"), ("RAW 저장", "완료", "success"), ("추출", "오류", "danger"), ("발견 결과", "미확인", "neutral"), ("확정 DB 반영", "미반영", "neutral"))},
-    ),
-}
-
 CONTACTS_FIXTURE: Final = {
     "items": (
         {"id": "contact-a", "agency": "한빛시청", "department": "민원서비스과", "task": "통합 민원 안내", "person": "-", "phone": "02-0000-1100", "email": "civil@example.test"},
@@ -114,7 +99,6 @@ SETTINGS_FIXTURE: Final = {
 WORKSPACE_FIXTURES: Final = {
     "agencies": AGENCIES_FIXTURE,
     "sources": SOURCES_FIXTURE,
-    "runs": RUNS_FIXTURE,
     "contacts": CONTACTS_FIXTURE,
     "review": REVIEW_FIXTURE,
     "settings": SETTINGS_FIXTURE,

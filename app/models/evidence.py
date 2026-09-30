@@ -11,7 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.common import UTCDateTime, UUIDPrimaryKeyMixin, enum_type, utc_now
-from app.models.enums import ChangeEventType, EntityType, ReviewStatus, RunStatus, StageStatus
+from app.models.enums import (
+    CandidateType, ChangeEventType, DetectionMethod, DirectoryRecordType,
+    EntityType, ExtractionStatus, ReviewStatus, RunStatus, StageStatus,
+)
 
 
 class CrawlRun(UUIDPrimaryKeyMixin, Base):
@@ -25,6 +28,7 @@ class CrawlRun(UUIDPrimaryKeyMixin, Base):
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     records_observed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     source: Mapped["Source"] = relationship("Source", back_populates="crawl_runs")
@@ -40,6 +44,10 @@ class Observation(UUIDPrimaryKeyMixin, Base):
     page_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     artifact_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    declared_charset: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    response_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    final_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     raw_text_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     structured_payload: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
@@ -47,6 +55,67 @@ class Observation(UUIDPrimaryKeyMixin, Base):
     crawl_run: Mapped[CrawlRun] = relationship("CrawlRun", back_populates="observations")
     source: Mapped["Source"] = relationship("Source")
     occurrences: Mapped[list["SourceOccurrence"]] = relationship("SourceOccurrence", back_populates="observation")
+    extraction_runs: Mapped[list["ExtractionRun"]] = relationship("ExtractionRun", back_populates="observation")
+
+
+class ExtractionRun(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "extraction_runs"
+    __table_args__ = (
+        Index("ix_extraction_runs_identity", "observation_id", "extractor_name", "extractor_version"),
+    )
+
+    observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observations.id"), nullable=False, index=True)
+    extractor_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    extractor_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[ExtractionStatus] = mapped_column(enum_type(ExtractionStatus), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    candidates_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
+
+    observation: Mapped[Observation] = relationship("Observation", back_populates="extraction_runs")
+    candidates: Mapped[list["ExtractedContactCandidate"]] = relationship("ExtractedContactCandidate", back_populates="extraction_run")
+    directory_records: Mapped[list["ExtractedDirectoryRecord"]] = relationship("ExtractedDirectoryRecord", back_populates="extraction_run")
+
+
+class ExtractedContactCandidate(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "extracted_contact_candidates"
+
+    extraction_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extraction_runs.id"), nullable=False, index=True)
+    observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observations.id"), nullable=False, index=True)
+    candidate_type: Mapped[CandidateType] = mapped_column(enum_type(CandidateType), nullable=False, index=True)
+    raw_value: Mapped[str] = mapped_column(String(500), nullable=False)
+    normalized_value: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    context_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_locator: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    detection_method: Mapped[DetectionMethod] = mapped_column(enum_type(DetectionMethod), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
+
+    extraction_run: Mapped[ExtractionRun] = relationship("ExtractionRun", back_populates="candidates")
+    observation: Mapped[Observation] = relationship("Observation")
+
+
+class ExtractedDirectoryRecord(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "extracted_directory_records"
+
+    extraction_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("extraction_runs.id"), nullable=False, index=True)
+    observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observations.id"), nullable=False, index=True)
+    record_type: Mapped[DirectoryRecordType] = mapped_column(enum_type(DirectoryRecordType), nullable=False, index=True)
+    org_unit_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duty_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    person_name_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fax_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    row_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_locator: Mapped[str] = mapped_column(String(1000), nullable=False)
+    structured_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
+
+    extraction_run: Mapped[ExtractionRun] = relationship("ExtractionRun", back_populates="directory_records")
+    observation: Mapped[Observation] = relationship("Observation")
 
 
 class SourceOccurrence(UUIDPrimaryKeyMixin, Base):

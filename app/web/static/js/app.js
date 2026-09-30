@@ -110,6 +110,37 @@
     });
   });
 
+  document.querySelectorAll("[data-collect-source]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const sourceId = button.dataset.collectSource;
+      const related = document.querySelectorAll('[data-collect-source="' + sourceId + '"]');
+      const errorBox = button.closest(".detail-content")?.querySelector("[data-collect-error]");
+      related.forEach((item) => {
+        item.dataset.collectWasDisabled = String(item.disabled);
+        item.disabled = true;
+        item.dataset.originalText ||= item.textContent;
+        item.textContent = "수집 중";
+      });
+      if (errorBox) errorBox.hidden = true;
+      try {
+        const response = await fetch("/api/sources/" + sourceId + "/collect", {method: "POST"});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "수집을 완료하지 못했습니다.");
+        window.location.reload();
+      } catch (error) {
+        related.forEach((item) => {
+          item.disabled = item.dataset.collectWasDisabled === "true";
+          item.textContent = item.dataset.originalText || "수집";
+          delete item.dataset.collectWasDisabled;
+        });
+        if (errorBox) {
+          errorBox.textContent = error.message;
+          errorBox.hidden = false;
+        }
+      }
+    });
+  });
+
   document.querySelectorAll("[data-agency-select]").forEach((agencySelect) => {
     const orgSelect = agencySelect.form?.querySelector('[name="org_unit_id"]');
     if (!orgSelect) return;

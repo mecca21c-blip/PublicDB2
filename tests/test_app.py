@@ -63,7 +63,7 @@ def test_all_workspace_routes_render_without_placeholders() -> None:
     required_content = {
         "agencies": ("기관/조직", "기관 추가", "데이터베이스 오류"),
         "sources": ("수집 소스", "엑셀 업로드", "URL 추가", "자료없음", "제외"),
-        "runs": ("수집 이력", "RAW 저장", "확정 DB 반영", "추출 오류"),
+        "runs": ("수집 이력", "PublicDB2 DB", "조건에 맞는 수집 이력이 없습니다"),
         "contacts": ("연락처 DB", "엑셀 내보내기", "공식 출처", "최근 변경 이력"),
         "review": ("변경/검토", "CURRENT VALUE", "DISCOVERED VALUE", "반영", "보류"),
         "settings": ("설정", "데이터 저장", "웹 수집 정책", "저장"),
@@ -87,7 +87,7 @@ def test_workspace_templates_and_static_assets_are_registered() -> None:
         "review",
         "settings",
     }
-    assert set(WORKSPACE_FIXTURES) == set(WORKSPACE_PAGES)
+    assert set(WORKSPACE_FIXTURES) == set(WORKSPACE_PAGES) - {"runs"}
 
     with TestClient(create_app()) as client:
         workspace_css = client.get("/static/css/workspace.css")

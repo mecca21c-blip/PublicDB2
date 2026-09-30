@@ -159,7 +159,13 @@ class SourceService:
 
     def _latest_run(self, source_id: uuid.UUID) -> CrawlRun | None:
         return self.session.scalar(
-            select(CrawlRun).where(CrawlRun.source_id == source_id).order_by(CrawlRun.started_at.desc()).limit(1)
+            select(CrawlRun)
+            .where(
+                CrawlRun.source_id == source_id,
+                CrawlRun.status.in_((RunStatus.SUCCESS, RunStatus.PARTIAL, RunStatus.FAILED)),
+            )
+            .order_by(CrawlRun.started_at.desc())
+            .limit(1)
         )
 
     def binding_projection(self, binding: SourceBinding) -> dict:
@@ -196,5 +202,20 @@ class SourceService:
             "tone": tone,
             "error": (run.error_summary if run else None) or binding.exclusion_reason or "-",
             "active": binding.active,
+            "collection_supported": binding.source.collection_method.value == "WEB_PAGE",
+            "collection_enabled": (
+                binding.active
+                and binding.source.active
+                and binding.source.collection_method.value == "WEB_PAGE"
+            ),
+            "collection_disabled_reason": (
+                "제외된 연결입니다."
+                if not binding.active
+                else "지원하지 않는 수집 방식입니다."
+                if binding.source.collection_method.value != "WEB_PAGE"
+                else "비활성 소스입니다."
+                if not binding.source.active
+                else None
+            ),
             "excluded_at": binding.excluded_at.isoformat() if binding.excluded_at else None,
         }

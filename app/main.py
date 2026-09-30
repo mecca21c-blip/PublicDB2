@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Callable
 import uuid
@@ -13,12 +14,15 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.agencies import router as agencies_api
+from app.api.collection import router as collection_api
 from app.api.sources import router as sources_api
 from app.core.config import runtime_paths
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
-from app.models import AgencyType, OrgUnit
+from app.models import AgencyType, OrgUnit, RunStatus
 from app.services.agency_service import AgencyService
+from app.services.collection_service import CollectionCoordinator, CollectionService
+from app.services.run_service import RunService
 from app.services.source_service import SourceService
 from app.services.source_import_service import PreviewStore
 
@@ -90,8 +94,16 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     application.state.session_factory = create_session_factory(engine)
     application.state.runtime_paths = runtime_paths(project_root)
     application.state.source_import_previews = PreviewStore(application.state.runtime_paths)
+    application.state.collection_coordinator = CollectionCoordinator()
+    application.state.collection_service_factory = lambda session: CollectionService(
+        session,
+        project_root=application.state.runtime_paths.project_root,
+        raw_root=application.state.runtime_paths.raw_root,
+        coordinator=application.state.collection_coordinator,
+    )
     application.include_router(agencies_api)
     application.include_router(sources_api)
+    application.include_router(collection_api)
     application.mount(
         "/static",
         StaticFiles(directory=str(WEB_ROOT / "static")),
@@ -141,8 +153,54 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             session.close()
         return templates.TemplateResponse(request=request, name='sources.html', context=_page_context('sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
 
+    @application.get('/runs', response_class=HTMLResponse, name='runs')
+    def runs(
+        request: Request,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        agency_id: str | None = None,
+        status: RunStatus | None = None,
+        search: str | None = None,
+    ) -> HTMLResponse:
+        session = application.state.session_factory()
+        try:
+            agencies_page = AgencyService(session).list_page()
+            workspace = RunService(session).list_page(
+                date_from=date_from,
+                date_to=date_to,
+                agency_id=_uuid_or_none(agency_id),
+                status=status,
+                search=search,
+            )
+            db_error = None
+        except SQLAlchemyError:
+            session.rollback()
+            agencies_page = {'items': ()}
+            workspace = {'items': (), 'details': ()}
+            db_error = '수집 이력을 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
+        finally:
+            session.close()
+        return templates.TemplateResponse(
+            request=request,
+            name='runs.html',
+            context=_page_context(
+                'runs',
+                workspace=workspace,
+                db_error=db_error,
+                agencies=agencies_page['items'],
+                run_statuses=RunStatus,
+                filters={
+                    'date_from': date_from.isoformat() if date_from else '',
+                    'date_to': date_to.isoformat() if date_to else '',
+                    'agency_id': agency_id or '',
+                    'status': status.value if status else '',
+                    'search': search or '',
+                },
+            ),
+        )
+
     for route_key, template_name in WORKSPACE_PAGES.items():
-        if route_key in {'agencies', 'sources'}:
+        if route_key in {'agencies', 'sources', 'runs'}:
             continue
         application.add_api_route(
             f"/{route_key}",

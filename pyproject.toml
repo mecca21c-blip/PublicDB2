@@ -8,7 +8,9 @@ dependencies = [
     "SQLAlchemy>=2.0,<2.1",
     "Alembic>=1.20,<2",
     "fastapi>=0.116,<1",
+    "httpx>=0.28,<1",
     "jinja2>=3.1,<4",
+    "beautifulsoup4>=4.13,<5",
     "openpyxl>=3.1,<4",
     "python-multipart>=0.0.20,<1",
     "uvicorn>=0.35,<1",
@@ -16,7 +18,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "httpx>=0.28,<1",
     "pytest>=9,<10",
 ]
 

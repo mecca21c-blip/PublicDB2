@@ -79,6 +79,29 @@ class StageStatus(str, Enum):
     SKIPPED = "SKIPPED"
 
 
+class ExtractionStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+
+class CandidateType(str, Enum):
+    EMAIL = "EMAIL"
+    PHONE = "PHONE"
+    FAX = "FAX"
+
+
+class DetectionMethod(str, Enum):
+    TEXT_PATTERN = "TEXT_PATTERN"
+    MAILTO = "MAILTO"
+    TEL_LINK = "TEL_LINK"
+
+
+class DirectoryRecordType(str, Enum):
+    STAFF_DIRECTORY_ROW = "STAFF_DIRECTORY_ROW"
+
+
 class EntityType(str, Enum):
     AGENCY = "AGENCY"
     ORG_UNIT = "ORG_UNIT"

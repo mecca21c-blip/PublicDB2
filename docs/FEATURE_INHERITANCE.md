@@ -14,16 +14,25 @@ production DB를 참조하지 않는다.
 | Canonical Source | ADAPTED_AND_ACTIVE | 전역 unique normalized_url은 물리 URL identity만 소유 |
 | SourceBinding | NEW_PUBLICDB2 | Source와 Agency/optional OrgUnit 관계, context별 active/excluded 소유 |
 | SourceRegistry / SourceAdministrationService | ADAPTED_AND_ACTIVE | app/services/source_service.py; metadata-only transaction, HTTP 없음 |
-| CrawlRun / Observation / SourceOccurrence | INHERITED_AND_ACTIVE | provenance schema foundation; 실행 writer는 STILL_PENDING |
+| CrawlRun / Observation | ADAPTED_AND_ACTIVE | app/models/evidence.py; Source 소유 stage lifecycle과 HTTP/RAW metadata 활성 |
+| SourceOccurrence | INHERITED_AND_ACTIVE | schema foundation만 유지; discovery promotion writer는 STILL_PENDING |
 | ChangeEvent / ChangeDetection / ContactHistory | INHERITED_AND_ACTIVE | 이력 schema foundation; review/apply는 STILL_PENDING |
 | SQLAlchemy base/session/config | ADAPTED_AND_ACTIVE | app/db, app/core; 독립 DB와 환경 override |
-| Alembic migration | NEW_PUBLICDB2 | migrations/versions/68ed1d36c20d_initial_publicdb2_core_schema.py |
+| Alembic migration | NEW_PUBLICDB2 | 68ed1d36c20d core, 2dd871292d0a import, 7c1f04a04a01 collection/extraction |
 | 기관/부서/업무 API와 live UI | NEW_PUBLICDB2 | app/api/agencies.py, /agencies |
 | SourceBinding API와 live UI | NEW_PUBLICDB2 | app/api/sources.py, /sources |
 | binding 제외·복구 | NEW_PUBLICDB2 | 물리 삭제 없이 binding 상태와 사유/시각 보존 |
-| HTTP 수집·RAW·추출·Master promotion | STILL_PENDING | 03A 실행 경로 없음 |
+| HTTPFetcher | ADAPTED_AND_ACTIVE | app/collectors/http_fetcher.py; redirect별 public-host 재검증과 timeout/size 제한 |
+| RawArtifactStore | ADAPTED_AND_ACTIVE | app/services/raw_artifact_store.py; PublicDB2 project-relative portable RAW 경로 |
+| CollectionService/pipeline | ADAPTED_AND_ACTIVE | app/services/collection_service.py; canonical Source 단일 action과 stage 상태 계약 |
+| artifact validation | ADAPTED_AND_ACTIVE | app/services/artifact_validation.py; RAW stage, 경로 경계, hash, type, size 재검증 |
+| HTML contact extractor | INHERITED_AND_ACTIVE | app/collectors/html_contact_extractor.py; 결정적 PHONE/EMAIL/FAX discovery |
+| staff-directory extractor | INHERITED_AND_ACTIVE | app/collectors/staff_directory_extractor.py; header 기반 구조 행 discovery |
+| extraction persistence | ADAPTED_AND_ACTIVE | ExtractionRun, ExtractedContactCandidate, ExtractedDirectoryRecord |
+| Master promotion / change detection / review apply | STILL_PENDING | 04A discovery는 확정 entity와 이력을 쓰지 않음 |
 | Excel/CSV URL import와 충돌 검토 | NEW_PUBLICDB2 | PREVIEW/CONFIRM, 7개 분류, stale DB 재검증과 파일 audit 활성 |
-| Dashboard/runs/contacts/review/settings live read model | STILL_PENDING | 명시적 fixture/demo 유지 |
+| /runs live read model | NEW_PUBLICDB2 | app/services/run_service.py; SourceBinding 기반 filter와 다중 context 표시 |
+| Dashboard/contacts/review/settings live read model | STILL_PENDING | 기존 fixture/demo 유지 |
 | PublicDB1 Dashboard/UI/지도 placeholder | DO_NOT_INHERIT | PublicDB2 동결 UI 계약과 무관 |
 | PublicDB1 production DB와 RAW 파일 | DO_NOT_INHERIT | 직접 연결·복사·import 금지 |
 
@@ -34,7 +43,7 @@ ADAPTED_AND_ACTIVE는 PublicDB2 계약에 맞게 변경되어 PublicDB2가 소�
 ## 03B portable runtime
 
 app/core/config.py가 project-root 기반 DB, RAW, import, export, temp, log, backup,
-config 경로를 소유한다. source_import_service.py는 03A SourceService를 transaction
+config 경로를 소유한다. source_import_service.py는 SourceService를 transaction
 내부에서 재사용하며 canonical URL uniqueness와 binding scope를 우회하지 않는다.
 source_import_logs는 확정 파일의 원본명, project-relative 경로, SHA-256과 결과만
-보존한다. CollectionService, CrawlRun 생성과 외부 HTTP는 STILL_PENDING이다.
+보존한다. 04A CollectionService도 같은 project-root 경계 아래 RAW만 소유한다.

@@ -5,9 +5,10 @@
 ## 제품 목적과 경계
 
 PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직/부서, 업무, 사람/재직과
-연락처를 출처 및 변경 근거와 함께 관리하는 로컬 운영 도구다. 03A부터 PublicDB2
-소유 DB와 기관/부서/업무 및 수집 소스 등록·조회가 활성화됐다. 수집, 추출,
-Excel/CSV Source import가 활성화됐다. 수집, 추출과 검토 반영은 아직 활성화하지 않는다.
+연락처를 출처 및 변경 근거와 함께 관리하는 로컬 운영 도구다. PublicDB2 소유 DB,
+기관/부서/업무와 수집 소스 관리, Excel/CSV Source import, 명시적 WEB_PAGE
+수집·RAW 증거·결정적 발견 후보 추출과 실제 수집 이력이 활성화됐다. 발견 후보의
+확정 연락처 반영과 변경/검토 처리는 아직 활성화하지 않는다.
 
 PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통째로
 복사하거나 직접 연결하지 않으며, 확인된 의미와 재검증 가능한 로직만 별도 Goal에서
@@ -58,6 +59,24 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 발견 데이터는 수집·추출로 관찰된 후보이고, 확정 데이터는 사용자 검토 또는 승인된
 규칙을 거친 운영값이다. 두 값은 UI와 저장 계약에서 분리한다.
 
+## 04A Live Collection Contract
+
+- canonical Source가 CrawlRun과 Observation을 소유한다. SourceBinding은 기관과
+  선택적 부서 context만 소유하며 binding 수만큼 같은 URL을 다시 수집하지 않는다.
+- 사용자의 단일 수집 action이 안전한 HTTP GET, RAW 저장, Observation, 연락처와
+  직원명부 추출, 발견 후보 저장, CrawlRun 확정을 연속 수행한다.
+- 활성 지원 방식은 CollectionMethod.WEB_PAGE의 등록된 단일 URL뿐이다. API,
+  WEB_CRAWL, FILE, DOCUMENT와 자동 실행·scheduler는 비활성이다.
+- RAW는 PROJECT_ROOT/data/raw 아래 날짜/source/run 경로에 atomic 저장하고 DB에는
+  project-relative POSIX 경로, SHA-256과 응답 byte 수만 기록한다.
+- 연락처 후보와 직원명부 행은 discovery data다. ContactPoint, Person,
+  PersonAssignment, SourceOccurrence, ChangeEvent와 ContactHistory를 생성하지 않는다.
+- 두 extractor가 모두 성공하고 발견 수가 1건 이상이면 정상, 모두 성공하고 0건이면
+  자료없음이다. 접속/RAW 실패, partial extraction, 미지원 content는 오류다.
+  binding 제외 상태는 이 공통 Source 실행 상태보다 우선한다.
+- /runs는 CrawlRun/Observation/ExtractionRun의 실 DB projection이며 기관 filter는
+  SourceBinding을 통해 해석한다. 여러 binding은 요약과 전체 context로 표시한다.
+
 ## PORTABLE PROJECT CONTRACT
 
 PublicDB2 설치 폴더가 application과 data의 이동 단위다. 기본 runtime 경로는 모두
@@ -94,5 +113,6 @@ project-relative 저장 경로, SHA-256, 확정 시각과 결과 집계를 기�
 - 반영·유지·보류: 변경/검토 기능이 소유하며 이력 보존을 전제로 한다.
 - 운영 설정 저장: 설정 기능이 소유한다.
 
-기관/부서/업무, SourceBinding 등록·수정·제외·복구와 03B Excel/CSV import만
-활성화한다. 수집, 검토 반영 및 설정 action은 후속 Goal에서 연결한다.
+기관/부서/업무, SourceBinding 등록·수정·제외·복구, Excel/CSV import와 04A
+WEB_PAGE 수집·RAW·발견 추출·수집 이력을 활성화한다. 확정값 반영, 변경/검토,
+Dashboard 실집계와 설정 action은 현재 범위 밖이다.
