@@ -25,6 +25,10 @@ HTTP_TIMEOUT_SECONDS = 20.0
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 MAX_REDIRECTS = 5
 PUBLICDB_USER_AGENT = "PublicDB2/0.1 (+https://publicdb.rhythmus.co.kr)"
+SESSION_SECRET_ENV = 'PUBLICDB2_SESSION_SECRET'
+ALLOWED_HOSTS_ENV = 'PUBLICDB2_ALLOWED_HOSTS'
+SECURE_COOKIE_ENV = 'PUBLICDB2_SECURE_COOKIE'
+SESSION_MAX_AGE_ENV = 'PUBLICDB2_SESSION_MAX_AGE_SECONDS'
 
 
 @dataclass(frozen=True)
@@ -60,3 +64,21 @@ def get_database_url() -> str:
     if configured:
         return configured
     return f"sqlite+pysqlite:///{DEFAULT_DATABASE_PATH.as_posix()}"
+
+
+def allowed_hosts() -> list[str]:
+    configured = os.getenv(ALLOWED_HOSTS_ENV)
+    values = configured.split(',') if configured else ['localhost', '127.0.0.1', 'testserver']
+    return [value.strip() for value in values if value.strip() and value.strip() != '*']
+
+
+def secure_cookie_enabled() -> bool:
+    return os.getenv(SECURE_COOKIE_ENV, '').strip().casefold() in {'1', 'true', 'yes', 'on'}
+
+
+def session_max_age_seconds() -> int:
+    try:
+        value = int(os.getenv(SESSION_MAX_AGE_ENV, '28800'))
+    except ValueError:
+        value = 28800
+    return min(max(value, 300), 86400)

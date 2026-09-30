@@ -18,7 +18,7 @@ production DB를 참조하지 않는다.
 | SourceOccurrence | INHERITED_AND_ACTIVE | app/services/master_promotion_apply_service.py와 review_service.py가 idempotent provenance 기록 |
 | ChangeEvent / ChangeDetection / ContactHistory | ADAPTED_AND_ACTIVE | app/models/evidence.py; baseline/change/review/contact temporal contract 활성 |
 | SQLAlchemy base/session/config | ADAPTED_AND_ACTIVE | app/db, app/core; 독립 DB와 환경 override |
-| Alembic migration | NEW_PUBLICDB2 | core/import/04A에 이어 9b2d04b04b01 confirmed review workflow |
+| Alembic migration | NEW_PUBLICDB2 | 9b2d04b04b01 뒤 a5c105a05a01 users/operational settings |
 | 기관/부서/업무 API와 live UI | NEW_PUBLICDB2 | app/api/agencies.py, /agencies |
 | SourceBinding API와 live UI | NEW_PUBLICDB2 | app/api/sources.py, /sources |
 | binding 제외·복구 | NEW_PUBLICDB2 | 물리 삭제 없이 binding 상태와 사유/시각 보존 |
@@ -38,7 +38,11 @@ production DB를 참조하지 않는다.
 | Excel/CSV URL import와 충돌 검토 | NEW_PUBLICDB2 | PREVIEW/CONFIRM, 7개 분류, stale DB 재검증과 파일 audit 활성 |
 | /runs live read model | NEW_PUBLICDB2 | app/services/run_service.py; SourceBinding 기반 filter와 다중 context 표시 |
 | /contacts와 /review live read model | NEW_PUBLICDB2 | fixture 비활성, ContactPoint/DetectedChangeCandidate 실 DB 소유 |
-| Dashboard/settings live read model | STILL_PENDING | 기존 fixture/demo 유지 |
+| Dashboard live read model | NEW_PUBLICDB2 | app/services/dashboard_service.py; KPI/recent 6/7-day/review 5 실 DB |
+| Typed operational Settings | NEW_PUBLICDB2 | OperationalSettings/SettingsService; 다음 collection action부터 반영 |
+| Application users/roles | NEW_PUBLICDB2 | Argon2, signed portable session, ADMIN/OPERATOR/VIEWER, last-admin guard |
+| Confirmed-contact XLSX export | NEW_PUBLICDB2 | ContactPoint only, current filters, provenance URL, bounded portable path |
+| Health/readiness/server boundary | NEW_PUBLICDB2 | minimal health, DB+revision ready, hosts/headers/rotation/local proxy trust |
 | PublicDB1 Dashboard/UI/지도 placeholder | DO_NOT_INHERIT | PublicDB2 동결 UI 계약과 무관 |
 | PublicDB1 production DB와 RAW 파일 | DO_NOT_INHERIT | 직접 연결·복사·import 금지 |
 

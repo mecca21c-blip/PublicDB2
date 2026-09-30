@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
-from app.main import create_app
+from tests.support import regression_app
 from app.models import (
     AgencyType, CandidateType, ChangeDetection, ChangeEvent, ChangeEventType,
     ContactHistory, ContactPoint, ContactType, DetectionMethod, DetectedChangeCandidate,
@@ -318,7 +318,7 @@ def test_generic_candidates_context_review_keep_defer_and_later_approve(db):
     assert blocked is not None and not blocked.actionable
     with pytest.raises(ReviewConflict):
         ReviewService(session).approve(blocked.id)
-    with TestClient(create_app(url)) as client:
+    with TestClient(regression_app(url)) as client:
         page = client.get(
             f"/review?agency_id={agency_id}&review_status=PENDING_REVIEW"
             "&change_type=OTHER&search=CONTEXT_REQUIRED"
@@ -350,7 +350,7 @@ def test_contacts_review_routes_filters_source_and_no_discovery_leak(db, monkeyp
     ))
     session.commit()
     monkeypatch.setattr(socket, "create_connection", lambda *args, **kwargs: pytest.fail("external network"))
-    with TestClient(create_app(url)) as client:
+    with TestClient(regression_app(url)) as client:
         contacts = client.get("/contacts")
         searched = client.get("/contacts?search=Search+Agency")
         phones = client.get("/contacts?contact_type=PHONE")
@@ -419,7 +419,7 @@ def test_stored_run_api_promotion_coverage_and_future_detection_hook(db):
     url, session = db
     agency_id, source_id, _ = add_context(session)
     baseline, _, _ = add_extraction(session, source_id, email=None)
-    with TestClient(create_app(url)) as client:
+    with TestClient(regression_app(url)) as client:
         run_page = client.get("/runs")
         assert 'data-master-action="promote"' in run_page.text
         preview = client.get(f"/api/extractions/{baseline}/promotion-preview")

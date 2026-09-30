@@ -127,6 +127,12 @@ class ReviewStatus(str, Enum):
     DEFERRED = "DEFERRED"
 
 
+class UserRole(str, Enum):
+    ADMIN = 'ADMIN'
+    OPERATOR = 'OPERATOR'
+    VIEWER = 'VIEWER'
+
+
 class ChangeEventType(str, Enum):
     ENTITY_ADDED = "ENTITY_ADDED"
     ENTITY_CHANGED = "ENTITY_CHANGED"

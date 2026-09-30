@@ -5,13 +5,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{% block title %}PublicDB2{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/components.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
   {% block styles %}{% endblock %}
 </head>
-<body>
+<body data-role="{{ current_user.role.value if current_user else '' }}">
   <svg class="svg-sprite" aria-hidden="true">
     <symbol id="icon-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
     <symbol id="icon-building" viewBox="0 0 24 24"><path d="M4 21h16M6 21V8l6-4 6 4v13M9 11h1m4 0h1m-6 4h1m4 0h1m-4 6v-3h2v3"/></symbol>
@@ -37,16 +38,18 @@
 
       <nav class="sidebar-nav" aria-label="주요 메뉴">
         {% for item in navigation %}
+        {% if item.key != 'settings' or current_user.role.value == 'ADMIN' %}
         <a class="nav-link{% if active_page == item.key %} is-active{% endif %}" href="{{ item.href }}"{% if active_page == item.key %} aria-current="page"{% endif %}>
           {{ icon(item.icon, 21) }}
           <span>{{ item.label }}</span>
         </a>
+        {% endif %}
         {% endfor %}
       </nav>
 
       <div class="sidebar-status">
         <span class="connection-dot" aria-hidden="true"></span>
-        <span><strong>데이터 연결 전</strong></span>
+        <span><strong>운영 데이터 연결</strong></span>
       </div>
     </aside>
 
@@ -57,9 +60,8 @@
           <input type="search" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." readonly aria-label="통합 검색 (읽기 전용)">
         </div>
         <div class="header-actions">
-          <button class="button button--primary quick-register" type="button" aria-disabled="true" title="빠른 등록은 다음 단계에서 연결됩니다">
-            {{ icon('plus', 18) }}<span>빠른 등록</span>
-          </button>
+          {% if current_user %}<span class="muted-cell">{{ current_user.display_name or current_user.username }} · {{ current_user.role.value }}</span>
+          <button class="button button--secondary" type="button" data-logout>로그아웃</button>{% endif %}
         </div>
       </header>
 

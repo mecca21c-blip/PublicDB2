@@ -1,6 +1,8 @@
 (() => {
   "use strict";
   document.documentElement.classList.add("js-ready");
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  const csrfHeaders = (extra = {}) => ({...extra, "X-CSRF-Token": csrfToken});
 
   const activateDetail = (row) => {
     const workspace = row.closest(".workspace-layout");
@@ -84,7 +86,7 @@
       try {
         const response = await fetch(form.action, {
           method: form.dataset.method || "POST",
-          headers: {"Content-Type": "application/json"},
+          headers: csrfHeaders({"Content-Type": "application/json"}),
           body: JSON.stringify(jsonFromForm(form)),
         });
         const result = await response.json();
@@ -103,7 +105,7 @@
     button.addEventListener("click", async () => {
       const response = await fetch(button.dataset.apiAction, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: csrfHeaders({"Content-Type": "application/json"}),
         body: button.dataset.body || "{}",
       });
       if (response.ok) window.location.reload();
@@ -123,7 +125,7 @@
       });
       if (errorBox) errorBox.hidden = true;
       try {
-        const response = await fetch("/api/sources/" + sourceId + "/collect", {method: "POST"});
+        const response = await fetch("/api/sources/" + sourceId + "/collect", {method: "POST", headers: csrfHeaders()});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "수집을 완료하지 못했습니다.");
         window.location.reload();
@@ -177,7 +179,7 @@
     };
     const discardPreview = () => {
       if (!previewToken) return;
-      fetch("/api/source-bindings/imports/" + previewToken, {method: "DELETE", keepalive: true});
+      fetch("/api/source-bindings/imports/" + previewToken, {method: "DELETE", headers: csrfHeaders(), keepalive: true});
       previewToken = null;
     };
     form.addEventListener("submit", async (event) => {
@@ -187,7 +189,7 @@
       confirmButton.disabled = true;
       setStep("columns");
       try {
-        const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
+        const response = await fetch(form.action, {method: "POST", headers: csrfHeaders(), body: new FormData(form)});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "파일을 확인하지 못했습니다.");
         previewToken = result.token;
@@ -219,7 +221,7 @@
       confirmButton.disabled = true;
       setStep("result");
       try {
-        const response = await fetch("/api/source-bindings/imports/" + previewToken + "/confirm", {method: "POST"});
+        const response = await fetch("/api/source-bindings/imports/" + previewToken + "/confirm", {method: "POST", headers: csrfHeaders()});
         const result = await response.json();
         previewToken = null;
         if (!response.ok) throw new Error(result.detail || "등록을 완료하지 못했습니다.");
@@ -242,7 +244,7 @@
       button.disabled = true;
       try {
         const response = await fetch("/api/review/" + button.dataset.candidateId + "/" + button.dataset.reviewAction, {
-          method: "POST", headers: {"Content-Type": "application/json"}, body: "{}",
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}), body: "{}",
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "검토 작업을 완료하지 못했습니다.");
@@ -280,7 +282,7 @@
         }
         const suffix = agencyId ? "?agency_id=" + encodeURIComponent(agencyId) : "";
         const endpoint = action === "promote" ? "promote" : "detect";
-        const response = await fetch("/api/extractions/" + extractionId + "/" + endpoint + suffix, {method: "POST"});
+        const response = await fetch("/api/extractions/" + extractionId + "/" + endpoint + suffix, {method: "POST", headers: csrfHeaders()});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "작업을 완료하지 못했습니다.");
         window.location.reload();
@@ -295,7 +297,7 @@
     select.addEventListener("change", async () => {
       const previous = select.dataset.previous || select.defaultValue;
       const response = await fetch("/api/sources/" + select.dataset.coverageSource + "/coverage", {
-        method: "PATCH", headers: {"Content-Type": "application/json"},
+        method: "PATCH", headers: csrfHeaders({"Content-Type": "application/json"}),
         body: JSON.stringify({coverage_mode: select.value}),
       });
       if (!response.ok) select.value = previous;
@@ -303,4 +305,53 @@
     });
     select.dataset.previous = select.value;
   });
+
+  document.querySelector('[data-logout]')?.addEventListener('click', async () => {
+    const response = await fetch('/logout', {method: 'POST', headers: csrfHeaders()});
+    if (response.ok) window.location.href = '/login';
+  });
+
+  document.querySelector('[data-contact-export]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const form = document.querySelector('form[aria-label="연락처 검색"]');
+    const query = form ? new URLSearchParams(new FormData(form)).toString() : '';
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/contacts/export?' + query, {method: 'POST', headers: csrfHeaders()});
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.detail || '엑셀 파일을 만들지 못했습니다.');
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || 'publicdb2_contacts.xlsx';
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob); link.download = filename; link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) { window.alert(error.message); }
+    finally { button.disabled = false; }
+  });
+
+  const userMutation = async (url, method, body) => {
+    const response = await fetch(url, {method, headers: csrfHeaders({'Content-Type': 'application/json'}), body: JSON.stringify(body)});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || '사용자 변경을 완료하지 못했습니다.');
+    window.location.reload();
+  };
+  document.querySelectorAll('[data-user-active]').forEach((button) => button.addEventListener('click', async () => {
+    try { await userMutation('/api/users/' + button.dataset.userActive + '/active', 'PATCH', {active: button.dataset.active === 'true'}); }
+    catch (error) { window.alert(error.message); }
+  }));
+  document.querySelectorAll('[data-user-role]').forEach((button) => button.addEventListener('click', async () => {
+    const role = window.prompt('새 역할을 입력하세요: ADMIN, OPERATOR, VIEWER');
+    if (!role) return;
+    try { await userMutation('/api/users/' + button.dataset.userRole + '/role', 'PATCH', {role: role.trim().toUpperCase()}); }
+    catch (error) { window.alert(error.message); }
+  }));
+  document.querySelectorAll('[data-user-password]').forEach((button) => button.addEventListener('click', async () => {
+    const password = window.prompt('새 비밀번호를 입력하세요. (12자 이상)');
+    if (!password) return;
+    try { await userMutation('/api/users/' + button.dataset.userPassword + '/password', 'POST', {password}); }
+    catch (error) { window.alert(error.message); }
+  }));
 })();

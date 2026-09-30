@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from app.core.config import runtime_paths
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
-from app.main import create_app
+from tests.support import regression_app
 from app.models import Agency, AgencyType, OrgUnit, OrgUnitType, Source, SourceBinding, SourceImportLog
 from app.services.agency_service import AgencyService
 from app.services.source_import_service import MAX_IMPORT_ROWS, PreviewStore, SourceImportError, SourceImportService, parse_import_file
@@ -216,7 +216,7 @@ def test_preview_store_cleanup_and_portable_paths(tmp_path):
 
 def test_import_api_template_live_sources_and_routes(import_env):
     root, url, _ = import_env
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     with TestClient(app) as client:
         template = client.get("/api/source-bindings/imports/template.csv")
         preview = client.post("/api/source-bindings/imports/preview", files={"file": ("api.xlsx", xlsx_bytes([["API 기관", "", "https://example.com/api", ""]]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
@@ -230,7 +230,7 @@ def test_import_api_template_live_sources_and_routes(import_env):
     assert confirmed.status_code == 200
     assert "https://example.com/api" in sources.text
     assert all(response.status_code == 200 for response in routes)
-    assert "샘플 데이터" in routes[0].text
+    assert "샘플 데이터" not in routes[0].text
     assert "data-import-preview" in sources.text
     assert "수집</button>" in sources.text and "disabled" in sources.text
 

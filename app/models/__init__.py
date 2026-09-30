@@ -18,6 +18,7 @@ from app.models.enums import (
     SourceCoverageMode,
     SourceType,
     StageStatus,
+    UserRole,
 )
 from app.models.evidence import (
     ChangeDetection, ChangeEvent, ContactHistory, CrawlRun, DetectedChangeCandidate,
@@ -26,6 +27,7 @@ from app.models.evidence import (
 )
 from app.models.source import Source, SourceBinding
 from app.models.source_import import SourceImportLog
+from app.models.operations import OperationalSettings, User
 
 __all__ = [
     "Agency", "AgencyType", "ChangeDetection", "ChangeEvent", "ChangeEventType",
@@ -36,3 +38,5 @@ __all__ = [
     "Person", "PersonAssignment", "ReviewStatus", "RunStatus", "Source",
     "SourceBinding", "SourceCoverageMode", "SourceImportLog", "SourceOccurrence", "SourceType", "StageStatus",
 ]
+
+__all__ += ['OperationalSettings', 'User', 'UserRole']

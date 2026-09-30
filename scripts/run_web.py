@@ -20,7 +20,10 @@ def main() -> None:
 
     import uvicorn
 
-    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=False)
+    uvicorn.run(
+        "app.main:app", host=args.host, port=args.port, reload=False,
+        proxy_headers=True, forwarded_allow_ips="127.0.0.1,::1",
+    )
 
 
 if __name__ == "__main__":

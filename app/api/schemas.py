@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.models import AgencyType, OrgUnitType, SourceCoverageMode
+from app.models import AgencyType, OrgUnitType, SourceCoverageMode, UserRole
 
 
 class AgencyCreate(BaseModel):
@@ -57,4 +57,29 @@ class ReviewDecision(BaseModel):
 
 class SourceCoverageUpdate(BaseModel):
     coverage_mode: SourceCoverageMode
+
+
+class SettingsUpdate(BaseModel):
+    http_timeout_seconds: float
+    max_response_bytes: int
+    user_agent: str
+
+
+class UserCreate(BaseModel):
+    username: str
+    display_name: str | None = None
+    password: str
+    role: UserRole
+
+
+class UserRoleUpdate(BaseModel):
+    role: UserRole
+
+
+class UserActiveUpdate(BaseModel):
+    active: bool
+
+
+class UserPasswordUpdate(BaseModel):
+    password: str
 

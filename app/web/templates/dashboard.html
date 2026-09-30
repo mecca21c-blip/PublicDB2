@@ -7,11 +7,12 @@
 {% block content %}
 <header class="page-heading">
   <div>
-    <div class="heading-kicker">{% if dashboard.is_demo %}<span class="demo-badge">샘플 데이터</span>{% endif %}</div>
     <h1>운영 대시보드</h1>
     <p>공공기관 정보 수집과 관리 상태를 한눈에 확인합니다.</p>
   </div>
 </header>
+
+{% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{ db_error }}</p></section>{% else %}
 
 <section class="kpi-grid" aria-label="운영 핵심 지표">
   {% for kpi in dashboard.kpis %}
@@ -34,7 +35,7 @@
         <tbody>
           {% for run in dashboard.recent_runs %}
           <tr><td class="muted-cell">{{ run.time }}</td><td><strong>{{ run.agency }}</strong></td><td>{{ run.source }}</td><td>{{ status_badge(run.status, run.tone) }}</td></tr>
-          {% endfor %}
+          {% else %}<tr><td colspan="4" class="empty-state-cell">수집 이력이 없습니다.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
@@ -43,13 +44,13 @@
   <section class="panel trend-panel">
     <header class="panel-heading">
       <div><h2>수집 추이</h2></div>
-      <span class="sample-label">최근 7일 · 샘플</span>
+      <span class="sample-label">최근 7일</span>
     </header>
     <div class="trend-summary">
       <div><i class="legend-dot legend-dot--success"></i><span>성공</span><strong>{{ dashboard.trend.success_total }}</strong></div>
       <div><i class="legend-dot legend-dot--danger"></i><span>오류</span><strong>{{ dashboard.trend.error_total }}</strong></div>
     </div>
-    <figure class="trend-chart" aria-label="최근 7일 성공 및 오류 추이 샘플 차트">
+    <figure class="trend-chart" aria-label="최근 7일 성공 및 오류 추이 차트">
       <svg viewBox="0 0 520 170" role="img">
         <line class="chart-grid" x1="14" y1="40" x2="506" y2="40"/><line class="chart-grid" x1="14" y1="90" x2="506" y2="90"/><line class="chart-grid" x1="14" y1="140" x2="506" y2="140"/>
         <polyline class="chart-line chart-line--success" points="{{ dashboard.trend.success_points }}"/>
@@ -72,7 +73,7 @@
         <tbody>
           {% for item in dashboard.pending_reviews %}
           <tr><td><strong>{{ item.agency }}</strong></td><td>{{ item.field }}</td><td class="comparison-value comparison-value--before">{{ item.before }}</td><td class="comparison-value comparison-value--after">{{ item.after }}</td><td class="muted-cell">{{ item.detected }}</td><td>{{ status_badge(item.status, item.tone) }}</td></tr>
-          {% endfor %}
+          {% else %}<tr><td colspan="6" class="empty-state-cell">검토 대기 항목이 없습니다.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
@@ -87,4 +88,5 @@
     </div>
   </aside>
 </div>
+{% endif %}
 {% endblock %}

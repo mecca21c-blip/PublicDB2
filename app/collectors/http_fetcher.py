@@ -123,6 +123,14 @@ class HTTPFetcher:
     def max_response_bytes(self) -> int:
         return self._max_response_bytes
 
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
+
+    @property
+    def user_agent(self) -> str:
+        return self._user_agent
+
     def fetch(self, url: str) -> FetchResult:
         target = url
         try:

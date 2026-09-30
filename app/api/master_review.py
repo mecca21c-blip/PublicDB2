@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_session
+from app.api.dependencies import get_session, require_operator, require_viewer
 from app.api.schemas import ReviewDecision, SourceCoverageUpdate
 from app.services.master_promotion_apply_service import MasterPromotionApplyService
 from app.services.master_promotion_planner import PromotionError
@@ -17,7 +17,7 @@ from app.services.source_coverage_service import SourceCoverageService
 from app.models import ExtractionRun
 
 
-router = APIRouter(prefix="/api", tags=["confirmed-review"])
+router = APIRouter(prefix="/api", tags=["confirmed-review"], dependencies=[Depends(require_viewer)])
 
 
 def _agency(value: uuid.UUID | None) -> uuid.UUID | None:
@@ -54,7 +54,7 @@ def workflow(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
-@router.post("/extractions/{extraction_run_id}/promote")
+@router.post("/extractions/{extraction_run_id}/promote", dependencies=[Depends(require_operator)])
 def promote(
     extraction_run_id: uuid.UUID, agency_id: uuid.UUID | None = None,
     session: Session = Depends(get_session),
@@ -65,7 +65,7 @@ def promote(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
-@router.post("/extractions/{extraction_run_id}/detect")
+@router.post("/extractions/{extraction_run_id}/detect", dependencies=[Depends(require_operator)])
 def detect(
     extraction_run_id: uuid.UUID, agency_id: uuid.UUID | None = None,
     session: Session = Depends(get_session),
@@ -76,7 +76,7 @@ def detect(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
-@router.post("/review/{candidate_id}/approve")
+@router.post("/review/{candidate_id}/approve", dependencies=[Depends(require_operator)])
 def approve(
     candidate_id: uuid.UUID, payload: ReviewDecision,
     session: Session = Depends(get_session),
@@ -87,7 +87,7 @@ def approve(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
-@router.post("/review/{candidate_id}/keep")
+@router.post("/review/{candidate_id}/keep", dependencies=[Depends(require_operator)])
 def keep(
     candidate_id: uuid.UUID, payload: ReviewDecision,
     session: Session = Depends(get_session),
@@ -98,7 +98,7 @@ def keep(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
-@router.post("/review/{candidate_id}/defer")
+@router.post("/review/{candidate_id}/defer", dependencies=[Depends(require_operator)])
 def defer(
     candidate_id: uuid.UUID, payload: ReviewDecision,
     session: Session = Depends(get_session),
@@ -109,7 +109,7 @@ def defer(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
-@router.patch("/sources/{source_id}/coverage")
+@router.patch("/sources/{source_id}/coverage", dependencies=[Depends(require_operator)])
 def update_coverage(
     source_id: uuid.UUID, payload: SourceCoverageUpdate,
     session: Session = Depends(get_session),

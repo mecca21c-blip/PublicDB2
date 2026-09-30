@@ -1,16 +1,43 @@
 {% extends "base.html" %}
 {% block title %}설정 · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
-
 {% block content %}
 <div class="workspace-page">
-  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">설정 미연결</span><h1>설정</h1><p>PublicDB2 운영에 필요한 최소한의 저장 및 웹 수집 기본값을 확인합니다.</p></div></header>
-  <div class="settings-grid">
-    <section class="panel settings-card"><h2>데이터 저장</h2><p>운영 데이터와 수집 원문의 기본 저장 위치입니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">데이터 저장 위치</span><input class="control" value="{{ workspace.storage_path }}" readonly></label><label class="settings-field"><span class="field-label">RAW 파일 저장 위치</span><input class="control" value="{{ workspace.raw_path }}" readonly></label></div></section>
-    <section class="panel settings-card"><h2>수집 기본값</h2><p>새 수집 소스에 적용할 기본 요청 조건입니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">기본 제한 시간</span><input class="control" value="{{ workspace.default_timeout }}" readonly></label><label class="settings-field"><span class="field-label">요청 간격</span><input class="control" value="{{ workspace.default_interval }}" readonly></label></div></section>
-    <section class="panel settings-card"><h2>파일 저장 위치</h2><p>내보내기와 업로드 파일을 다룰 기본 경로는 기능 연결 단계에서 확정합니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">내보내기 기본 위치</span><input class="control" value="기능 연결 시 지정" readonly></label><label class="settings-field"><span class="field-label">업로드 임시 위치</span><input class="control" value="기능 연결 시 지정" readonly></label></div></section>
-    <section class="panel settings-card"><h2>웹 수집 정책</h2><p>기관 웹사이트 접근 시 지켜야 할 기본 운영 정책입니다.</p><div class="settings-fields"><label class="settings-field"><span class="field-label">접속 식별 정책</span><input class="control" value="{{ workspace.user_agent_policy }}" readonly></label><label class="settings-field"><span class="field-label">사이트 정책</span><input class="control" value="{{ workspace.robots_policy }}" readonly></label></div></section>
-  </div>
-  <div class="settings-footer"><button class="button button--primary" type="button" disabled>저장</button></div>
+  <header class="page-heading"><div class="page-heading-copy"><h1>설정</h1><p>운영 수집 기본값과 프로젝트 소유 경로, 사용자를 관리합니다.</p></div></header>
+  {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{ db_error }}</p></section>{% endif %}
+  {% if settings %}<div class="settings-grid">
+    <section class="panel settings-card"><h2>수집 기본값</h2><p>저장 후 다음 수동 수집부터 즉시 적용됩니다.</p>
+      <form class="settings-fields" action="/api/settings" data-api-form data-method="PUT">
+        <label class="settings-field"><span class="field-label">HTTP 요청 제한 시간(초)</span><input class="control" name="http_timeout_seconds" type="number" min="1" max="60" step="0.5" value="{{ settings.http_timeout_seconds }}" required></label>
+        <label class="settings-field"><span class="field-label">최대 응답 크기(bytes)</span><input class="control" name="max_response_bytes" type="number" min="65536" max="52428800" value="{{ settings.max_response_bytes }}" required></label>
+        <label class="settings-field"><span class="field-label">PublicDB User-Agent</span><input class="control" name="user_agent" maxlength="500" value="{{ settings.user_agent }}" required></label>
+        <p data-form-error class="form-error" hidden></p><button class="button button--primary" type="submit">저장</button>
+      </form>
+    </section>
+    <section class="panel settings-card"><h2>현재 수집 지원</h2><div class="settings-fields">
+      <label class="settings-field"><span class="field-label">수집 지원</span><input class="control" value="단일 웹페이지 (WEB_PAGE)" readonly></label>
+      <label class="settings-field"><span class="field-label">자동 수집</span><input class="control" value="사용 안 함" readonly></label>
+    </div></section>
+    <section class="panel settings-card"><h2>프로젝트 소유 경로</h2><p>브라우저에서는 변경할 수 없습니다.</p><div class="settings-fields">
+      {% for label,path in portable_paths %}<label class="settings-field"><span class="field-label">{{ label }}</span><input class="control" value="{{ path }}" readonly></label>{% endfor %}
+    </div></section>
+  </div>{% endif %}
+
+  <section class="panel settings-card"><h2>사용자 관리</h2><p>사용자를 삭제하지 않고 활성 상태와 역할을 관리합니다.</p>
+    <form class="toolbar" action="/api/users" data-api-form>
+      <label class="toolbar-field"><span class="field-label">아이디</span><input class="control" name="username" required></label>
+      <label class="toolbar-field"><span class="field-label">표시 이름</span><input class="control" name="display_name"></label>
+      <label class="toolbar-field"><span class="field-label">역할</span><select class="control" name="role"><option>VIEWER</option><option>OPERATOR</option><option>ADMIN</option></select></label>
+      <label class="toolbar-field"><span class="field-label">초기 비밀번호</span><input class="control" name="password" type="password" minlength="12" required></label>
+      <p data-form-error class="form-error" hidden></p><button class="button button--primary" type="submit">사용자 생성</button>
+    </form>
+    <div class="table-scroll"><table class="data-table"><thead><tr><th>아이디</th><th>표시 이름</th><th>역할</th><th>상태</th><th>관리</th></tr></thead><tbody>
+      {% for user in users %}<tr><td>{{ user.username }}</td><td>{{ user.display_name or '-' }}</td><td>{{ user.role }}</td><td>{{ '활성' if user.active else '비활성' }}</td><td>
+        <button class="button button--secondary" data-user-active="{{ user.id }}" data-active="{{ 'false' if user.active else 'true' }}">{{ '비활성화' if user.active else '활성화' }}</button>
+        <button class="button button--secondary" data-user-role="{{ user.id }}">역할 변경</button>
+        <button class="button button--secondary" data-user-password="{{ user.id }}">비밀번호 재설정</button>
+      </td></tr>{% else %}<tr><td colspan="5" class="empty-state-cell">등록 사용자가 없습니다. CLI로 최초 ADMIN을 생성하세요.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
 </div>
 {% endblock %}

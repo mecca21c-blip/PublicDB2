@@ -10,6 +10,8 @@ PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직/부서, 업
 수집·RAW 증거·결정적 발견 후보 추출과 실제 수집 이력이 활성화됐다. 04B에서
 승인된 baseline의 확정 연락처 반영, Source 범위 변경 감지, 검토 결정과 연락처
 변경 이력도 활성화됐다.
+05A에서 실 Dashboard, typed 운영 Settings, 확정 연락처 XLSX export와
+application user 인증·역할·CSRF 및 서버 운영 경계가 활성화됐다.
 
 PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통째로
 복사하거나 직접 연결하지 않으며, 확인된 의미와 재검증 가능한 로직만 별도 Goal에서
@@ -19,6 +21,7 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 
 | Route | 책임 |
 |---|---|
+| /login | application user의 서명 세션 로그인 |
 | / | 전체 운영 상태를 요약하는 유일한 Dashboard |
 | /agencies | 기관 → 부서 → 업무와 연결 소스 관계 관리 |
 | /sources | 기관/부서별 수집 URL, 확인 상태와 제외 상태 관리 |
@@ -26,6 +29,42 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 | /contacts | 확정 연락처 검색, 출처와 변경 이력 확인 |
 | /review | 발견값과 확정값 비교 및 반영·유지·보류 처리 |
 | /settings | 최소 운영 저장·수집 정책 설정 |
+
+## 05A Authentication and operation contract
+
+- User는 case-insensitive normalized username, Argon2 password hash, ADMIN/OPERATOR/
+  VIEWER 역할과 active 상태를 소유한다. plaintext password와 기본 credential은 없다.
+- VIEWER는 운영 화면 읽기만, OPERATOR는 기존 business mutation과 확정 연락처
+  export를, ADMIN은 추가로 Settings와 사용자 관리를 수행한다. 모든 권한은 API
+  boundary에서 현재 active User와 DB의 현재 role을 다시 읽어 강제한다.
+- 브라우저 세션은 HttpOnly, SameSite=Lax, 만료 시간이 있는 서명 cookie다. 세션에는
+  user_id와 예측 불가능 CSRF token만 둔다. 모든 POST/PUT/PATCH/DELETE는 CSRF를
+  요구하며 logout도 POST다.
+- session secret은 PUBLICDB2_SESSION_SECRET 또는 PROJECT_ROOT/config/security.json이
+  소유한다. 환경 override가 없으면 암호학적으로 생성해 project tree에 지속하고
+  Git에서 제외한다. 최초 ADMIN은 scripts/manage_user.py로 명시적으로 생성한다.
+- 마지막 active ADMIN의 비활성화와 역할 강등은 service layer에서 거부한다.
+
+## 05A Dashboard, Settings, and export contract
+
+- Dashboard는 fixture fallback 없이 live DB만 읽는다. active Agency, active binding을
+  하나 이상 가진 distinct active Source, active ContactPoint, PENDING_REVIEW/DEFERRED,
+  canonical Source별 최신 FAILED/PARTIAL run을 KPI로 계산한다.
+- 최근 실행은 최신 CrawlRun 6건, 추이는 Asia/Seoul 기준 최근 7 calendar day,
+  최근 검토는 unresolved candidate 5건이다. 빈 DB는 0/빈 상태이고 DB 장애는 한국어
+  오류로 표시한다.
+- OperationalSettings 단일 typed row는 HTTP timeout, 최대 response bytes,
+  PublicDB User-Agent만 소유한다. row가 없으면 안전한 코드 기본값을 사용하고 ADMIN
+  저장 후 다음 collection action의 HTTPFetcher부터 재시작 없이 반영한다.
+- /settings는 ADMIN 전용이며 PROJECT_ROOT 소유 DB/RAW/import/export/temp/log/backup/
+  config 경로를 read-only로 표시한다. WEB_PAGE 단일 페이지 지원과 자동 수집 미사용을
+  사실대로 표시한다.
+- 확정 연락처 export는 현재 연락처 필터를 적용해 ContactPoint당 한 행 XLSX를 만들며
+  discovery candidate를 포함하지 않는다. 파일은 data/exports/YYYY/MM/DD 아래에서만
+  생성하고 수식 시작 문자를 literal로 방어한다. OPERATOR와 ADMIN만 실행한다.
+- /health는 최소 liveness, /ready는 DB와 Alembic head를 확인한다. allowed host,
+  same-origin CSP/security headers, project logs의 bounded rotation을 적용한다.
+  scripts/run_web.py는 localhost proxy에서 온 forwarded header만 신뢰한다.
 
 ## UI 관련 entity 관계
 
@@ -150,4 +189,5 @@ project-relative 저장 경로, SHA-256, 확정 시각과 결과 집계를 기�
 
 기관/부서/업무, SourceBinding 등록·수정·제외·복구, Excel/CSV import, 04A
 WEB_PAGE 수집·RAW·발견 추출·수집 이력과 04B 확정값 반영·변경 검토를 활성화한다.
-Dashboard 실집계, 일반 설정 action, export와 인증/권한은 현재 범위 밖이다.
+Dashboard 실집계, typed 운영 설정, confirmed XLSX export와 인증/권한을 활성화한다.
+자동 scheduler, 다중 페이지 crawl과 실제 Apache/HTTPS/Windows service 구성은 활성화하지 않는다.

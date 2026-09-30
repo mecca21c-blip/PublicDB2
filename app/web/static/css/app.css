@@ -35,6 +35,16 @@
   .page-content { padding-inline: 22px; }
 }
 
+body[data-role="VIEWER"] [data-api-form],
+body[data-role="VIEWER"] [data-api-action],
+body[data-role="VIEWER"] [data-collect-source],
+body[data-role="VIEWER"] [data-modal-open],
+body[data-role="VIEWER"] [data-review-action],
+body[data-role="VIEWER"] [data-master-action],
+body[data-role="VIEWER"] [data-coverage-source] {
+  display: none;
+}
+
 @media (max-width: 1100px) {
   .quick-register span { display: none; }
   .quick-register { width: var(--control-height); padding: 0; }

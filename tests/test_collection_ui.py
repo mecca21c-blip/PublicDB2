@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from app.collectors.http_fetcher import HTTPFetcher
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
-from app.main import create_app
+from tests.support import regression_app
 from app.models import (
     AgencyType, CollectionMethod, CrawlRun, Observation,
     OrgUnitType, RunStatus, Source, StageStatus,
@@ -77,7 +77,7 @@ def test_sources_collect_action_calls_real_pipeline_and_runs_are_real(web_db):
     url, factory, root = web_db
     with factory() as session:
         _, source_id, _ = add_binding(session, agency_name="실기관")
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
         source_page = client.get("/sources")
@@ -103,7 +103,7 @@ def test_runs_filters_through_all_bindings_and_shows_multi_context(web_db):
         first_agency, source_id, _ = add_binding(session, agency_name="첫기관")
         second_agency, same_source, _ = add_binding(session, agency_name="둘기관")
         assert same_source == source_id
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
         assert client.post(f"/api/sources/{source_id}/collect").status_code == 200
@@ -124,7 +124,7 @@ def test_run_detail_never_exposes_absolute_artifact_path(web_db):
     url, factory, root = web_db
     with factory() as session:
         _, source_id, _ = add_binding(session, agency_name="기관")
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
         client.post(f"/api/sources/{source_id}/collect")
@@ -132,7 +132,7 @@ def test_run_detail_never_exposes_absolute_artifact_path(web_db):
         observation = session.scalar(select(Observation))
         observation.artifact_path = r"C:\private\secret\response.html"
         session.commit()
-    with TestClient(create_app(url, project_root=root)) as client:
+    with TestClient(regression_app(url, project_root=root)) as client:
         page = client.get("/runs")
     assert "C:\\private\\secret" not in page.text
     assert "02-1234-5678" not in page.text
@@ -149,7 +149,7 @@ def test_excluded_and_unsupported_collection_controls_are_disabled(web_db):
         session.get(Source, unsupported_source).collection_method = CollectionMethod.API
         SourceService(session).exclude_binding(active_binding, "사용 안 함")
         session.commit()
-    with TestClient(create_app(url, project_root=root)) as client:
+    with TestClient(regression_app(url, project_root=root)) as client:
         page = client.get("/sources")
     assert f'data-collect-source="{active_source}" disabled title="제외된 연결입니다."' in page.text
     assert f'data-collect-source="{unsupported_source}" disabled title="지원하지 않는 수집 방식입니다."' in page.text
@@ -169,7 +169,7 @@ def test_api_busy_unknown_and_unsupported_are_truthful(web_db):
             extraction_status=StageStatus.PENDING, started_at=utc_now(),
         ))
         session.commit()
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
         assert client.post(f"/api/sources/{busy_source}/collect").status_code == 409
@@ -184,7 +184,7 @@ def test_registration_import_page_load_and_startup_never_collect(web_db):
         nonlocal calls
         calls += 1
         raise AssertionError("automatic network call")
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     install_mock_collection(app, root, forbidden)
     with TestClient(app) as client:
         agency = client.post("/api/agencies", json={"official_name": "수동기관", "agency_type": "OTHER"})
@@ -204,7 +204,7 @@ def test_source_state_is_shared_but_exclusion_overrides(web_db):
         _, source_id, first_binding = add_binding(session, agency_name="첫기관")
         _, _, second_binding = add_binding(session, agency_name="둘기관")
         SourceService(session).exclude_binding(second_binding, "제외")
-    app = create_app(url, project_root=root)
+    app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
         client.post(f"/api/sources/{source_id}/collect")

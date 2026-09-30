@@ -6,14 +6,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_session
+from app.api.dependencies import get_session, require_operator, require_viewer
 from app.api.schemas import ExclusionRequest, SourceBindingCreate, SourceBindingUpdate
 from app.services.normalization import SourceURLValidationError
 from app.services.source_service import SourceBindingConflict, SourceService, SourceServiceError
 from app.services.source_import_service import MAX_IMPORT_BYTES, SourceImportError, SourceImportService
 
 
-router = APIRouter(prefix="/api/source-bindings", tags=["sources"])
+router = APIRouter(prefix="/api/source-bindings", tags=["sources"], dependencies=[Depends(require_viewer)])
 
 
 def _failure(error: ValueError) -> HTTPException:
@@ -32,7 +32,7 @@ def list_bindings(
     return SourceService(session).list_page(search=search, agency_id=agency_id, org_unit_id=org_unit_id, status=source_status)
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_operator)])
 def create_binding(payload: SourceBindingCreate, session: Session = Depends(get_session)) -> dict:
     try:
         item, created = SourceService(session).register_binding(**payload.model_dump())
@@ -49,7 +49,7 @@ def get_binding(binding_id: uuid.UUID, session: Session = Depends(get_session)) 
         raise _failure(error) from error
 
 
-@router.patch("/{binding_id}")
+@router.patch("/{binding_id}", dependencies=[Depends(require_operator)])
 def update_binding(binding_id: uuid.UUID, payload: SourceBindingUpdate, session: Session = Depends(get_session)) -> dict:
     try:
         values = payload.model_dump(exclude_unset=True)
@@ -58,7 +58,7 @@ def update_binding(binding_id: uuid.UUID, payload: SourceBindingUpdate, session:
         raise _failure(error) from error
 
 
-@router.post("/{binding_id}/exclude")
+@router.post("/{binding_id}/exclude", dependencies=[Depends(require_operator)])
 def exclude_binding(binding_id: uuid.UUID, payload: ExclusionRequest, session: Session = Depends(get_session)) -> dict:
     try:
         return {"item": SourceService(session).exclude_binding(binding_id, payload.reason)}
@@ -66,7 +66,7 @@ def exclude_binding(binding_id: uuid.UUID, payload: ExclusionRequest, session: S
         raise _failure(error) from error
 
 
-@router.post("/{binding_id}/reactivate")
+@router.post("/{binding_id}/reactivate", dependencies=[Depends(require_operator)])
 def reactivate_binding(binding_id: uuid.UUID, session: Session = Depends(get_session)) -> dict:
     try:
         return {"item": SourceService(session).reactivate_binding(binding_id)}
@@ -74,7 +74,7 @@ def reactivate_binding(binding_id: uuid.UUID, session: Session = Depends(get_ses
         raise _failure(error) from error
 
 
-@router.post("/imports/preview")
+@router.post("/imports/preview", dependencies=[Depends(require_operator)])
 async def preview_import(request: Request, file: UploadFile = File(...), session: Session = Depends(get_session)) -> dict:
     content = await file.read(MAX_IMPORT_BYTES + 1)
     try:
@@ -86,7 +86,7 @@ async def preview_import(request: Request, file: UploadFile = File(...), session
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
-@router.post("/imports/{token}/confirm")
+@router.post("/imports/{token}/confirm", dependencies=[Depends(require_operator)])
 def confirm_import(token: str, request: Request, session: Session = Depends(get_session)) -> dict:
     store = request.app.state.source_import_previews
     try:
@@ -98,7 +98,7 @@ def confirm_import(token: str, request: Request, session: Session = Depends(get_
         store.discard(token)
 
 
-@router.delete("/imports/{token}")
+@router.delete("/imports/{token}", dependencies=[Depends(require_operator)])
 def discard_import(token: str, request: Request) -> dict[str, bool]:
     request.app.state.source_import_previews.discard(token)
     return {"discarded": True}

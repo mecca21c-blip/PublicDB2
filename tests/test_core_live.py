@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
-from app.main import create_app
+from tests.support import regression_app
 from app.models import AgencyType, Duty, OrgUnitType, Source, SourceBinding
 from app.services.agency_service import AgencyService, AgencyServiceError
 from app.services.normalization import SourceURLValidationError, normalize_source_url
@@ -110,7 +110,7 @@ def test_wrong_agency_org_rejected_without_partial_source(session):
 
 
 def test_live_ui_api_and_empty_states(database):
-    app = create_app(database)
+    app = regression_app(database)
     with TestClient(app) as client:
         empty_agencies = client.get("/agencies")
         empty_sources = client.get("/sources")
@@ -131,7 +131,7 @@ def test_live_ui_api_and_empty_states(database):
 
 def test_db_failure_is_explicit_and_not_fixture(tmp_path):
     missing = f"sqlite:///{(tmp_path / 'missing.sqlite3').as_posix()}"
-    with TestClient(create_app(missing)) as client:
+    with TestClient(regression_app(missing)) as client:
         agencies = client.get("/agencies")
         sources = client.get("/sources")
     assert "데이터베이스 오류" in agencies.text
@@ -140,11 +140,11 @@ def test_db_failure_is_explicit_and_not_fixture(tmp_path):
 
 
 def test_all_seven_routes_and_dashboard_freeze(database):
-    with TestClient(create_app(database)) as client:
+    with TestClient(regression_app(database)) as client:
         pages = {path: client.get(path) for path in ["/", "/agencies", "/sources", "/runs", "/contacts", "/review", "/settings"]}
     assert all(response.status_code == 200 for response in pages.values())
     assert "운영 대시보드" in pages["/"].text
-    assert "샘플 데이터" in pages["/"].text
+    assert "샘플 데이터" not in pages["/"].text
     assert "kpi-grid" in pages["/"].text
     assert "PublicDB2 DB" in pages["/agencies"].text
     assert "PublicDB2 DB" in pages["/sources"].text

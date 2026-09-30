@@ -1,103 +1,74 @@
 from fastapi.testclient import TestClient
 
-from app.main import WORKSPACE_PAGES, create_app
-from app.web.dashboard_fixture import _chart_points
-from app.web.workspace_fixtures import WORKSPACE_FIXTURES
+from app.db.base import Base
+from app.db.engine import create_db_engine
+from app.main import WORKSPACE_PAGES
+from app.services.dashboard_service import _points
+from tests.support import regression_app
 
 
-def test_dashboard_and_static_assets_render() -> None:
-    with TestClient(create_app()) as client:
-        response = client.get("/")
-        css = client.get("/static/css/dashboard.css")
-        script = client.get("/static/js/app.js")
+def make_app(tmp_path):
+    database = tmp_path / 'app.sqlite3'
+    url = f'sqlite:///{database.as_posix()}'
+    engine = create_db_engine(url)
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    return regression_app(url, project_root=tmp_path)
 
+
+def test_dashboard_and_static_assets_render(tmp_path):
+    with TestClient(make_app(tmp_path)) as client:
+        response = client.get('/')
+        css = client.get('/static/css/dashboard.css')
+        script = client.get('/static/js/app.js')
     assert response.status_code == 200
-    assert "운영 대시보드" in response.text
-    assert "샘플 데이터" in response.text
-    assert "최근 수집 현황" in response.text
-    assert "최근 검토 대상" in response.text
-    assert "수집 소스" in response.text
-    assert "소스 등록" in response.text
-    assert "Source" not in response.text
-    assert "Master" not in response.text
-    assert "UI Foundation" not in response.text
-    assert "OPERATIONS OVERVIEW" not in response.text
-    assert "RECENT COLLECTION" not in response.text
-    assert "7-DAY TREND" not in response.text
-    assert "REVIEW PENDING" not in response.text
-    assert "SHORTCUTS" not in response.text
-    assert "알림" not in response.text
-    assert "관리자" not in response.text
-    assert "status-badge--warning" in response.text
-    assert "status-badge--info" in response.text
-    assert "status-badge--neutral" in response.text
-    assert css.status_code == 200
-    assert script.status_code == 200
+    assert '운영 대시보드' in response.text
+    assert '샘플 데이터' not in response.text
+    assert '최근 수집 현황' in response.text
+    assert '최근 검토 대상' in response.text
+    assert '수집 이력이 없습니다.' in response.text
+    assert css.status_code == 200 and script.status_code == 200
 
 
-def test_chart_points_share_scale_and_safe_zero_baseline() -> None:
-    success_points = _chart_points((0, 10), 10).split()
-    error_points = _chart_points((0, 2), 10).split()
-    zero_points = _chart_points((0, 0), 0).split()
-
-    assert success_points[0].split(",")[1] == error_points[0].split(",")[1]
-    assert success_points[0].split(",")[1] == "134.0"
-    assert success_points[1].split(",")[1] == "16.0"
-    assert error_points[1].split(",")[1] == "110.4"
-    assert {point.split(",")[1] for point in zero_points} == {"134.0"}
+def test_chart_points_share_safe_zero_baseline():
+    assert len(_points([0, 10]).split()) == 2
+    assert {point.split(',')[1] for point in _points([0, 0]).split()} == {'140'}
 
 
-def test_health_has_no_database_claim() -> None:
-    with TestClient(create_app()) as client:
-        response = client.get("/health")
-
+def test_health_has_no_database_claim(tmp_path):
+    with TestClient(make_app(tmp_path)) as client:
+        response = client.get('/health')
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "app": "PublicDB2",
-        "mode": "agency-source-live",
+    assert response.json() == {'status': 'ok', 'app': 'PublicDB2'}
+    assert 'path' not in response.text.casefold()
+
+
+def test_all_workspace_routes_render_without_placeholders(tmp_path):
+    required = {
+        'agencies': ('기관/조직', '기관 추가'),
+        'sources': ('수집 소스', '엑셀 업로드', 'URL 추가'),
+        'runs': ('수집 이력', '조건에 맞는 수집 이력이 없습니다'),
+        'contacts': ('연락처 DB', '엑셀 내보내기', '공식 출처'),
+        'review': ('변경/검토', 'CURRENT VALUE', 'DISCOVERED VALUE'),
+        'settings': ('설정', '수집 기본값', '사용자 관리', '프로젝트 소유 경로'),
     }
-
-
-def test_all_workspace_routes_render_without_placeholders() -> None:
-    required_content = {
-        "agencies": ("기관/조직", "기관 추가", "데이터베이스 오류"),
-        "sources": ("수집 소스", "엑셀 업로드", "URL 추가", "자료없음", "제외"),
-        "runs": ("수집 이력", "PublicDB2 DB", "조건에 맞는 수집 이력이 없습니다"),
-        "contacts": ("연락처 DB", "엑셀 내보내기", "공식 출처", "최근 변경 이력"),
-        "review": ("변경/검토", "CURRENT VALUE", "DISCOVERED VALUE", "반영", "보류"),
-        "settings": ("설정", "데이터 저장", "웹 수집 정책", "저장"),
-    }
-
-    with TestClient(create_app()) as client:
-        for route_key, markers in required_content.items():
-            response = client.get(f"/{route_key}")
+    with TestClient(make_app(tmp_path)) as client:
+        for route, markers in required.items():
+            response = client.get('/' + route)
             assert response.status_code == 200
-            assert "구현 예정" not in response.text
             for marker in markers:
                 assert marker in response.text
 
 
-def test_workspace_templates_and_static_assets_are_registered() -> None:
-    assert set(WORKSPACE_PAGES) == {
-        "agencies",
-        "sources",
-        "runs",
-        "contacts",
-        "review",
-        "settings",
-    }
-    assert set(WORKSPACE_FIXTURES) == set(WORKSPACE_PAGES) - {"runs"}
-
-    with TestClient(create_app()) as client:
-        workspace_css = client.get("/static/css/workspace.css")
-        script = client.get("/static/js/app.js")
-        dashboard = client.get("/")
-        sources = client.get("/sources")
-
-    assert workspace_css.status_code == 200
-    assert script.status_code == 200
+def test_workspace_templates_and_static_assets_are_registered(tmp_path):
+    assert set(WORKSPACE_PAGES) == {'agencies', 'sources', 'runs', 'contacts', 'review', 'settings'}
+    with TestClient(make_app(tmp_path)) as client:
+        workspace_css = client.get('/static/css/workspace.css')
+        script = client.get('/static/js/app.js')
+        dashboard = client.get('/')
+        sources = client.get('/sources')
+    assert workspace_css.status_code == 200 and script.status_code == 200
     assert 'data-modal="source-create"' in sources.text
     assert 'data-modal="excel-import"' in sources.text
-    assert "workspace.css" not in dashboard.text
-    assert "kpi-grid" in dashboard.text
+    assert 'workspace.css' not in dashboard.text
+    assert 'kpi-grid' in dashboard.text
