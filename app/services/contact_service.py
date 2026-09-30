@@ -5,15 +5,16 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
-    ContactHistory, ContactPoint, ContactType, EntityType, Observation,
-    PersonAssignment, Source, SourceOccurrence,
+    Agency, ContactHistory, ContactPoint, ContactType, Duty, EntityType, Observation,
+    OrgUnit, Person, PersonAssignment, Source, SourceOccurrence,
     CrawlRun, CollectionMethod,
 )
 from app.services.source_method_service import user_method_label
+from app.services.pagination import page_metadata, page_values
 
 
 class ContactService:
@@ -23,8 +24,51 @@ class ContactService:
     def list_page(
         self, *, search: str | None = None, agency_id: uuid.UUID | None = None,
         org_unit_id: uuid.UUID | None = None, contact_type: ContactType | None = None,
+        page: int = 1, page_size: int = 100,
     ) -> dict:
-        contacts = list(self.session.scalars(
+        page, page_size, offset = page_values(page, page_size)
+        group_columns = (
+            ContactPoint.agency_id, ContactPoint.org_unit_id,
+            ContactPoint.duty_id, ContactPoint.person_assignment_id,
+        )
+        groups_statement = (
+            select(*group_columns)
+            .join(Agency, Agency.id == ContactPoint.agency_id)
+            .outerjoin(OrgUnit, OrgUnit.id == ContactPoint.org_unit_id)
+            .outerjoin(Duty, Duty.id == ContactPoint.duty_id)
+            .outerjoin(PersonAssignment, PersonAssignment.id == ContactPoint.person_assignment_id)
+            .outerjoin(Person, Person.id == PersonAssignment.person_id)
+            .where(ContactPoint.active.is_(True))
+        )
+        if agency_id:
+            groups_statement = groups_statement.where(ContactPoint.agency_id == agency_id)
+        if org_unit_id:
+            groups_statement = groups_statement.where(ContactPoint.org_unit_id == org_unit_id)
+        if contact_type:
+            groups_statement = groups_statement.where(ContactPoint.contact_type == contact_type)
+        term = (search or "").strip()
+        if term:
+            pattern = f"%{term}%"
+            groups_statement = groups_statement.where(or_(
+                Agency.official_name.ilike(pattern), OrgUnit.name.ilike(pattern),
+                Duty.title.ilike(pattern), Person.name.ilike(pattern),
+                ContactPoint.value.ilike(pattern),
+            ))
+        groups_statement = groups_statement.distinct().order_by(*group_columns)
+        total = self.session.scalar(
+            select(func.count()).select_from(groups_statement.order_by(None).subquery())
+        ) or 0
+        page_keys = list(self.session.execute(groups_statement.offset(offset).limit(page_size)))
+        key_predicates = [
+            and_(
+                ContactPoint.agency_id == key.agency_id,
+                ContactPoint.org_unit_id.is_(None) if key.org_unit_id is None else ContactPoint.org_unit_id == key.org_unit_id,
+                ContactPoint.duty_id.is_(None) if key.duty_id is None else ContactPoint.duty_id == key.duty_id,
+                ContactPoint.person_assignment_id.is_(None) if key.person_assignment_id is None else ContactPoint.person_assignment_id == key.person_assignment_id,
+            )
+            for key in page_keys
+        ]
+        contacts = [] if not key_predicates else list(self.session.scalars(
             select(ContactPoint)
             .options(
                 selectinload(ContactPoint.agency),
@@ -32,18 +76,14 @@ class ContactService:
                 selectinload(ContactPoint.duty),
                 selectinload(ContactPoint.person_assignment).selectinload(PersonAssignment.person),
             )
-            .where(ContactPoint.active.is_(True))
+            .where(ContactPoint.active.is_(True), or_(*key_predicates))
             .order_by(ContactPoint.created_at, ContactPoint.id)
         ))
-        if agency_id:
-            contacts = [item for item in contacts if item.agency_id == agency_id]
-        if org_unit_id:
-            contacts = [item for item in contacts if item.org_unit_id == org_unit_id]
         if contact_type:
             contacts = [item for item in contacts if item.contact_type is contact_type]
-        term = (search or "").strip().casefold()
         if term:
-            contacts = [item for item in contacts if term in " ".join((
+            folded = term.casefold()
+            contacts = [item for item in contacts if folded in " ".join((
                 item.agency.official_name,
                 item.org_unit.name if item.org_unit else "",
                 item.duty.title if item.duty else "",
@@ -89,7 +129,11 @@ class ContactService:
             })
         items.sort(key=lambda item: (item["agency"], item["department"], item["task"], item["id"]))
         detail_map = {item["id"]: item for item in details}
-        return {"items": tuple(items), "details": tuple(detail_map[item["id"]] for item in items)}
+        return {
+            "items": tuple(items),
+            "details": tuple(detail_map[item["id"]] for item in items),
+            "pagination": page_metadata(total, page, page_size),
+        }
 
     def _sources(self, contact_ids):
         result = defaultdict(list)

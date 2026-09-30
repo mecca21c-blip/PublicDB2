@@ -28,28 +28,46 @@ class DashboardService:
         source_count = self.session.scalar(select(func.count(func.distinct(Source.id))).join(SourceBinding).where(Source.active.is_(True), SourceBinding.active.is_(True))) or 0
         contact_count = self.session.scalar(select(func.count()).select_from(ContactPoint).where(ContactPoint.active.is_(True))) or 0
         review_count = self.session.scalar(select(func.count()).select_from(DetectedChangeCandidate).where(DetectedChangeCandidate.review_status.in_((ReviewStatus.PENDING_REVIEW, ReviewStatus.DEFERRED)))) or 0
-        runs = list(self.session.scalars(select(CrawlRun).order_by(CrawlRun.started_at.desc(), CrawlRun.id.desc())))
-        latest = {}
-        for run in runs:
-            latest.setdefault(run.source_id, run)
-        error_count = sum(run.status in (RunStatus.FAILED, RunStatus.PARTIAL) for run in latest.values())
-        recent_runs = tuple({'time': row['time'], 'agency': row['agency'], 'source': row['source'], 'status': row['result'], 'tone': row['tone']} for row in RunService(self.session).list_page()['items'][:6])
+        ranked = (
+            select(
+                CrawlRun.status.label('status'),
+                func.row_number().over(
+                    partition_by=CrawlRun.source_id,
+                    order_by=(CrawlRun.started_at.desc(), CrawlRun.id.desc()),
+                ).label('row_number'),
+            ).subquery()
+        )
+        error_count = self.session.scalar(
+            select(func.count()).select_from(ranked).where(
+                ranked.c.row_number == 1,
+                ranked.c.status.in_((RunStatus.FAILED, RunStatus.PARTIAL)),
+            )
+        ) or 0
+        recent_runs = tuple(
+            {'time': row['time'], 'agency': row['agency'], 'source': row['source'], 'status': row['result'], 'tone': row['tone']}
+            for row in RunService(self.session).list_page(page_size=6)['items']
+        )
         dates = [local_now.date()-timedelta(days=offset) for offset in range(6, -1, -1)]
         success, errors = Counter(), Counter()
-        for run in runs:
-            day = run.started_at.astimezone(LOCAL_ZONE).date()
-            if day in dates and run.status is RunStatus.SUCCESS:
-                success[day] += 1
-            elif day in dates and run.status in (RunStatus.FAILED, RunStatus.PARTIAL):
-                errors[day] += 1
+        day_expression = func.date(CrawlRun.started_at, '+9 hours')
+        for day_text, run_status, count in self.session.execute(
+            select(day_expression, CrawlRun.status, func.count())
+            .where(day_expression.in_([day.isoformat() for day in dates]))
+            .group_by(day_expression, CrawlRun.status)
+        ):
+            day = datetime.fromisoformat(day_text).date()
+            if run_status is RunStatus.SUCCESS:
+                success[day] += count
+            elif run_status in (RunStatus.FAILED, RunStatus.PARTIAL):
+                errors[day] += count
         success_values = [success[day] for day in dates]
         error_values = [errors[day] for day in dates]
         pending = []
-        for item in ReviewReadService(self.session).list_page()['items']:
-            if item['state'] in {'검토 대기', '보류', '확인 필요'}:
-                pending.append({'agency': item['agency'], 'field': f"{item['target']} · {item['field']}", 'before': item['current'], 'after': item['discovered'], 'detected': item['detected'], 'status': item['state'], 'tone': item['tone']})
-            if len(pending) == 5:
-                break
+        for item in ReviewReadService(self.session).list_page(
+            review_statuses=(ReviewStatus.PENDING_REVIEW, ReviewStatus.DEFERRED),
+            page_size=5,
+        )['items']:
+            pending.append({'agency': item['agency'], 'field': f"{item['target']} · {item['field']}", 'before': item['current'], 'after': item['discovered'], 'detected': item['detected'], 'status': item['state'], 'tone': item['tone']})
         return self._result(agency_count, source_count, contact_count, review_count, error_count, recent_runs, dates, success_values, error_values, pending)
 
     @staticmethod

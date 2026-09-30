@@ -14,6 +14,8 @@ from app.models import ApiSourceKind
 from app.collectors.http_fetcher import HTTPFetchError
 from app.services.api_credential_store import ApiCredentialStore, CredentialStoreError
 from app.services.catalog_service import CatalogError, CatalogService
+from app.services.collection_recovery_service import source_claim_key
+from app.services.operation_claim_service import OperationClaimService
 from app.services.source_method_service import MethodConfigError, SourceMethodService
 from app.services.structured_extraction_service import (
     StructuredExtractionError, mapped_record, parse_structured_records,
@@ -66,15 +68,28 @@ def change_source_method(
     source = session.get(Source, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="등록된 수집 소스를 찾을 수 없습니다.")
+    claim = None
     try:
         method = CollectionMethod(payload.get("collection_method"))
         config = dict(payload.get("method_config") or {})
         auth = ApiAuthMode(config.get("auth_mode", ApiAuthMode.NONE)) if method is CollectionMethod.API else ApiAuthMode.NONE
         if auth is not ApiAuthMode.NONE and user.role is not UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="API 자격증명 설정은 관리자만 변경할 수 있습니다.")
-        SourceMethodService(session).configure(source, method, config)
+        acquired = OperationClaimService(session).acquire(
+            source_claim_key(source.id), 'METHOD_EDIT'
+        )
+        if not acquired.acquired:
+            raise HTTPException(status_code=409, detail="수집 실행 중에는 수집 방식을 변경할 수 없습니다.")
+        claim = acquired.claim
+        SourceMethodService(session).configure(source, method, config, commit=False)
+        session.delete(claim)
+        session.commit()
         return {"source_id": str(source.id), "collection_method": source.collection_method.value}
+    except HTTPException:
+        session.rollback()
+        raise
     except (ValueError, MethodConfigError) as error:
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 

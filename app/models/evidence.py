@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -21,6 +21,13 @@ from app.models.enums import (
 
 class CrawlRun(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "crawl_runs"
+    __table_args__ = (
+        Index(
+            "uq_crawl_runs_active_source", "source_id", unique=True,
+            sqlite_where=text("status = 'RUNNING'"),
+            postgresql_where=text("status = 'RUNNING'"),
+        ),
+    )
 
     source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     status: Mapped[RunStatus] = mapped_column(enum_type(RunStatus), nullable=False, index=True)
@@ -37,6 +44,7 @@ class CrawlRun(UUIDPrimaryKeyMixin, Base):
     collection_config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     collection_statistics: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     collector_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     source: Mapped["Source"] = relationship("Source", back_populates="crawl_runs")
     observations: Mapped[list["Observation"]] = relationship("Observation", back_populates="crawl_run")

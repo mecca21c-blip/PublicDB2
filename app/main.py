@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 import logging
 import uuid
+from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -24,8 +25,9 @@ from app.api.sources import router as sources_api
 from app.api.three_way import router as three_way_api
 from app.api.dependencies import ensure_csrf_token, get_current_user_optional, get_session, require_admin, require_viewer
 from app.collectors.http_fetcher import HTTPFetcher
-from app.core.config import allowed_hosts, runtime_paths
+from app.core.config import allowed_hosts, get_database_url, runtime_paths
 from app.core.logging import close_file_logging, configure_file_logging
+from app.core.schema import MIGRATION_HEAD
 from app.core.security import SecretStore, SecurityHeadersMiddleware, SignedSessionMiddleware
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
@@ -34,6 +36,7 @@ from app.models import (
 )
 from app.services.agency_service import AgencyService
 from app.services.collection_service import CollectionCoordinator, CollectionService
+from app.services.collection_recovery_service import reconcile_stale_collections
 from app.services.catalog_service import CatalogService
 from app.services.contact_service import ContactService
 from app.services.dashboard_service import DashboardService
@@ -72,6 +75,21 @@ WORKSPACE_PAGES = {
 
 def _page_context(request: Request, active_page: str, **values: object) -> dict[str, object]:
     user = getattr(request.state, 'current_user', None)
+    workspace = values.get('workspace')
+    if isinstance(workspace, dict) and workspace.get('pagination'):
+        pagination = dict(workspace['pagination'])
+        params = dict(request.query_params)
+        params['page_size'] = str(pagination['page_size'])
+        for key, target in (
+            ('previous_url', pagination['page'] - 1 if pagination['has_previous'] else None),
+            ('next_url', pagination['page'] + 1 if pagination['has_next'] else None),
+        ):
+            if target is None:
+                pagination[key] = None
+            else:
+                params['page'] = str(target)
+                pagination[key] = request.url.path + '?' + urlencode(params)
+        values['workspace'] = {**workspace, 'pagination': pagination}
     return {
         'active_page': active_page, 'navigation': NAVIGATION,
         'current_user': user, 'csrf_token': ensure_csrf_token(request), **values,
@@ -89,6 +107,14 @@ def _uuid_or_none(value: str | None) -> uuid.UUID | None:
 async def _lifespan(application: FastAPI):
     handler = configure_file_logging(application.state.runtime_paths)
     logger.info('application startup')
+    with application.state.session_factory() as recovery_session:
+        try:
+            recovered = reconcile_stale_collections(recovery_session)
+            if recovered:
+                logger.warning('recovered interrupted collection runs count=%s', recovered)
+        except SQLAlchemyError:
+            recovery_session.rollback()
+            logger.warning('collection recovery deferred until database is ready')
     try:
         yield
     finally:
@@ -109,10 +135,11 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         openapi_url=None,
     )
     templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
-    engine = create_db_engine(database_url)
+    paths = runtime_paths(project_root)
+    engine = create_db_engine(database_url or get_database_url(paths.project_root))
     application.state.engine = engine
     application.state.session_factory = create_session_factory(engine)
-    application.state.runtime_paths = runtime_paths(project_root)
+    application.state.runtime_paths = paths
     application.state.secret_store = SecretStore(application.state.runtime_paths)
     application.state.source_import_previews = PreviewStore(application.state.runtime_paths)
     application.state.collection_coordinator = CollectionCoordinator()
@@ -177,7 +204,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             with engine.connect() as connection:
                 connection.execute(text('SELECT 1'))
                 revision = connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
-            if revision != 'c7f205b05b01':
+            if revision != MIGRATION_HEAD:
                 raise RuntimeError('migration mismatch')
             return {'status': 'ready'}
         except Exception:
@@ -232,10 +259,10 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         )
 
     @application.get('/agencies', response_class=HTMLResponse, name='agencies', dependencies=[Depends(require_viewer)])
-    def agencies(request: Request, search: str | None = None, agency_type: AgencyType | None = None) -> HTMLResponse:
+    def agencies(request: Request, search: str | None = None, agency_type: AgencyType | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            workspace = AgencyService(session).list_page(search=search, agency_type=agency_type)
+            workspace = AgencyService(session).list_page(search=search, agency_type=agency_type, page=page, page_size=page_size)
             db_error = None
         except SQLAlchemyError:
             session.rollback()
@@ -246,12 +273,15 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context(request, 'agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': agency_type.value if agency_type else ''}, agency_types=AgencyType))
 
     @application.get('/sources', response_class=HTMLResponse, name='sources', dependencies=[Depends(require_viewer)])
-    def sources(request: Request, search: str | None = None, agency_id: str | None = None, org_unit_id: str | None = None, source_status: str | None = None) -> HTMLResponse:
+    def sources(request: Request, search: str | None = None, agency_id: str | None = None, org_unit_id: str | None = None, source_status: str | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            options = AgencyService(session).list_page()
-            units = list(session.query(OrgUnit).filter(OrgUnit.active.is_(True)).order_by(OrgUnit.name))
-            workspace = SourceService(session).list_page(search=search, agency_id=_uuid_or_none(agency_id), org_unit_id=_uuid_or_none(org_unit_id), status=source_status)
+            options = AgencyService(session).list_page(page_size=500)
+            units_query = session.query(OrgUnit).filter(OrgUnit.active.is_(True))
+            if _uuid_or_none(agency_id):
+                units_query = units_query.filter(OrgUnit.agency_id == _uuid_or_none(agency_id))
+            units = list(units_query.order_by(OrgUnit.name).limit(500))
+            workspace = SourceService(session).list_page(search=search, agency_id=_uuid_or_none(agency_id), org_unit_id=_uuid_or_none(org_unit_id), status=source_status, page=page, page_size=page_size)
             catalog = CatalogService(session).list()
             db_error = None
         except SQLAlchemyError:
@@ -271,16 +301,20 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         agency_id: str | None = None,
         status: RunStatus | None = None,
         search: str | None = None,
+        page: int = 1,
+        page_size: int = 100,
     ) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            agencies_page = AgencyService(session).list_page()
+            agencies_page = AgencyService(session).list_page(page_size=500)
             workspace = RunService(session).list_page(
                 date_from=date_from,
                 date_to=date_to,
                 agency_id=_uuid_or_none(agency_id),
                 status=status,
                 search=search,
+                page=page,
+                page_size=page_size,
             )
             db_error = None
         except SQLAlchemyError:
@@ -316,16 +350,23 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         agency_id: str | None = None,
         org_unit_id: str | None = None,
         contact_type: ContactType | None = None,
+        page: int = 1,
+        page_size: int = 100,
     ) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            agencies_page = AgencyService(session).list_page()
-            units = list(session.query(OrgUnit).filter(OrgUnit.active.is_(True)).order_by(OrgUnit.name))
+            agencies_page = AgencyService(session).list_page(page_size=500)
+            units_query = session.query(OrgUnit).filter(OrgUnit.active.is_(True))
+            if _uuid_or_none(agency_id):
+                units_query = units_query.filter(OrgUnit.agency_id == _uuid_or_none(agency_id))
+            units = list(units_query.order_by(OrgUnit.name).limit(500))
             workspace = ContactService(session).list_page(
                 search=search,
                 agency_id=_uuid_or_none(agency_id),
                 org_unit_id=_uuid_or_none(org_unit_id),
                 contact_type=contact_type,
+                page=page,
+                page_size=page_size,
             )
             db_error = None
         except SQLAlchemyError:
@@ -356,13 +397,16 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         agency_id: str | None = None,
         review_status: ReviewStatus | None = None,
         change_type: ChangeEventType | None = None,
+        page: int = 1,
+        page_size: int = 100,
     ) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            agencies_page = AgencyService(session).list_page()
+            agencies_page = AgencyService(session).list_page(page_size=500)
             workspace = ReviewReadService(session).list_page(
                 search=search, agency_id=_uuid_or_none(agency_id),
                 review_status=review_status, change_type=change_type,
+                page=page, page_size=page_size,
             )
             db_error = None
         except SQLAlchemyError:

@@ -5,13 +5,16 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Agency, CollectionMethod, CrawlRun, OrgUnit, RunStatus, Source, SourceBinding, StageStatus
 from app.models.common import utc_now
 from app.repositories.source_repository import SourceRepository
 from app.services.normalization import collapse_whitespace, normalize_source_url
+from app.services.collection_recovery_service import source_claim_key
+from app.services.operation_claim_service import OperationClaimService
+from app.services.pagination import page_metadata, page_values
 from app.services.source_method_service import SourceMethodService, user_method_label
 
 
@@ -134,9 +137,15 @@ class SourceService:
             if description is not ...:
                 binding.description = collapse_whitespace(str(description or "")) or None
             if collection_method is not None:
+                acquired = OperationClaimService(self.session).acquire(
+                    source_claim_key(source.id), 'METHOD_EDIT'
+                )
+                if not acquired.acquired:
+                    raise SourceBindingConflict("수집 실행 중에는 수집 방식을 변경할 수 없습니다.")
                 SourceMethodService(self.session).configure(
                     source, collection_method, method_config, commit=False
                 )
+                self.session.delete(acquired.claim)
             else:
                 SourceMethodService(self.session).ensure_default(source)
             self.session.commit()
@@ -174,12 +183,51 @@ class SourceService:
         agency_id: uuid.UUID | None = None,
         org_unit_id: uuid.UUID | None = None,
         status: str | None = None,
+        page: int = 1,
+        page_size: int = 100,
     ) -> dict:
-        bindings = self.repository.list_bindings(search=search, agency_id=agency_id, org_unit_id=org_unit_id)
-        projected = [self.binding_projection(binding) for binding in bindings]
-        if status:
-            projected = [item for item in projected if item["status_code"] == status]
-        return {"items": tuple(projected), "details": tuple(projected)}
+        page, page_size, offset = page_values(page, page_size)
+        filters = {
+            "search": search, "agency_id": agency_id,
+            "org_unit_id": org_unit_id, "status": status,
+        }
+        total = self.repository.count_bindings(**filters)
+        bindings = self.repository.list_bindings(
+            **filters, offset=offset, limit=page_size
+        )
+        latest = self._latest_runs({binding.source_id for binding in bindings})
+        projected = [
+            self.binding_projection(binding, run=latest.get(binding.source_id))
+            for binding in bindings
+        ]
+        return {
+            "items": tuple(projected),
+            "details": tuple(projected),
+            "pagination": page_metadata(total, page, page_size),
+        }
+
+    def _latest_runs(self, source_ids: set[uuid.UUID]) -> dict[uuid.UUID, CrawlRun]:
+        if not source_ids:
+            return {}
+        ranked = (
+            select(
+                CrawlRun.id.label('run_id'),
+                func.row_number().over(
+                    partition_by=CrawlRun.source_id,
+                    order_by=(CrawlRun.started_at.desc(), CrawlRun.id.desc()),
+                ).label('row_number'),
+            )
+            .where(
+                CrawlRun.source_id.in_(source_ids),
+                CrawlRun.status.in_((RunStatus.SUCCESS, RunStatus.PARTIAL, RunStatus.FAILED)),
+            )
+            .subquery()
+        )
+        runs = self.session.scalars(
+            select(CrawlRun).join(ranked, CrawlRun.id == ranked.c.run_id)
+            .where(ranked.c.row_number == 1)
+        )
+        return {run.source_id: run for run in runs}
 
     def _latest_run(self, source_id: uuid.UUID) -> CrawlRun | None:
         return self.session.scalar(
@@ -192,8 +240,9 @@ class SourceService:
             .limit(1)
         )
 
-    def binding_projection(self, binding: SourceBinding) -> dict:
-        run = self._latest_run(binding.source_id)
+    def binding_projection(self, binding: SourceBinding, run: CrawlRun | None | object = ...) -> dict:
+        if run is ...:
+            run = self._latest_run(binding.source_id)
         source = binding.source
         configured = (
             source.collection_method is CollectionMethod.WEB_PAGE

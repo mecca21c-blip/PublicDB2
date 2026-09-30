@@ -13,7 +13,8 @@ from app.models import (
 )
 from app.models.common import utc_now
 from app.services.master_normalization import normalize_text
-from app.services.master_promotion_planner import MasterPromotionPlanner
+from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
+from app.services.operation_claim_service import OperationClaimService
 
 
 class MasterPromotionApplyService:
@@ -28,6 +29,20 @@ class MasterPromotionApplyService:
     def apply(self, extraction_run_id: uuid.UUID, agency_id: uuid.UUID | None = None) -> dict:
         try:
             plan = self.planner.plan(extraction_run_id, agency_id)
+            claims = OperationClaimService(self.session)
+            acquired = claims.acquire(
+                f'baseline:{extraction_run_id}:{plan.agency_id}', 'BASELINE_APPLY'
+            )
+            if not acquired.acquired:
+                if acquired.claim.status == 'COMPLETED' and acquired.claim.result_payload:
+                    result = {**acquired.claim.result_payload, 'reused': True}
+                    for key in (
+                        'org_units_created', 'duties_created', 'contacts_created',
+                        'contacts_matched', 'rows_skipped',
+                    ):
+                        result[key] = 0
+                    return result
+                raise PromotionError('Baseline apply is already in progress.')
             observation = plan.extraction_run.observation
             actual = {"org_units_created": 0, "duties_created": 0, "contacts_created": 0, "contacts_matched": 0, "rows_skipped": 0}
             org_cache: dict[str, OrgUnit] = {}
@@ -130,8 +145,15 @@ class MasterPromotionApplyService:
                         observation.id, EntityType.CONTACT_POINT, contact.id,
                         planned.contact_type.value.lower(), planned.value, row,
                     )
+            result = {
+                **actual,
+                "agency_id": str(plan.agency_id),
+                "extraction_run_id": str(extraction_run_id),
+                "reused": False,
+            }
+            claims.complete(acquired.claim, result)
             self.session.commit()
-            return {**actual, "agency_id": str(plan.agency_id), "extraction_run_id": str(extraction_run_id)}
+            return result
         except Exception:
             self.session.rollback()
             raise

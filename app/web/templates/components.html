@@ -7,3 +7,23 @@
 {% macro status_badge(label, tone='neutral') -%}
 <span class="status-badge status-badge--{{ tone }}"><i aria-hidden="true"></i>{{ label }}</span>
 {%- endmacro %}
+
+{% macro pager(pagination) -%}
+{% if pagination and pagination.pages > 1 %}
+<nav class="workspace-pager" aria-label="목록 페이지">
+  {% if pagination.previous_url %}<a class="button button--secondary" href="{{ pagination.previous_url }}">이전</a>{% else %}<span></span>{% endif %}
+  <span>{{ pagination.page }} / {{ pagination.pages }} · 총 {{ pagination.total }}건</span>
+  {% if pagination.next_url %}<a class="button button--secondary" href="{{ pagination.next_url }}">다음</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}
+
+{% macro pager(pagination) -%}
+{% if pagination and pagination.pages > 1 %}
+<nav class="workspace-pager" aria-label="목록 페이지">
+  {% if pagination.previous_url %}<a class="button button--secondary" href="{{ pagination.previous_url }}">이전</a>{% else %}<span></span>{% endif %}
+  <span>{{ pagination.page }} / {{ pagination.pages }} · 총 {{ pagination.total }}건</span>
+  {% if pagination.next_url %}<a class="button button--secondary" href="{{ pagination.next_url }}">다음</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}

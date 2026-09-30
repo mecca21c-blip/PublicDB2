@@ -1,5 +1,29 @@
 # PublicDB2 Master Contract
 
+## 06A Operational acceptance contract
+
+- A canonical Source can have at most one `RUNNING` CrawlRun. SQLite and
+  PostgreSQL enforce this with a partial unique index, while `operation_claims`
+  provides the cross-session collection claim.
+- Collection startup and every explicit collection request reconcile orphaned
+  `RUNNING` rows after a 10-minute stale-heartbeat boundary. Recovery records a
+  terminal `FAILED` run, a clear interruption reason, and no fabricated RAW,
+  Observation, extraction, or success state.
+- Source method changes use the same Source claim and cannot race an active
+  collection. Each CrawlRun retains its immutable method/config snapshot.
+- Baseline apply, review resolution, and source-import confirm have DB-backed
+  idempotency claims. Repeated completion returns a reused terminal result or a
+  clear conflict and does not repeat confirmed mutations.
+- File-backed SQLite connections centrally enable foreign keys, a 5,000 ms busy
+  timeout, and WAL mode. Other database dialects do not receive SQLite pragmas.
+- `/agencies`, `/sources`, `/runs`, `/contacts`, and `/review` use server-side
+  pagination: default 100 and maximum 500. Dashboard recent/history projections
+  remain bounded. Contact XLSX export streams the complete filtered confirmed
+  dataset and is independent of the visual page.
+- Runtime DB selection follows the explicit `project_root` unless
+  `PUBLICDB2_DATABASE_URL` overrides it. Runtime paths stored in DB remain
+  project-relative so the PublicDB2 tree can be relocated as one unit.
+
 상태: 향후 기능 구현의 제품·데이터 의미 SSOT
 
 ## 제품 목적과 경계

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import os
 import threading
 import time
 import uuid
@@ -29,6 +30,7 @@ from app.services.normalization import (
     normalize_org_unit_name,
     normalize_source_url,
 )
+from app.services.operation_claim_service import OperationClaimService
 from app.services.source_service import SourceService
 
 
@@ -80,6 +82,7 @@ class PreviewStore:
         self.paths = paths or runtime_paths()
         self._entries: dict[str, PreviewFile] = {}
         self._lock = threading.Lock()
+        self.cleanup_expired()
 
     def save(self, filename: str, content: bytes) -> PreviewFile:
         self.cleanup_expired()
@@ -114,6 +117,13 @@ class PreviewStore:
             expired = [token for token, entry in self._entries.items() if not entry.temp_path.exists() or entry.temp_path.stat().st_mtime < cutoff]
         for token in expired:
             self.discard(token)
+        if self.paths.temp_root.exists():
+            for path in self.paths.temp_root.glob('source-import-*'):
+                try:
+                    if path.is_file() and path.stat().st_mtime < cutoff:
+                        path.unlink(missing_ok=True)
+                except OSError:
+                    continue
 
 
 def _header_key(value: Any) -> str:
@@ -298,7 +308,6 @@ class SourceImportService:
         content = entry.temp_path.read_bytes()
         preview = self.preview(entry.original_filename, content)
         preexisting_urls = set(self.session.scalars(select(Source.normalized_url)))
-        retained_path = self._retain_file(entry, content)
         counts = {
             "input_rows": preview["summary"]["total"], "created_agencies": 0, "created_org_units": 0,
             "created_sources": 0, "created_bindings": 0, "existing_source_new_bindings": 0,
@@ -308,46 +317,67 @@ class SourceImportService:
         counts["invalid_rows"] = preview["summary"]["invalid"]
         counts["conflicts"] = preview["summary"]["conflicts"]
         self.session.rollback()
+        claims = OperationClaimService(self.session)
+        acquired = claims.acquire(f'import:{entry.token}', 'SOURCE_IMPORT_CONFIRM')
+        if not acquired.acquired:
+            if acquired.claim.status == 'COMPLETED' and acquired.claim.result_payload:
+                return {**acquired.claim.result_payload, 'reused': True}
+            raise SourceImportError('이 가져오기 미리보기는 이미 확인 처리 중입니다.')
+        retained_path: Path | None = None
         try:
-            with self.session.begin():
-                agency_service = AgencyService(self.session)
-                source_service = SourceService(self.session)
-                for row in preview["rows"]:
-                    if not row["importable"]:
-                        continue
-                    try:
-                        with self.session.begin_nested():
-                            created_agency = False
-                            created_org_unit = False
-                            agency_id = uuid.UUID(row["agency_id"]) if row["agency_id"] else None
-                            if agency_id is None:
-                                agency_data, created_agency = agency_service.create_agency(official_name=row["resolved_agency"], agency_type=AgencyType.OTHER, commit=False)
-                                agency_id = uuid.UUID(agency_data["id"])
-                            org_unit_id = uuid.UUID(row["org_unit_id"]) if row["org_unit_id"] else None
-                            if row["will_create_org_unit"]:
-                                normalized_unit = normalize_org_unit_name(row["resolved_org_unit"])
-                                created_org_unit = self.session.scalar(select(OrgUnit.id).where(OrgUnit.agency_id == agency_id, OrgUnit.normalized_name == normalized_unit, OrgUnit.active.is_(True))) is None
-                                unit = agency_service.create_org_unit(agency_id=agency_id, name=row["resolved_org_unit"], unit_type=OrgUnitType.DEPARTMENT, commit=False)
-                                org_unit_id = uuid.UUID(unit["id"])
-                            source_existed = self.session.scalar(select(Source.id).where(Source.normalized_url == row["normalized_url"])) is not None
-                            _binding, created_binding = source_service.register_binding(
-                                url=row["raw_url"], agency_id=agency_id, org_unit_id=org_unit_id,
-                                description=row["description"], collection_method=row["collection_method"],
-                                method_config={}, commit=False,
-                            )
-                            counts["created_agencies"] += int(created_agency)
-                            counts["created_org_units"] += int(created_org_unit)
-                            counts["created_sources"] += int(not source_existed)
-                            counts["created_bindings"] += int(created_binding)
-                            counts["existing_source_new_bindings"] += int(row["normalized_url"] in preexisting_urls and created_binding)
-                    except Exception:
-                        counts["unexpected_failures"] += 1
-                relative = retained_path.relative_to(self.paths.project_root).as_posix()
-                self.session.add(SourceImportLog(original_filename=entry.original_filename, stored_path=relative, sha256=entry.sha256, confirmed_at=utc_now(), input_rows=counts["input_rows"], result_counts=counts))
+            retained_path = self._retain_file(entry, content)
+            agency_service = AgencyService(self.session)
+            source_service = SourceService(self.session)
+            for row in preview["rows"]:
+                if not row["importable"]:
+                    continue
+                try:
+                    with self.session.begin_nested():
+                        created_agency = False
+                        created_org_unit = False
+                        agency_id = uuid.UUID(row["agency_id"]) if row["agency_id"] else None
+                        if agency_id is None:
+                            agency_data, created_agency = agency_service.create_agency(official_name=row["resolved_agency"], agency_type=AgencyType.OTHER, commit=False)
+                            agency_id = uuid.UUID(agency_data["id"])
+                        org_unit_id = uuid.UUID(row["org_unit_id"]) if row["org_unit_id"] else None
+                        if row["will_create_org_unit"]:
+                            normalized_unit = normalize_org_unit_name(row["resolved_org_unit"])
+                            created_org_unit = self.session.scalar(select(OrgUnit.id).where(OrgUnit.agency_id == agency_id, OrgUnit.normalized_name == normalized_unit, OrgUnit.active.is_(True))) is None
+                            unit = agency_service.create_org_unit(agency_id=agency_id, name=row["resolved_org_unit"], unit_type=OrgUnitType.DEPARTMENT, commit=False)
+                            org_unit_id = uuid.UUID(unit["id"])
+                        source_existed = self.session.scalar(select(Source.id).where(Source.normalized_url == row["normalized_url"])) is not None
+                        _binding, created_binding = source_service.register_binding(
+                            url=row["raw_url"], agency_id=agency_id, org_unit_id=org_unit_id,
+                            description=row["description"], collection_method=row["collection_method"],
+                            method_config={}, commit=False,
+                        )
+                        counts["created_agencies"] += int(created_agency)
+                        counts["created_org_units"] += int(created_org_unit)
+                        counts["created_sources"] += int(not source_existed)
+                        counts["created_bindings"] += int(created_binding)
+                        counts["existing_source_new_bindings"] += int(row["normalized_url"] in preexisting_urls and created_binding)
+                except Exception:
+                    counts["unexpected_failures"] += 1
+            confirmed_at = utc_now()
+            relative = retained_path.relative_to(self.paths.project_root).as_posix()
+            self.session.add(SourceImportLog(original_filename=entry.original_filename, stored_path=relative, sha256=entry.sha256, confirmed_at=confirmed_at, input_rows=counts["input_rows"], result_counts=counts))
+            durable_result = {
+                "summary": counts,
+                "file": {
+                    "original_filename": entry.original_filename,
+                    "stored_path": relative,
+                    "sha256": entry.sha256,
+                    "confirmed_at": confirmed_at.isoformat(),
+                },
+            }
+            claims.complete(acquired.claim, durable_result)
+            self.session.commit()
         except Exception:
-            retained_path.unlink(missing_ok=True)
+            self.session.rollback()
+            if retained_path is not None:
+                retained_path.unlink(missing_ok=True)
             raise
-        return {"summary": counts, "rows": preview["rows"], "file": {"original_filename": entry.original_filename, "stored_path": retained_path.relative_to(self.paths.project_root).as_posix(), "sha256": entry.sha256, "confirmed_at": utc_now().isoformat()}}
+        return {**durable_result, "rows": preview["rows"], "reused": False}
 
     def _retain_file(self, entry: PreviewFile, content: bytes) -> Path:
         now = datetime.now().astimezone()
@@ -355,6 +385,14 @@ class SourceImportService:
         destination.mkdir(parents=True, exist_ok=True)
         suffix = Path(entry.original_filename).suffix.lower()
         target = destination / f"{now:%Y%m%dT%H%M%S}-{uuid.uuid4().hex}{suffix}"
-        target.write_bytes(content)
+        temporary = target.with_suffix(target.suffix + '.tmp')
+        try:
+            with temporary.open('xb') as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
         return target
 

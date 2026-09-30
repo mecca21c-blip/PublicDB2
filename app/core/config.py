@@ -59,11 +59,12 @@ def ensure_runtime_directories(paths: RuntimePaths | None = None) -> RuntimePath
     return selected
 
 
-def get_database_url() -> str:
+def get_database_url(project_root: Path | None = None) -> str:
     configured = os.getenv(DATABASE_URL_ENV)
     if configured:
         return configured
-    return f"sqlite+pysqlite:///{DEFAULT_DATABASE_PATH.as_posix()}"
+    database_path = runtime_paths(project_root).database_path if project_root else DEFAULT_DATABASE_PATH
+    return f"sqlite+pysqlite:///{database_path.as_posix()}"
 
 
 def allowed_hosts() -> list[str]:

@@ -29,9 +29,14 @@ def list_bindings(
     agency_id: uuid.UUID | None = None,
     org_unit_id: uuid.UUID | None = None,
     source_status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
     session: Session = Depends(get_session),
 ) -> dict:
-    return SourceService(session).list_page(search=search, agency_id=agency_id, org_unit_id=org_unit_id, status=source_status)
+    return SourceService(session).list_page(
+        search=search, agency_id=agency_id, org_unit_id=org_unit_id,
+        status=source_status, page=page, page_size=page_size,
+    )
 
 
 def _require_secret_config_admin(method, config, user: User) -> None:

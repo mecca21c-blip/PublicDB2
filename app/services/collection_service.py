@@ -14,7 +14,7 @@ from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.collectors.http_fetcher import HTTPFetchError, HTTPFetcher, UnsafeRequestTarget
@@ -24,9 +24,11 @@ from app.models import (
 )
 from app.models.common import utc_now
 from app.services.api_credential_store import ApiCredentialStore, CredentialStoreError
+from app.services.collection_recovery_service import reconcile_stale_collections, source_claim_key
 from app.services.contact_extraction_service import ContactExtractionService
 from app.services.directory_extraction_service import DirectoryExtractionService
 from app.services.raw_artifact_store import RawArtifactStore, StoredArtifact
+from app.services.operation_claim_service import OperationClaimService
 from app.services.source_change_detection_service import SourceChangeDetectionService
 from app.services.source_method_service import MethodConfigError, SourceMethodService
 from app.services.structured_extraction_service import StructuredExtractionError, StructuredExtractionService
@@ -133,8 +135,11 @@ class CollectionService:
         self.directory_extractor_service = directory_extractor_service
         self.sleeper = sleeper
         self.credential_store = credential_store or ApiCredentialStore(self.project_root / "config")
+        self._claim_id: uuid.UUID | None = None
+        self._claim_owner: str | None = None
 
     def collect(self, source_id: uuid.UUID) -> CollectionResult:
+        reconcile_stale_collections(self.session)
         source = self.session.get(Source, source_id)
         if source is None:
             raise SourceNotFoundError("등록된 수집 소스를 찾을 수 없습니다.")
@@ -142,33 +147,53 @@ class CollectionService:
             raise UnsupportedCollectionMethod("활성 수집 소스 연결이 없습니다.")
         if source.collection_method not in {CollectionMethod.WEB_PAGE, CollectionMethod.WEB_CRAWL, CollectionMethod.API}:
             raise UnsupportedCollectionMethod("지원하지 않는 수집 방식입니다.")
-        try:
-            kind, snapshot = SourceMethodService.snapshot(source)
-        except MethodConfigError as error:
-            raise UnsupportedCollectionMethod(str(error)) from error
         if not self.coordinator.acquire(source_id):
             raise CollectionBusyError("이미 이 소스를 수집 중입니다.")
         try:
+            self.session.rollback()
+            with Session(bind=self.session.get_bind()) as claim_session:
+                claimed = OperationClaimService(claim_session).acquire(
+                    source_claim_key(source_id), 'COLLECT', commit=True
+                )
+                if not claimed.acquired:
+                    raise CollectionBusyError("이미 이 소스를 수집 중입니다.")
+                self._claim_id = claimed.claim.id
+                self._claim_owner = claimed.claim.owner_token
+            self.session.refresh(source)
+            try:
+                kind, snapshot = SourceMethodService.snapshot(source)
+            except MethodConfigError as error:
+                raise UnsupportedCollectionMethod(str(error)) from error
             if self.session.scalar(select(CrawlRun.id).where(
                 CrawlRun.source_id == source_id, CrawlRun.status == RunStatus.RUNNING
             ).limit(1)) is not None:
                 raise CollectionBusyError("이미 이 소스를 수집 중입니다.")
+            started = utc_now()
             run = CrawlRun(
                 source_id=source_id, status=RunStatus.RUNNING,
                 connection_status=StageStatus.PENDING, raw_status=StageStatus.PENDING,
-                extraction_status=StageStatus.PENDING, started_at=utc_now(),
+                extraction_status=StageStatus.PENDING, started_at=started, heartbeat_at=started,
                 records_observed=0, collection_method_snapshot=source.collection_method,
                 collection_kind_snapshot=kind, collection_config_snapshot=snapshot,
                 collection_statistics={}, collector_version=COLLECTOR_VERSION,
             )
             self.session.add(run)
-            self.session.commit()
+            try:
+                self.session.commit()
+            except IntegrityError as error:
+                self.session.rollback()
+                raise CollectionBusyError("이미 이 소스를 수집 중입니다.") from error
             if source.collection_method is CollectionMethod.WEB_PAGE:
                 return self._collect_scrape(source, run)
             if source.collection_method is CollectionMethod.WEB_CRAWL:
                 return self._collect_crawl(source, run)
             return self._collect_api(source, run)
         finally:
+            if self._claim_id is not None and self._claim_owner is not None:
+                with Session(bind=self.session.get_bind()) as claim_session:
+                    OperationClaimService(claim_session).release(self._claim_id, self._claim_owner)
+                self._claim_id = None
+                self._claim_owner = None
             self.coordinator.release(source_id)
 
     def _collect_scrape(self, source: Source, run: CrawlRun) -> CollectionResult:
@@ -374,7 +399,9 @@ class CollectionService:
         run = self._get_run(run_id)
         run.connection_status = StageStatus.SUCCESS
         run.http_status = status_code
+        run.heartbeat_at = utc_now()
         self.session.commit()
+        self._heartbeat()
 
     def _store_observation(
         self, run_id: uuid.UUID, source_id: uuid.UUID, page_url: str, fetched,
@@ -398,8 +425,10 @@ class CollectionService:
         try:
             run = self._get_run(run_id)
             run.raw_status = StageStatus.SUCCESS
+            run.heartbeat_at = utc_now()
             self.session.add(observation)
             self.session.commit()
+            self._heartbeat()
         except SQLAlchemyError as error:
             self.session.rollback()
             self.artifact_store.remove(artifact)
@@ -509,6 +538,7 @@ class CollectionService:
         run.error_summary = error_summary
         run.collection_statistics = statistics
         run.finished_at = finished
+        run.heartbeat_at = finished
         if source is not None:
             source.last_checked_at = finished
             if status is RunStatus.SUCCESS:
@@ -531,6 +561,7 @@ class CollectionService:
         run.error_summary = _summary(error)
         run.collection_statistics = statistics
         run.finished_at = finished
+        run.heartbeat_at = finished
         if source is not None:
             source.last_checked_at = finished
         self.session.commit()
@@ -541,3 +572,8 @@ class CollectionService:
             self._finish_failure(run_id, error, stages["connection"], stages["raw"], stages["extraction"], stages.get("http_status"), stages.get("statistics") or {})
         except (SQLAlchemyError, CollectionFinalizationError):
             self.session.rollback()
+
+    def _heartbeat(self) -> None:
+        if self._claim_id is not None and self._claim_owner is not None:
+            with Session(bind=self.session.get_bind()) as claim_session:
+                OperationClaimService(claim_session).heartbeat(self._claim_id, self._claim_owner)

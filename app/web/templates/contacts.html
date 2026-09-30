@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components.html" import pager %}
 {% block title %}연락처 DB · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
 {% block content %}
@@ -23,6 +24,7 @@
         <thead><tr><th>기관</th><th>부서</th><th>업무</th><th>담당자</th><th>전화</th><th>이메일</th></tr></thead>
         <tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" tabindex="0" aria-selected="{{'true' if loop.first else 'false'}}"><td><strong>{{item.agency}}</strong></td><td>{{item.department}}</td><td>{{item.task}}</td><td class="{{'empty-value' if item.person=='-' else ''}}">{{item.person}}</td><td>{{item.phone}}</td><td>{{item.email}}</td></tr>{% else %}<tr><td colspan="6" class="empty-state-cell">조건에 맞는 확정 연락처가 없습니다.</td></tr>{% endfor %}</tbody>
       </table></div>
+      {{ pager(workspace.pagination) }}
     </section>
     <aside class="panel detail-panel" aria-label="선택 연락처 상세">
       {% for detail in workspace.details %}<article class="detail-view" data-detail-id="{{detail.id}}"{% if not loop.first %} hidden{% endif %}>

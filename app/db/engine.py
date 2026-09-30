@@ -27,6 +27,10 @@ def create_db_engine(database_url: str | None = None, *, echo: bool = False) -> 
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.execute("PRAGMA busy_timeout=5000")
+                database = engine.url.database
+                if database and database != ":memory:":
+                    cursor.execute("PRAGMA journal_mode=WAL")
             finally:
                 cursor.close()
     return engine

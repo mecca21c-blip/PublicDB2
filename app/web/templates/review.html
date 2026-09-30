@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components.html" import icon, status_badge %}
+{% from "components.html" import icon, pager, status_badge %}
 {% block title %}변경 검토 · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
 {% block content %}
@@ -21,6 +21,7 @@
         <thead><tr><th>기관</th><th>대상</th><th>항목</th><th>기존 값</th><th>발견 값</th><th>발견 시각</th><th>상태</th></tr></thead>
         <tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" tabindex="0" aria-selected="{{'true' if loop.first else 'false'}}"><td><strong>{{item.agency}}</strong></td><td>{{item.target}}</td><td>{{item.field}}</td><td>{{item.current}}</td><td>{{item.discovered}}</td><td class="muted-cell">{{item.detected}}</td><td>{{status_badge(item.state,item.tone)}}</td></tr>{% else %}<tr><td colspan="7" class="empty-state-cell">조건에 맞는 변경 검토 후보가 없습니다.</td></tr>{% endfor %}</tbody>
       </table></div>
+      {{ pager(workspace.pagination) }}
     </section>
     <aside class="panel detail-panel" aria-label="선택 변경 후보 비교">
       {% for detail in workspace.details %}<article class="detail-view" data-detail-id="{{detail.id}}"{% if not loop.first %} hidden{% endif %}>

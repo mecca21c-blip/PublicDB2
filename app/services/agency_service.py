@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models import Agency, AgencyType, ContactPoint, Duty, OrgUnit, OrgUnitType, SourceBinding
 from app.repositories.agency_repository import AgencyRepository
 from app.services.normalization import collapse_whitespace, normalize_agency_name, normalize_org_unit_name
+from app.services.pagination import page_metadata, page_values
 
 
 class AgencyServiceError(ValueError):
@@ -157,9 +159,82 @@ class AgencyService:
             raise
         return {"id": str(duty.id), "org_unit_id": str(duty.org_unit_id), "title": duty.title, "description": duty.description}
 
-    def list_page(self, *, search: str | None = None, agency_type: AgencyType | None = None) -> dict:
-        agencies = self.repository.list(search=search, agency_type=agency_type)
-        return {"items": tuple(self.agency_summary(agency) for agency in agencies), "details": tuple(self.agency_detail(agency.id) for agency in agencies)}
+    def list_page(
+        self, *, search: str | None = None, agency_type: AgencyType | None = None,
+        page: int = 1, page_size: int = 100,
+    ) -> dict:
+        page, page_size, offset = page_values(page, page_size)
+        total = self.repository.count(search=search, agency_type=agency_type)
+        agencies = self.repository.list(
+            search=search, agency_type=agency_type, offset=offset, limit=page_size
+        )
+        ids = [agency.id for agency in agencies]
+        unit_counts = {key: count for key, count in self.session.execute(
+            select(OrgUnit.agency_id, func.count()).where(
+                OrgUnit.agency_id.in_(ids), OrgUnit.active.is_(True)
+            ).group_by(OrgUnit.agency_id)
+        )} if ids else {}
+        contact_counts = {key: count for key, count in self.session.execute(
+            select(ContactPoint.agency_id, func.count()).where(
+                ContactPoint.agency_id.in_(ids), ContactPoint.active.is_(True)
+            ).group_by(ContactPoint.agency_id)
+        )} if ids else {}
+        source_counts = {key: count for key, count in self.session.execute(
+            select(SourceBinding.agency_id, func.count()).where(
+                SourceBinding.agency_id.in_(ids)
+            ).group_by(SourceBinding.agency_id)
+        )} if ids else {}
+        units = defaultdict(list)
+        duties = defaultdict(list)
+        bindings = defaultdict(list)
+        if ids:
+            for unit in self.session.scalars(select(OrgUnit).where(
+                OrgUnit.agency_id.in_(ids), OrgUnit.active.is_(True)
+            ).order_by(OrgUnit.name)):
+                units[unit.agency_id].append(unit)
+            for duty in self.session.scalars(select(Duty).where(
+                Duty.agency_id.in_(ids), Duty.active.is_(True)
+            ).order_by(Duty.title)):
+                duties[duty.agency_id].append(duty)
+            for binding in self.session.scalars(
+                select(SourceBinding).options(joinedload(SourceBinding.source))
+                .where(SourceBinding.agency_id.in_(ids)).order_by(SourceBinding.created_at)
+            ):
+                bindings[binding.agency_id].append(binding)
+        items = []
+        details = []
+        for agency in agencies:
+            items.append({
+                "id": str(agency.id), "name": agency.official_name,
+                "type": AGENCY_TYPE_LABELS[agency.agency_type],
+                "agency_type": agency.agency_type.value,
+                "departments": unit_counts.get(agency.id, 0),
+                "contacts": contact_counts.get(agency.id, 0),
+                "sources": source_counts.get(agency.id, 0),
+                "status": "운영" if agency.active else "비활성",
+                "tone": "success" if agency.active else "neutral",
+            })
+            details.append({
+                "id": str(agency.id), "name": agency.official_name,
+                "type": AGENCY_TYPE_LABELS[agency.agency_type],
+                "identifier": agency.external_identifier or "-",
+                "address": agency.address or "-",
+                "departments": tuple(self.org_unit_projection(unit) for unit in units[agency.id]),
+                "duties": tuple({
+                    "id": str(duty.id),
+                    "org_unit_id": str(duty.org_unit_id) if duty.org_unit_id else None,
+                    "title": duty.title, "description": duty.description,
+                } for duty in duties[agency.id]),
+                "sources": tuple({
+                    "binding_id": str(binding.id), "url": binding.source.url,
+                    "description": binding.description, "active": binding.active,
+                } for binding in bindings[agency.id]),
+            })
+        return {
+            "items": tuple(items),
+            "details": tuple(details),
+            "pagination": page_metadata(total, page, page_size),
+        }
 
     def agency_summary(self, agency: Agency) -> dict:
         unit_count = self.session.scalar(select(func.count()).select_from(OrgUnit).where(OrgUnit.agency_id == agency.id, OrgUnit.active.is_(True))) or 0

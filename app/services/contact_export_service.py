@@ -8,10 +8,10 @@ from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import CollectionMethod, ContactPoint, ContactType, CrawlRun, EntityType, Observation, PersonAssignment, Source, SourceOccurrence
+from app.models import Agency, CollectionMethod, ContactPoint, ContactType, CrawlRun, Duty, EntityType, Observation, OrgUnit, Person, PersonAssignment, Source, SourceOccurrence
 from app.services.source_method_service import user_method_label
 
 HEADERS = ('기관', '부서', '업무', '담당자', '연락처 유형', '연락처 값', '확인일', '공식 출처 URL', '수집 방식', '실제 발견 URL')
@@ -41,31 +41,42 @@ class ContactExportService:
             statement = statement.where(ContactPoint.org_unit_id == org_unit_id)
         if contact_type:
             statement = statement.where(ContactPoint.contact_type == contact_type)
-        contacts = list(self.session.scalars(statement))
-        term = (search or '').strip().casefold()
+        term = (search or '').strip()
         if term:
-            contacts = [item for item in contacts if term in ' '.join((
-                item.agency.official_name, item.org_unit.name if item.org_unit else '',
-                item.duty.title if item.duty else '',
-                item.person_assignment.person.name if item.person_assignment else '', item.value,
-            )).casefold()]
-        sources = self._sources([item.id for item in contacts])
-        workbook = Workbook()
-        sheet = workbook.active
+            pattern = f'%{term}%'
+            statement = (
+                statement
+                .join(Agency, Agency.id == ContactPoint.agency_id)
+                .outerjoin(OrgUnit, OrgUnit.id == ContactPoint.org_unit_id)
+                .outerjoin(Duty, Duty.id == ContactPoint.duty_id)
+                .outerjoin(PersonAssignment, PersonAssignment.id == ContactPoint.person_assignment_id)
+                .outerjoin(Person, Person.id == PersonAssignment.person_id)
+                .where(or_(
+                    Agency.official_name.ilike(pattern), OrgUnit.name.ilike(pattern),
+                    Duty.title.ilike(pattern), Person.name.ilike(pattern),
+                    ContactPoint.value.ilike(pattern),
+                ))
+            )
+        workbook = Workbook(write_only=True)
+        sheet = workbook.create_sheet()
         sheet.title = '확정 연락처'
         sheet.append(HEADERS)
-        for item in contacts:
-            values = (
-                item.agency.official_name, item.org_unit.name if item.org_unit else '',
-                item.duty.title if item.duty else '',
-                item.person_assignment.person.name if item.person_assignment else '',
-                item.contact_type.value, item.value,
-                item.verified_at.isoformat() if item.verified_at else '',
-                ', '.join(sorted(sources.get(item.id, {}).get('official', set()))),
-                ', '.join(sorted(sources.get(item.id, {}).get('methods', set()))),
-                ', '.join(sorted(sources.get(item.id, {}).get('actual', set()))),
-            )
-            sheet.append(tuple(safe_cell(value) for value in values))
+        for batch in self.session.scalars(
+            statement.execution_options(yield_per=1000)
+        ).partitions(1000):
+            sources = self._sources([item.id for item in batch])
+            for item in batch:
+                values = (
+                    item.agency.official_name, item.org_unit.name if item.org_unit else '',
+                    item.duty.title if item.duty else '',
+                    item.person_assignment.person.name if item.person_assignment else '',
+                    item.contact_type.value, item.value,
+                    item.verified_at.isoformat() if item.verified_at else '',
+                    ', '.join(sorted(sources.get(item.id, {}).get('official', set()))),
+                    ', '.join(sorted(sources.get(item.id, {}).get('methods', set()))),
+                    ', '.join(sorted(sources.get(item.id, {}).get('actual', set()))),
+                )
+                sheet.append(tuple(safe_cell(value) for value in values))
         now = datetime.now()
         directory = (self.export_root / now.strftime('%Y') / now.strftime('%m') / now.strftime('%d')).resolve()
         if self.export_root not in directory.parents:

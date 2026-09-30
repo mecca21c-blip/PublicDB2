@@ -22,8 +22,11 @@ def _failure(error: ValueError) -> HTTPException:
 
 
 @router.get("")
-def list_agencies(search: str | None = None, session: Session = Depends(get_session)) -> dict:
-    return _service(session).list_page(search=search)
+def list_agencies(
+    search: str | None = None, page: int = 1, page_size: int = 100,
+    session: Session = Depends(get_session),
+) -> dict:
+    return _service(session).list_page(search=search, page=page, page_size=page_size)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_operator)])

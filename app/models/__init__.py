@@ -29,7 +29,7 @@ from app.models.evidence import (
 from app.models.source import Source, SourceBinding
 from app.models.collection import SourceScrapeConfig, SourceCrawlConfig, SourceApiConfig, ExtractedFeedItem
 from app.models.source_import import SourceImportLog
-from app.models.operations import OperationalSettings, User
+from app.models.operations import OperationalSettings, OperationClaim, User
 
 __all__ = [
     "Agency", "AgencyType", "ApiAuthMode", "ApiPaginationMode", "ApiSourceKind", "ChangeDetection", "ChangeEvent", "ChangeEventType",
@@ -41,4 +41,4 @@ __all__ = [
     "SourceApiConfig", "SourceBinding", "SourceCrawlConfig", "SourceCoverageMode", "SourceImportLog", "SourceOccurrence", "SourceScrapeConfig", "SourceType", "StageStatus",
 ]
 
-__all__ += ['OperationalSettings', 'User', 'UserRole']
+__all__ += ['OperationalSettings', 'OperationClaim', 'User', 'UserRole']

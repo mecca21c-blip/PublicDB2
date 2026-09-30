@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
@@ -27,6 +27,7 @@ from app.services.source_method_service import user_method_label
 from app.services.master_promotion_apply_service import MasterPromotionApplyService
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
 from app.services.source_change_detection_service import SourceChangeDetectionService
+from app.services.pagination import page_metadata, page_values
 
 
 STATUS_LABELS = {
@@ -56,14 +57,18 @@ class RunService:
         agency_id: uuid.UUID | None = None,
         status: RunStatus | None = None,
         search: str | None = None,
+        page: int = 1,
+        page_size: int = 100,
     ) -> dict[str, tuple[dict, ...]]:
+        page, page_size, offset = page_values(page, page_size)
         statement = (
             select(CrawlRun)
             .join(CrawlRun.source)
             .options(
                 selectinload(CrawlRun.source).selectinload(Source.bindings).selectinload(SourceBinding.agency),
                 selectinload(CrawlRun.source).selectinload(Source.bindings).selectinload(SourceBinding.org_unit),
-                selectinload(CrawlRun.observations).selectinload(Observation.extraction_runs),
+                selectinload(CrawlRun.observations).selectinload(Observation.extraction_runs).selectinload(ExtractionRun.candidates),
+                selectinload(CrawlRun.observations).selectinload(Observation.extraction_runs).selectinload(ExtractionRun.directory_records),
             )
             .order_by(CrawlRun.started_at.desc(), CrawlRun.id.desc())
         )
@@ -89,9 +94,15 @@ class RunService:
                     ),
                 )
             )
-        runs = list(self.session.scalars(statement).unique())
+        total_statement = statement.order_by(None).with_only_columns(CrawlRun.id).subquery()
+        total = self.session.scalar(select(func.count()).select_from(total_statement)) or 0
+        runs = list(self.session.scalars(statement.offset(offset).limit(page_size)).unique())
         projections = [self._projection(run) for run in runs]
-        return {"items": tuple(item for item, _ in projections), "details": tuple(detail for _, detail in projections)}
+        return {
+            "items": tuple(item for item, _ in projections),
+            "details": tuple(detail for _, detail in projections),
+            "pagination": page_metadata(total, page, page_size),
+        }
 
     def _projection(self, run: CrawlRun) -> tuple[dict, dict]:
         bindings = sorted(run.source.bindings, key=lambda item: (item.agency.official_name, item.org_unit.name if item.org_unit else ""))

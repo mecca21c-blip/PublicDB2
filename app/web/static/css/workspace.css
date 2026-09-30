@@ -102,3 +102,15 @@ select.control { appearance: auto; }
   .detail-panel { position: static; }
   .settings-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.workspace-pager {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr auto 1fr;
+  padding: 14px 18px;
+  text-align: center;
+}
+
+.workspace-pager > :last-child {
+  justify-self: end;
+}

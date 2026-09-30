@@ -14,6 +14,7 @@ from app.models import (
 )
 from app.models.common import utc_now
 from app.services.master_normalization import normalize_text
+from app.services.operation_claim_service import OperationClaimService
 
 
 class ReviewConflict(ValueError):
@@ -34,18 +35,31 @@ class ReviewService:
             raise ReviewConflict(candidate.blocked_reason or "This candidate requires manual context confirmation.")
         if candidate.observation.source_id != candidate.source_id:
             raise ReviewConflict("Source evidence no longer matches the candidate.")
+        claims, claim, reused = self._claim(candidate_id, 'REVIEW_APPROVE')
+        if reused is not None:
+            return reused
         try:
+            self.session.refresh(candidate)
+            if candidate.review_status is ReviewStatus.APPROVED:
+                result = {"candidate_id": str(candidate.id), "status": ReviewStatus.APPROVED.value, "reused": True}
+                claims.complete(claim, result)
+                self.session.commit()
+                return result
+            if candidate.review_status not in (ReviewStatus.PENDING_REVIEW, ReviewStatus.DEFERRED):
+                raise ReviewConflict("This review candidate is already terminal.")
             entity = self._apply(candidate)
             candidate.review_status = ReviewStatus.APPROVED
             candidate.resolved_at = utc_now()
             candidate.resolution_note = note
-            self.session.commit()
-            return {
+            result = {
                 "candidate_id": str(candidate.id),
                 "status": candidate.review_status.value,
                 "entity_id": str(entity.id),
                 "reused": False,
             }
+            claims.complete(claim, result)
+            self.session.commit()
+            return result
         except Exception:
             self.session.rollback()
             raise
@@ -56,11 +70,20 @@ class ReviewService:
             return {"candidate_id": str(candidate.id), "status": ReviewStatus.REJECTED.value, "reused": True}
         if candidate.review_status not in (ReviewStatus.PENDING_REVIEW, ReviewStatus.DEFERRED):
             raise ReviewConflict("This review candidate is already terminal.")
+        claims, claim, reused = self._claim(candidate_id, 'REVIEW_REJECT')
+        if reused is not None:
+            return reused
+        self.session.refresh(candidate)
+        if candidate.review_status not in (ReviewStatus.PENDING_REVIEW, ReviewStatus.DEFERRED):
+            self.session.rollback()
+            raise ReviewConflict("This review candidate is already terminal.")
         candidate.review_status = ReviewStatus.REJECTED
         candidate.resolved_at = utc_now()
         candidate.resolution_note = note
+        result = {"candidate_id": str(candidate.id), "status": candidate.review_status.value, "reused": False}
+        claims.complete(claim, result)
         self.session.commit()
-        return {"candidate_id": str(candidate.id), "status": candidate.review_status.value, "reused": False}
+        return result
 
     def defer(self, candidate_id: uuid.UUID, note: str | None = None) -> dict:
         candidate = self._candidate(candidate_id)
@@ -68,11 +91,40 @@ class ReviewService:
             return {"candidate_id": str(candidate.id), "status": ReviewStatus.DEFERRED.value, "reused": True}
         if candidate.review_status is not ReviewStatus.PENDING_REVIEW:
             raise ReviewConflict("Only a pending candidate can be deferred.")
+        claims, claim, reused = self._claim(candidate_id, 'REVIEW_DEFER')
+        if reused is not None:
+            return reused
+        self.session.refresh(candidate)
+        if candidate.review_status is not ReviewStatus.PENDING_REVIEW:
+            self.session.rollback()
+            raise ReviewConflict("Only a pending candidate can be deferred.")
         candidate.review_status = ReviewStatus.DEFERRED
         candidate.resolved_at = None
         candidate.resolution_note = note
+        result = {"candidate_id": str(candidate.id), "status": candidate.review_status.value, "reused": False}
+        claims.complete(claim, result)
         self.session.commit()
-        return {"candidate_id": str(candidate.id), "status": candidate.review_status.value, "reused": False}
+        return result
+
+    def _claim(self, candidate_id: uuid.UUID, operation: str):
+        claims = OperationClaimService(self.session)
+        acquired = claims.acquire(f'review:{candidate_id}', operation)
+        if acquired.acquired:
+            return claims, acquired.claim, None
+        existing = acquired.claim
+        if existing.status == 'COMPLETED' and existing.operation == operation and existing.result_payload:
+            return claims, existing, {**existing.result_payload, 'reused': True}
+        if (
+            existing.status == 'COMPLETED'
+            and existing.operation == 'REVIEW_DEFER'
+            and operation in {'REVIEW_APPROVE', 'REVIEW_REJECT'}
+        ):
+            self.session.delete(existing)
+            self.session.commit()
+            return self._claim(candidate_id, operation)
+        if existing.status == 'COMPLETED':
+            raise ReviewConflict(f'Review candidate already resolved by {existing.operation}.')
+        raise ReviewConflict('Review candidate is already being resolved.')
 
     def _candidate(self, candidate_id: uuid.UUID) -> DetectedChangeCandidate:
         candidate = self.session.scalar(

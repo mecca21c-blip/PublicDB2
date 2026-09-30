@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components.html" import status_badge %}
+{% from "components.html" import pager, status_badge %}
 {% block title %}수집 이력 · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
 {% block content %}
@@ -19,6 +19,7 @@
     <section class="panel workspace-list-panel">
       <header class="panel-heading"><div class="panel-heading-copy"><h2>실행 목록</h2><p>실제 저장된 수집 실행을 표시합니다.</p></div><span class="table-count">{{workspace['items']|length}}건</span></header>
       <div class="table-scroll"><table class="data-table workspace-table"><thead><tr><th>수집 시각</th><th>기관</th><th>소스</th><th>수집 방식</th><th>수집 결과</th><th>발견 수</th><th>소요 시간</th></tr></thead><tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" tabindex="0" aria-selected="{{'true' if loop.first else 'false'}}"><td class="muted-cell">{{item.time}}</td><td><strong>{{item.agency}}</strong></td><td class="url-cell">{{item.source}}</td><td>{{item.method}}</td><td>{{status_badge(item.result,item.tone)}}</td><td>{{item.found}}</td><td>{{item.duration}}</td></tr>{% else %}<tr><td colspan="7" class="empty-state-cell">조건에 맞는 수집 이력이 없습니다.</td></tr>{% endfor %}</tbody></table></div>
+      {{ pager(workspace.pagination) }}
     </section>
     <aside class="panel detail-panel" aria-label="선택 수집 실행 상세">
       {% for detail in workspace.details %}<article class="detail-view" data-detail-id="{{detail.id}}"{% if not loop.first %} hidden{% endif %}>
