@@ -2,6 +2,7 @@
 
 from app.models.entities import Agency, ContactPoint, Duty, OrgUnit, Person, PersonAssignment
 from app.models.enums import (
+    ApiAuthMode, ApiPaginationMode, ApiSourceKind,
     AgencyType,
     ChangeEventType,
     CollectionMethod,
@@ -18,7 +19,7 @@ from app.models.enums import (
     SourceCoverageMode,
     SourceType,
     StageStatus,
-    UserRole,
+    UserRole, CrawlScope,
 )
 from app.models.evidence import (
     ChangeDetection, ChangeEvent, ContactHistory, CrawlRun, DetectedChangeCandidate,
@@ -26,17 +27,18 @@ from app.models.evidence import (
     Observation, SourceOccurrence,
 )
 from app.models.source import Source, SourceBinding
+from app.models.collection import SourceScrapeConfig, SourceCrawlConfig, SourceApiConfig, ExtractedFeedItem
 from app.models.source_import import SourceImportLog
 from app.models.operations import OperationalSettings, User
 
 __all__ = [
-    "Agency", "AgencyType", "ChangeDetection", "ChangeEvent", "ChangeEventType",
+    "Agency", "AgencyType", "ApiAuthMode", "ApiPaginationMode", "ApiSourceKind", "ChangeDetection", "ChangeEvent", "ChangeEventType",
     "CollectionMethod", "ContactHistory", "ContactPoint", "ContactType", "CrawlRun",
-    "CandidateType", "DataFormat", "DetectedChangeCandidate", "DetectionMethod", "DirectoryRecordType",
-    "Duty", "EntityType", "ExtractedContactCandidate", "ExtractedDirectoryRecord",
+    "CandidateType", "CrawlScope", "DataFormat", "DetectedChangeCandidate", "DetectionMethod", "DirectoryRecordType",
+    "Duty", "EntityType", "ExtractedContactCandidate", "ExtractedDirectoryRecord", "ExtractedFeedItem",
     "ExtractionRun", "ExtractionStatus", "Observation", "OrgUnit", "OrgUnitType",
     "Person", "PersonAssignment", "ReviewStatus", "RunStatus", "Source",
-    "SourceBinding", "SourceCoverageMode", "SourceImportLog", "SourceOccurrence", "SourceType", "StageStatus",
+    "SourceApiConfig", "SourceBinding", "SourceCrawlConfig", "SourceCoverageMode", "SourceImportLog", "SourceOccurrence", "SourceScrapeConfig", "SourceType", "StageStatus",
 ]
 
 __all__ += ['OperationalSettings', 'User', 'UserRole']

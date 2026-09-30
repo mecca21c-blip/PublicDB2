@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import RuntimePaths, ensure_runtime_directories, runtime_paths
-from app.models import Agency, AgencyType, OrgUnit, OrgUnitType, Source, SourceBinding, SourceImportLog
+from app.models import Agency, AgencyType, CollectionMethod, OrgUnit, OrgUnitType, Source, SourceBinding, SourceImportLog
 from app.models.common import utc_now
 from app.services.agency_service import AgencyService
 from app.services.normalization import (
@@ -40,6 +40,16 @@ HEADER_ALIASES = {
     "org_unit": {"부서명", "부서", "조직명", "department", "orgunit", "org_unit"},
     "url": {"url", "주소", "sourceurl", "source_url", "수집url"},
     "description": {"소스설명", "설명", "description", "source_description"},
+    "collection_method": {"수집방식", "collectionmethod", "collection_method", "방식"},
+}
+IMPORT_METHODS = {
+    "": CollectionMethod.WEB_PAGE,
+    "스크래핑": CollectionMethod.WEB_PAGE,
+    "개별url·스크래핑": CollectionMethod.WEB_PAGE,
+    "web_page": CollectionMethod.WEB_PAGE,
+    "크롤링": CollectionMethod.WEB_CRAWL,
+    "indexurl·크롤링": CollectionMethod.WEB_CRAWL,
+    "web_crawl": CollectionMethod.WEB_CRAWL,
 }
 
 
@@ -171,6 +181,7 @@ def parse_import_file(filename: str, content: bytes, row_limit: int = MAX_IMPORT
             "raw_org_unit": _cell(values, columns.get("org_unit")),
             "raw_url": _cell(values, columns["url"]),
             "description": _cell(values, columns.get("description")),
+            "raw_collection_method": _cell(values, columns.get("collection_method")),
         })
     if not rows:
         raise SourceImportError("가져올 데이터 행이 없습니다.")
@@ -198,7 +209,7 @@ class SourceImportService:
             unit_map.setdefault((unit.agency_id, unit.normalized_name), []).append(unit)
         source_map = {source.normalized_url: source for source in sources}
         binding_keys = {(binding.source_id, binding.scope_key) for binding in bindings}
-        seen: set[tuple[str, str, str]] = set()
+        seen: dict[tuple[str, str, str], CollectionMethod] = {}
         projected: list[dict[str, Any]] = []
 
         for raw in rows:
@@ -222,7 +233,7 @@ class SourceImportService:
         }
         return {"rows": projected, "summary": summary}
 
-    def _classify_row(self, item: dict[str, Any], agency_map: dict[str, list[Agency]], unit_map: dict[tuple[uuid.UUID, str], list[OrgUnit]], source_map: dict[str, Source], binding_keys: set[tuple[uuid.UUID, str]], seen: set[tuple[str, str, str]]) -> tuple[ImportCategory, str, bool]:
+    def _classify_row(self, item: dict[str, Any], agency_map: dict[str, list[Agency]], unit_map: dict[tuple[uuid.UUID, str], list[OrgUnit]], source_map: dict[str, Source], binding_keys: set[tuple[uuid.UUID, str]], seen: dict[tuple[str, str, str], CollectionMethod]) -> tuple[ImportCategory, str, bool]:
         agency_name = normalize_agency_name(item["raw_agency"])
         if not agency_name:
             return ImportCategory.INVALID, "기관명은 필수입니다.", False
@@ -233,6 +244,15 @@ class SourceImportService:
         except SourceURLValidationError as error:
             return ImportCategory.INVALID, str(error), False
         item["normalized_url"] = normalized_url
+        method_key = item.get("raw_collection_method", "").replace(" ", "").casefold()
+        method = IMPORT_METHODS.get(method_key)
+        if method is None:
+            return ImportCategory.INVALID, "Excel에서는 스크래핑 또는 크롤링만 가져올 수 있습니다. API/RSS는 전용 화면을 사용하세요.", False
+        item["collection_method"] = method.value
+        source_method_key = (normalized_url, "__canonical_method__", "__canonical_method__")
+        if source_method_key in seen and seen[source_method_key] is not method:
+            return ImportCategory.CONFLICT, "파일 내부에서 같은 canonical URL의 수집 방식이 충돌합니다.", False
+        seen[source_method_key] = method
         agency_matches = agency_map.get(agency_name, [])
         if len(agency_matches) > 1:
             return ImportCategory.CONFLICT, "정규화 기관명이 여러 기존 기관과 충돌합니다.", False
@@ -256,10 +276,14 @@ class SourceImportService:
         org_identity = f"id:{unit.id}" if unit else (f"new:{org_name}" if org_name else "agency")
         semantic_key = (normalized_url, agency_identity, org_identity)
         if semantic_key in seen:
+            if seen[semantic_key] is not method:
+                return ImportCategory.CONFLICT, "파일 내부에서 같은 URL과 기관/부서의 수집 방식이 충돌합니다.", False
             return ImportCategory.EXACT_DUPLICATE, "파일 내부에서 같은 URL과 기관/부서가 중복되었습니다.", False
-        seen.add(semantic_key)
+        seen[semantic_key] = method
 
         source = source_map.get(normalized_url)
+        if source and source.collection_method is not method:
+            return ImportCategory.CONFLICT, "기존 canonical URL의 수집 방식과 충돌합니다.", False
         if source and agency and (source.id, f"org:{unit.id}" if unit else f"agency:{agency.id}") in binding_keys and not item["will_create_org_unit"]:
             return ImportCategory.EXACT_DUPLICATE, "같은 URL과 기관/부서 연결이 이미 등록되어 있습니다.", False
         if agency is None:
@@ -306,7 +330,11 @@ class SourceImportService:
                                 unit = agency_service.create_org_unit(agency_id=agency_id, name=row["resolved_org_unit"], unit_type=OrgUnitType.DEPARTMENT, commit=False)
                                 org_unit_id = uuid.UUID(unit["id"])
                             source_existed = self.session.scalar(select(Source.id).where(Source.normalized_url == row["normalized_url"])) is not None
-                            _binding, created_binding = source_service.register_binding(url=row["raw_url"], agency_id=agency_id, org_unit_id=org_unit_id, description=row["description"], commit=False)
+                            _binding, created_binding = source_service.register_binding(
+                                url=row["raw_url"], agency_id=agency_id, org_unit_id=org_unit_id,
+                                description=row["description"], collection_method=row["collection_method"],
+                                method_config={}, commit=False,
+                            )
                             counts["created_agencies"] += int(created_agency)
                             counts["created_org_units"] += int(created_org_unit)
                             counts["created_sources"] += int(not source_existed)

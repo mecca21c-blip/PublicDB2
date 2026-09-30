@@ -299,7 +299,7 @@ def test_confirmed_export_filters_provenance_formula_and_bounds(ops_env):
     assert path.suffix == '.xlsx' and path.name.startswith('publicdb2_contacts_')
     sheet = load_workbook(path, read_only=True).active
     rows = list(sheet.iter_rows(values_only=True))
-    assert rows[0] == ('기관', '부서', '업무', '담당자', '연락처 유형', '연락처 값', '확인일', '공식 출처 URL')
+    assert rows[0] == ('기관', '부서', '업무', '담당자', '연락처 유형', '연락처 값', '확인일', '공식 출처 URL', '수집 방식', '실제 발견 URL')
     assert len(rows) == 2 and rows[1][0] == 'Live Agency'
     assert rows[1][5].startswith("'=")
     assert rows[1][7] == 'https://example.org/one'

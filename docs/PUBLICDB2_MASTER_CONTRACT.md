@@ -12,6 +12,9 @@ PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직/부서, 업
 변경 이력도 활성화됐다.
 05A에서 실 Dashboard, typed 운영 Settings, 확정 연락처 XLSX export와
 application user 인증·역할·CSRF 및 서버 운영 경계가 활성화됐다.
+05B에서 하나의 Source가 하나의 현재 방식을 소유하는 3-Way 수집, typed method
+config, immutable CrawlRun snapshot, 다중 Observation, OpenAPI/RSS/Atom discovery,
+portable API credential store가 활성화됐다.
 
 PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통째로
 복사하거나 직접 연결하지 않으며, 확인된 의미와 재검증 가능한 로직만 별도 Goal에서
@@ -57,8 +60,7 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   PublicDB User-Agent만 소유한다. row가 없으면 안전한 코드 기본값을 사용하고 ADMIN
   저장 후 다음 collection action의 HTTPFetcher부터 재시작 없이 반영한다.
 - /settings는 ADMIN 전용이며 PROJECT_ROOT 소유 DB/RAW/import/export/temp/log/backup/
-  config 경로를 read-only로 표시한다. WEB_PAGE 단일 페이지 지원과 자동 수집 미사용을
-  사실대로 표시한다.
+  config 경로와 3-Way 지원, 자동 수집 미사용을 read-only로 표시한다.
 - 확정 연락처 export는 현재 연락처 필터를 적용해 ContactPoint당 한 행 XLSX를 만들며
   discovery candidate를 포함하지 않는다. 파일은 data/exports/YYYY/MM/DD 아래에서만
   생성하고 수식 시작 문자를 literal로 방어한다. OPERATOR와 ADMIN만 실행한다.
@@ -99,14 +101,13 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 발견 데이터는 수집·추출로 관찰된 후보이고, 확정 데이터는 사용자 검토 또는 승인된
 규칙을 거친 운영값이다. 두 값은 UI와 저장 계약에서 분리한다.
 
-## 04A Live Collection Contract
+## 04A Live Collection Foundation
 
 - canonical Source가 CrawlRun과 Observation을 소유한다. SourceBinding은 기관과
   선택적 부서 context만 소유하며 binding 수만큼 같은 URL을 다시 수집하지 않는다.
 - 사용자의 단일 수집 action이 안전한 HTTP GET, RAW 저장, Observation, 연락처와
   직원명부 추출, 발견 후보 저장, CrawlRun 확정을 연속 수행한다.
-- 활성 지원 방식은 CollectionMethod.WEB_PAGE의 등록된 단일 URL뿐이다. API,
-  WEB_CRAWL, FILE, DOCUMENT와 자동 실행·scheduler는 비활성이다.
+- 04A가 제공한 WEB_PAGE 단일 URL 경로는 05B dispatcher의 SCRAPE 경로로 보존된다.
 - RAW는 PROJECT_ROOT/data/raw 아래 날짜/source/run 경로에 atomic 저장하고 DB에는
   project-relative POSIX 경로, SHA-256과 응답 byte 수만 기록한다.
 - 연락처 후보와 직원명부 행은 discovery data다. ContactPoint, Person,
@@ -151,6 +152,33 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - Source 운영 상태는 수집·RAW·추출 상태가 계속 소유한다. 검토 대기 존재 여부는
   Source의 정상/오류/자료없음 상태를 바꾸지 않는다.
 
+## 05B Three-Way Collection Contract
+
+- 사용자 SSOT는 개별 URL · 스크래핑, Index URL · 크롤링, 공개 API / RSS다.
+  내부 방식은 각각 WEB_PAGE, WEB_CRAWL, API이고 API subtype은 OPEN_API, RSS,
+  ATOM이다. 하나의 Source는 정확히 하나의 현재 방식과 해당 typed config만 소유한다.
+- SourceScrapeConfig는 연락처/직원명부 extractor 선택을, SourceCrawlConfig는
+  PATH_PREFIX/SAME_DOMAIN, 허용 경로, 깊이·페이지·간격 한도를,
+  SourceApiConfig는 subtype, JSON/XML/CSV mapping, bounded PAGE_NUMBER,
+  non-secret parameter, auth metadata와 catalog provenance를 소유한다.
+- 크롤링은 순차 실행, 최대 깊이 5, 최대 페이지 200, 최소 요청 간격 500ms이며
+  robots.txt, SSRF, redirect와 scope 검증을 우회하지 않는다. 성공한 각 page는 같은
+  CrawlRun 아래 별도 Observation과 충돌 없는 project-relative RAW를 가진다.
+- OpenAPI는 GET만 지원하고 단순 dot/element/header mapping 결과를 기존
+  ExtractedDirectoryRecord/ExtractedContactCandidate discovery에 기록한다. RSS/Atom
+  item은 ExtractedFeedItem discovery이며 Person/ContactPoint를 자동 생성하지 않는다.
+- API secret은 Source URL, DB config, CrawlRun snapshot, log, HTML/JS/Git에 저장하지
+  않는다. PROJECT_ROOT/config의 Git-ignored atomic credential store만 실제 값을
+  소유하고 DB에는 opaque credential_ref만 둔다.
+- CrawlRun은 실행 당시 method/kind/config의 비밀 없는 불변 snapshot과 bounded
+  statistics를 소유한다. pre-05B snapshot 없는 run은 역사적으로 명확한 WEB_PAGE
+  legacy projection으로만 읽는다.
+- 확정 연락처 provenance와 export는 공식 Source URL, 실제 Observation URL, 실행 당시
+  수집 방식을 보존한다. RSS item은 review/Master 경로를 우회하지 않는다.
+- built-in catalog는 code-owned template이며 검증된 무인증 PublicDB 관련 항목만
+  포함한다. 활성화는 Agency context를 요구하고 network나 collection을 시작하지 않는다.
+- 자동 scheduler와 startup network는 계속 비활성이다.
+
 ## PORTABLE PROJECT CONTRACT
 
 PublicDB2 설치 폴더가 application과 data의 이동 단위다. 기본 runtime 경로는 모두
@@ -187,7 +215,7 @@ project-relative 저장 경로, SHA-256, 확정 시각과 결과 집계를 기�
 - 반영·유지·보류: 변경/검토 기능이 소유하며 이력 보존을 전제로 한다.
 - 운영 설정 저장: 설정 기능이 소유한다.
 
-기관/부서/업무, SourceBinding 등록·수정·제외·복구, Excel/CSV import, 04A
-WEB_PAGE 수집·RAW·발견 추출·수집 이력과 04B 확정값 반영·변경 검토를 활성화한다.
+기관/부서/업무, SourceBinding 등록·수정·제외·복구, Excel/CSV import, 05B
+3-Way 수집·RAW·발견 추출·수집 이력과 04B 확정값 반영·변경 검토를 활성화한다.
 Dashboard 실집계, typed 운영 설정, confirmed XLSX export와 인증/권한을 활성화한다.
-자동 scheduler, 다중 페이지 crawl과 실제 Apache/HTTPS/Windows service 구성은 활성화하지 않는다.
+자동 scheduler와 실제 Apache/HTTPS/Windows service 구성은 활성화하지 않는다.

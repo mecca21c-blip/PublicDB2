@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.models import AgencyType, OrgUnitType, SourceCoverageMode, UserRole
+from app.models import AgencyType, CollectionMethod, OrgUnitType, SourceCoverageMode, UserRole
 
 
 class AgencyCreate(BaseModel):
@@ -38,6 +38,8 @@ class SourceBindingCreate(BaseModel):
     org_unit_id: uuid.UUID | None = None
     url: str
     description: str | None = None
+    collection_method: CollectionMethod = CollectionMethod.WEB_PAGE
+    method_config: dict = Field(default_factory=dict)
 
 
 class SourceBindingUpdate(BaseModel):
@@ -45,6 +47,18 @@ class SourceBindingUpdate(BaseModel):
     org_unit_id: uuid.UUID | None = None
     url: str | None = None
     description: str | None = None
+    collection_method: CollectionMethod | None = None
+    method_config: dict | None = None
+
+
+class CredentialCreate(BaseModel):
+    secret_value: str = Field(min_length=1, max_length=10_000)
+    credential_ref: str | None = Field(default=None, max_length=200)
+
+
+class CatalogActivation(BaseModel):
+    agency_id: uuid.UUID
+    org_unit_id: uuid.UUID | None = None
 
 
 class ExclusionRequest(BaseModel):

@@ -18,13 +18,20 @@ production DB를 참조하지 않는다.
 | SourceOccurrence | INHERITED_AND_ACTIVE | app/services/master_promotion_apply_service.py와 review_service.py가 idempotent provenance 기록 |
 | ChangeEvent / ChangeDetection / ContactHistory | ADAPTED_AND_ACTIVE | app/models/evidence.py; baseline/change/review/contact temporal contract 활성 |
 | SQLAlchemy base/session/config | ADAPTED_AND_ACTIVE | app/db, app/core; 독립 DB와 환경 override |
-| Alembic migration | NEW_PUBLICDB2 | 9b2d04b04b01 뒤 a5c105a05a01 users/operational settings |
+| Alembic migration | NEW_PUBLICDB2 | a5c105a05a01 뒤 c7f205b05b01 3-Way collection |
 | 기관/부서/업무 API와 live UI | NEW_PUBLICDB2 | app/api/agencies.py, /agencies |
 | SourceBinding API와 live UI | NEW_PUBLICDB2 | app/api/sources.py, /sources |
 | binding 제외·복구 | NEW_PUBLICDB2 | 물리 삭제 없이 binding 상태와 사유/시각 보존 |
 | HTTPFetcher | ADAPTED_AND_ACTIVE | app/collectors/http_fetcher.py; redirect별 public-host 재검증과 timeout/size 제한 |
 | RawArtifactStore | ADAPTED_AND_ACTIVE | app/services/raw_artifact_store.py; PublicDB2 project-relative portable RAW 경로 |
 | CollectionService/pipeline | ADAPTED_AND_ACTIVE | app/services/collection_service.py; canonical Source 단일 action과 stage 상태 계약 |
+| 3-Way dispatcher | NEW_PUBLICDB2 | WEB_PAGE/WEB_CRAWL/API 단일 action dispatch, immutable run snapshot |
+| typed Source method config | NEW_PUBLICDB2 | SourceScrapeConfig, SourceCrawlConfig, SourceApiConfig; one current method |
+| bounded crawler | NEW_PUBLICDB2 | sequential, robots/SSRF/scope/depth/page/delay enforcement |
+| OpenAPI structured mapping | NEW_PUBLICDB2 | GET JSON/XML/CSV mapping을 기존 discovery table로 연결 |
+| RSS/Atom discovery | NEW_PUBLICDB2 | ExtractedFeedItem; confirmed Master 자동 반영 없음 |
+| API credential store | NEW_PUBLICDB2 | project config 아래 atomic Git-ignored store; DB는 opaque ref만 보유 |
+| built-in public catalog | NEW_PUBLICDB2 | code-owned verified no-auth template infrastructure; 현재 verified entry 0 |
 | artifact validation | ADAPTED_AND_ACTIVE | app/services/artifact_validation.py; RAW stage, 경로 경계, hash, type, size 재검증 |
 | HTML contact extractor | INHERITED_AND_ACTIVE | app/collectors/html_contact_extractor.py; 결정적 PHONE/EMAIL/FAX discovery |
 | staff-directory extractor | INHERITED_AND_ACTIVE | app/collectors/staff_directory_extractor.py; header 기반 구조 행 discovery |

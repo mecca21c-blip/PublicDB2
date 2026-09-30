@@ -42,7 +42,8 @@
 
 - 대시보드만 현재 활성 UI다.
 - 기존 구현의 이번 실환경 검증은 수행되지 않았다.
-- WEB_PAGE 이외 방식은 현재 collector에서 거부된다.
+- 05B부터 WEB_PAGE, WEB_CRAWL, API(OPEN_API/RSS/ATOM)를 지원한다. FILE과
+  DOCUMENT는 계속 거부하며 자동 수집은 없다.
 - Source에 부서 직접 관계가 없고 URL 전역 고유성과 단일 기관 연결이 있다.
 - Excel 업로드, 실제 검토 결정, 내보내기, 소스 정리/삭제 UI는 미구현이다.
 - 사람/재직 반영은 미완성이다.

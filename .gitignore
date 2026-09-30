@@ -18,5 +18,7 @@ backups/
 config/local.*
 config/security.json
 config/security*.json
+config/api_credentials.json
+config/api_credentials*.json
 dist/
 build/

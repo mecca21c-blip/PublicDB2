@@ -21,7 +21,9 @@ from app.models import (
     Source,
     SourceBinding,
     SourceOccurrence,
+    CollectionMethod,
 )
+from app.services.source_method_service import user_method_label
 from app.services.master_promotion_apply_service import MasterPromotionApplyService
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
 from app.services.source_change_detection_service import SourceChangeDetectionService
@@ -111,20 +113,22 @@ class RunService:
             max(0.0, (run.finished_at - run.started_at).total_seconds())
             if run.finished_at else None
         )
-        observation = run.observations[0] if run.observations else None
-        extraction_runs = observation.extraction_runs if observation else []
+        observations = sorted(run.observations, key=lambda value: (value.observed_at, value.id))
+        observation = observations[0] if observations else None
+        extraction_runs = [extraction for observed in observations for extraction in observed.extraction_runs]
         contact_count = sum(
-            extraction.candidates_found for extraction in extraction_runs
-            if extraction.extractor_name == "html_contact" and extraction.status.value == "SUCCESS"
+            len(extraction.candidates) for extraction in extraction_runs
+            if extraction.status.value == "SUCCESS"
         )
         directory_count = sum(
-            extraction.candidates_found for extraction in extraction_runs
-            if extraction.extractor_name == "staff_directory" and extraction.status.value == "SUCCESS"
+            len(extraction.directory_records) for extraction in extraction_runs
+            if extraction.status.value == "SUCCESS"
         )
         staff_extraction = next((
             extraction for extraction in extraction_runs
             if extraction.extractor_name == "staff_directory"
             and extraction.status.value == "SUCCESS"
+            and extraction.directory_records
         ), None)
         master = {
             "available": False, "extraction_id": None, "agency_choices": (),
@@ -146,7 +150,7 @@ class RunService:
                 baseline = detector.baseline_exists(run.source_id, resolved_agency)
                 current_occurrence = self.session.scalar(
                     select(SourceOccurrence.id)
-                    .where(SourceOccurrence.observation_id == observation.id)
+                    .where(SourceOccurrence.observation_id == staff_extraction.observation_id)
                     .limit(1)
                 )
                 detection = self.session.scalar(
@@ -197,6 +201,10 @@ class RunService:
             "time": run.started_at.strftime("%Y-%m-%d %H:%M"),
             "agency": context,
             "source": run.source.title or run.source.url,
+            "method": user_method_label(
+                run.collection_method_snapshot or CollectionMethod.WEB_PAGE,
+                run.collection_kind_snapshot,
+            ),
             "result": result,
             "tone": tone,
             "found": run.records_observed,
@@ -228,5 +236,20 @@ class RunService:
             "finished_at": run.finished_at.isoformat() if run.finished_at else "-",
             "duration": item["duration"],
             "master": master,
+            "method": item["method"],
+            "method_long": user_method_label(
+                run.collection_method_snapshot or CollectionMethod.WEB_PAGE,
+                run.collection_kind_snapshot, long=True,
+            ),
+            "legacy_snapshot": run.collection_method_snapshot is None,
+            "config_snapshot": run.collection_config_snapshot or {"target_url": run.source.url},
+            "statistics": run.collection_statistics or {},
+            "observation_count": len(observations),
+            "observations": tuple({
+                "url": value.final_url or value.page_url,
+                "artifact_path": value.artifact_path if value.artifact_path and not Path(value.artifact_path).is_absolute() else "-",
+                "content_type": value.content_type or "-",
+                "response_bytes": value.response_bytes if value.response_bytes is not None else "-",
+            } for value in observations),
         }
         return item, detail

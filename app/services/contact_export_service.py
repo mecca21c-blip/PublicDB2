@@ -11,9 +11,10 @@ from openpyxl import Workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import ContactPoint, ContactType, EntityType, Observation, PersonAssignment, Source, SourceOccurrence
+from app.models import CollectionMethod, ContactPoint, ContactType, CrawlRun, EntityType, Observation, PersonAssignment, Source, SourceOccurrence
+from app.services.source_method_service import user_method_label
 
-HEADERS = ('기관', '부서', '업무', '담당자', '연락처 유형', '연락처 값', '확인일', '공식 출처 URL')
+HEADERS = ('기관', '부서', '업무', '담당자', '연락처 유형', '연락처 값', '확인일', '공식 출처 URL', '수집 방식', '실제 발견 URL')
 
 
 def safe_cell(value):
@@ -60,7 +61,9 @@ class ContactExportService:
                 item.person_assignment.person.name if item.person_assignment else '',
                 item.contact_type.value, item.value,
                 item.verified_at.isoformat() if item.verified_at else '',
-                ', '.join(sorted(sources.get(item.id, set()))),
+                ', '.join(sorted(sources.get(item.id, {}).get('official', set()))),
+                ', '.join(sorted(sources.get(item.id, {}).get('methods', set()))),
+                ', '.join(sorted(sources.get(item.id, {}).get('actual', set()))),
             )
             sheet.append(tuple(safe_cell(value) for value in values))
         now = datetime.now()
@@ -83,11 +86,19 @@ class ContactExportService:
         if not contact_ids:
             return result
         rows = self.session.execute(
-            select(SourceOccurrence.entity_id, Source.url)
+            select(
+                SourceOccurrence.entity_id, Source.url, Observation.final_url,
+                Observation.page_url, CrawlRun.collection_method_snapshot,
+                CrawlRun.collection_kind_snapshot,
+            )
             .join(Observation, Observation.id == SourceOccurrence.observation_id)
+            .join(CrawlRun, CrawlRun.id == Observation.crawl_run_id)
             .join(Source, Source.id == Observation.source_id)
             .where(SourceOccurrence.entity_type == EntityType.CONTACT_POINT, SourceOccurrence.entity_id.in_(contact_ids))
         )
-        for entity_id, url in rows:
-            result.setdefault(entity_id, set()).add(url)
+        for entity_id, url, final_url, page_url, method, kind in rows:
+            values = result.setdefault(entity_id, {'official': set(), 'methods': set(), 'actual': set()})
+            values['official'].add(url)
+            values['methods'].add(user_method_label(method or CollectionMethod.WEB_PAGE, kind))
+            values['actual'].add(final_url or page_url)
         return result

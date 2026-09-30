@@ -17,6 +17,11 @@ CONTENT_TYPE_EXTENSIONS = {
     "text/html": ".html",
     "application/xhtml+xml": ".html",
     "application/json": ".json",
+    "application/xml": ".xml",
+    "text/xml": ".xml",
+    "application/rss+xml": ".xml",
+    "application/atom+xml": ".xml",
+    "text/csv": ".csv",
     "text/plain": ".txt",
 }
 GENERIC_EXTENSION = ".bin"
@@ -55,6 +60,7 @@ class RawArtifactStore:
         observed_at: datetime,
         content: bytes,
         content_type: str,
+        sequence: int | None = None,
     ) -> StoredArtifact:
         observed_utc = observed_at.astimezone(timezone.utc)
         destination_directory = (
@@ -69,7 +75,8 @@ class RawArtifactStore:
         extension = CONTENT_TYPE_EXTENSIONS.get(
             content_type.lower(), GENERIC_EXTENSION
         )
-        final_path = destination_directory / f"response{extension}"
+        filename = "response" if sequence is None else f"response_{sequence:04d}"
+        final_path = destination_directory / f"{filename}{extension}"
         digest = hashlib.sha256()
         temporary_path: Path | None = None
 

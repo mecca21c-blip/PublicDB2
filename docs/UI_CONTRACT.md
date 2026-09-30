@@ -34,18 +34,25 @@ Settings 메뉴는 ADMIN에게만 표시한다.
 오류, 제외를 사용한다. 선택 상세에서 설명, 최근 확인·수집 결과, 발견 수, 오류
 사유를 확인한다. Excel 진입 화면은 파일 선택부터 등록까지의 단계와 정상·중복·
 충돌·오류 미리보기를 제공하며 preview/confirm과 실제 등록에 연결된다.
+목록과 상세는 수집 방식을 텍스트로 표시한다. 기존 create/edit modal 상단에서
+개별 URL · 스크래핑, Index URL · 크롤링, 공개 API / RSS 중 하나를 선택하며
+선택 방식의 필드만 표시한다. built-in catalog와 직접 API/RSS 추가도 이 modal 안에
+있고 별도 sidebar route는 만들지 않는다.
 
 ### /runs 수집 이력
 
 기간·기관·상태·검색 필터와 실행 목록을 제공한다. 선택 상세에서 접속, RAW 저장,
 추출, 발견 결과, 확정 DB 반영 여부를 분리한다. 접속 성공은 추출 성공이나 확정
 DB 반영을 의미하지 않는다.
+수집 방식은 현재 Source가 아니라 실행 당시 CrawlRun snapshot에서 표시한다. 다중
+Observation 실행은 method config와 통계, 각 RAW evidence를 run context로 유지한다.
 
 ### /contacts 연락처 DB
 
 확정 연락처 검색과 기관·부서·연락처 유형 필터를 제공한다. 목록은 기관, 부서,
 업무, 담당자, 전화, 이메일만 표시한다. 조직 연락처에는 사람 값을 강제하지 않는다.
 선택 상세에서 팩스, 공식 출처, 확인일과 최근 변경 이력을 확인한다.
+공식 출처 URL과 함께 실제 발견 URL/endpoint 및 수집 방식을 provenance로 표시한다.
 
 ### /review 변경/검토
 
@@ -56,7 +63,7 @@ DB 반영을 의미하지 않는다.
 ### /settings 설정
 
 ADMIN 전용이다. HTTP timeout, 최대 response bytes, PublicDB User-Agent를 저장하고,
-project-owned 경로와 WEB_PAGE/자동 수집 미사용 capability를 read-only로 표시한다.
+project-owned 경로와 3-Way 수집/자동 수집 미사용 capability를 read-only로 표시한다.
 같은 workspace 아래에서 사용자 목록·생성·역할·활성 상태·비밀번호 재설정을 제공하며
 password hash는 표시하지 않는다. 개발자 옵션과 안전 경계 해제 control은 노출하지 않는다.
 

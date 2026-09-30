@@ -131,18 +131,30 @@ class HTTPFetcher:
     def user_agent(self) -> str:
         return self._user_agent
 
-    def fetch(self, url: str) -> FetchResult:
+    def fetch(
+        self,
+        url: str,
+        *,
+        params: dict[str, str | int] | None = None,
+        headers: dict[str, str] | None = None,
+        target_validator: Callable[[str], None] | None = None,
+    ) -> FetchResult:
         target = url
+        request_params = params
+        request_headers = {"User-Agent": self._user_agent, **(headers or {})}
         try:
             with httpx.Client(
                 transport=self._transport,
                 timeout=self._timeout_seconds,
                 follow_redirects=False,
-                headers={"User-Agent": self._user_agent},
+                headers=request_headers,
             ) as client:
                 for redirect_count in range(self._max_redirects + 1):
                     validate_request_target(target, self._resolver)
-                    with client.stream("GET", target) as response:
+                    if target_validator is not None:
+                        target_validator(target)
+                    with client.stream("GET", target, params=request_params) as response:
+                        request_params = None
                         final_url = str(response.url)
                         if response.is_redirect:
                             location = response.headers.get("location")
@@ -152,6 +164,8 @@ class HTTPFetcher:
                                 raise HTTPFetchError("허용된 리디렉션 횟수를 초과했습니다.", status_code=response.status_code, final_url=final_url)
                             target = urljoin(final_url, location)
                             validate_request_target(target, self._resolver)
+                            if target_validator is not None:
+                                target_validator(target)
                             continue
                         if not 200 <= response.status_code < 300:
                             raise HTTPStatusFailure(
@@ -184,5 +198,5 @@ class HTTPFetcher:
         except HTTPFetchError:
             raise
         except httpx.HTTPError as error:
-            raise HTTPFetchError(f"HTTP 수집 실패: {error}", final_url=target) from error
+            raise HTTPFetchError("HTTP 수집 실패", final_url=url) from error
         raise HTTPFetchError("HTTP 수집을 완료하지 못했습니다.", final_url=target)

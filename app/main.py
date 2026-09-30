@@ -21,6 +21,7 @@ from app.api.collection import router as collection_api
 from app.api.master_review import router as master_review_api
 from app.api.operations import router as operations_api
 from app.api.sources import router as sources_api
+from app.api.three_way import router as three_way_api
 from app.api.dependencies import ensure_csrf_token, get_current_user_optional, get_session, require_admin, require_viewer
 from app.collectors.http_fetcher import HTTPFetcher
 from app.core.config import allowed_hosts, runtime_paths
@@ -33,6 +34,7 @@ from app.models import (
 )
 from app.services.agency_service import AgencyService
 from app.services.collection_service import CollectionCoordinator, CollectionService
+from app.services.catalog_service import CatalogService
 from app.services.contact_service import ContactService
 from app.services.dashboard_service import DashboardService
 from app.services.review_read_service import ReviewReadService
@@ -127,11 +129,21 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             ),
         )
     application.state.collection_service_factory = collection_service_factory
+    def preview_fetcher_factory():
+        with application.state.session_factory() as preview_session:
+            settings = SettingsService(preview_session).snapshot()
+        return HTTPFetcher(
+            timeout_seconds=settings.http_timeout_seconds,
+            max_response_bytes=settings.max_response_bytes,
+            user_agent=settings.user_agent,
+        )
+    application.state.preview_fetcher_factory = preview_fetcher_factory
     application.include_router(agencies_api)
     application.include_router(sources_api)
     application.include_router(collection_api)
     application.include_router(master_review_api)
     application.include_router(operations_api)
+    application.include_router(three_way_api)
     application.mount(
         "/static",
         StaticFiles(directory=str(WEB_ROOT / "static")),
@@ -165,7 +177,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             with engine.connect() as connection:
                 connection.execute(text('SELECT 1'))
                 revision = connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
-            if revision != 'a5c105a05a01':
+            if revision != 'c7f205b05b01':
                 raise RuntimeError('migration mismatch')
             return {'status': 'ready'}
         except Exception:
@@ -240,15 +252,16 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             options = AgencyService(session).list_page()
             units = list(session.query(OrgUnit).filter(OrgUnit.active.is_(True)).order_by(OrgUnit.name))
             workspace = SourceService(session).list_page(search=search, agency_id=_uuid_or_none(agency_id), org_unit_id=_uuid_or_none(org_unit_id), status=source_status)
+            catalog = CatalogService(session).list()
             db_error = None
         except SQLAlchemyError:
             session.rollback()
-            options, units = {'items': (), 'details': ()}, []
+            options, units, catalog = {'items': (), 'details': ()}, [], ()
             workspace = {'items': (), 'details': ()}
             db_error = '수집 소스 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
         finally:
             session.close()
-        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context(request, 'sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
+        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context(request, 'sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, catalog=catalog, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
 
     @application.get('/runs', response_class=HTMLResponse, name='runs', dependencies=[Depends(require_viewer)])
     def runs(

@@ -31,6 +31,9 @@ class Source(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
 
     bindings: Mapped[list["SourceBinding"]] = relationship("SourceBinding", back_populates="source")
     crawl_runs: Mapped[list["CrawlRun"]] = relationship("CrawlRun", back_populates="source")
+    scrape_config: Mapped["SourceScrapeConfig | None"] = relationship("SourceScrapeConfig", back_populates="source", uselist=False, cascade="all, delete-orphan")
+    crawl_config: Mapped["SourceCrawlConfig | None"] = relationship("SourceCrawlConfig", back_populates="source", uselist=False, cascade="all, delete-orphan")
+    api_config: Mapped["SourceApiConfig | None"] = relationship("SourceApiConfig", back_populates="source", uselist=False, cascade="all, delete-orphan")
 
 
 class SourceBinding(UUIDPrimaryKeyMixin, Base):

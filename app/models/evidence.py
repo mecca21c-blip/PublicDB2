@@ -15,6 +15,7 @@ from app.models.enums import (
     CandidateType, ChangeEventType, DetectionMethod, DirectoryRecordType,
     EntityType, ExtractionStatus, ReviewStatus, RunStatus, StageStatus,
     SourceCoverageMode,
+    CollectionMethod,
 )
 
 
@@ -31,6 +32,11 @@ class CrawlRun(UUIDPrimaryKeyMixin, Base):
     records_observed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    collection_method_snapshot: Mapped[CollectionMethod | None] = mapped_column(enum_type(CollectionMethod), nullable=True)
+    collection_kind_snapshot: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    collection_config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    collection_statistics: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    collector_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     source: Mapped["Source"] = relationship("Source", back_populates="crawl_runs")
     observations: Mapped[list["Observation"]] = relationship("Observation", back_populates="crawl_run")
@@ -78,6 +84,7 @@ class ExtractionRun(UUIDPrimaryKeyMixin, Base):
     observation: Mapped[Observation] = relationship("Observation", back_populates="extraction_runs")
     candidates: Mapped[list["ExtractedContactCandidate"]] = relationship("ExtractedContactCandidate", back_populates="extraction_run")
     directory_records: Mapped[list["ExtractedDirectoryRecord"]] = relationship("ExtractedDirectoryRecord", back_populates="extraction_run")
+    feed_items: Mapped[list["ExtractedFeedItem"]] = relationship("ExtractedFeedItem", back_populates="extraction_run")
 
 
 class ExtractedContactCandidate(UUIDPrimaryKeyMixin, Base):

@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.models import (
     ContactHistory, ContactPoint, ContactType, EntityType, Observation,
     PersonAssignment, Source, SourceOccurrence,
+    CrawlRun, CollectionMethod,
 )
+from app.services.source_method_service import user_method_label
 
 
 class ContactService:
@@ -68,13 +70,15 @@ class ContactService:
                 "task": first.duty.title if first.duty else "-", "person": person,
                 "phone": ", ".join(phones) or "-", "email": ", ".join(emails) or "-",
             }
-            source_urls = sorted({url for item in values for url in sources.get(item.id, ())})
+            provenance = [entry for item in values for entry in sources.get(item.id, ())]
+            source_urls = sorted({entry["official_url"] for entry in provenance})
             history_rows = [history for item in values for history in histories.get(item.id, ())]
             history_rows.sort(key=lambda item: item.valid_from, reverse=True)
             items.append(row)
             details.append({
                 **row, "fax": ", ".join(faxes) or "-",
                 "source": ", ".join(source_urls) or "-",
+                "provenance": tuple(provenance),
                 "verified": max(
                     (item.verified_at for item in values if item.verified_at), default=None
                 ).strftime("%Y-%m-%d %H:%M") if any(item.verified_at for item in values) else "-",
@@ -88,20 +92,37 @@ class ContactService:
         return {"items": tuple(items), "details": tuple(detail_map[item["id"]] for item in items)}
 
     def _sources(self, contact_ids):
-        result = defaultdict(set)
+        result = defaultdict(list)
         if not contact_ids:
             return result
         rows = self.session.execute(
-            select(SourceOccurrence.entity_id, Source.url)
+            select(
+                SourceOccurrence.entity_id, Source.url, Observation.final_url,
+                Observation.page_url, Observation.observed_at,
+                CrawlRun.collection_method_snapshot, CrawlRun.collection_kind_snapshot,
+            )
             .join(Observation, Observation.id == SourceOccurrence.observation_id)
+            .join(CrawlRun, CrawlRun.id == Observation.crawl_run_id)
             .join(Source, Source.id == Observation.source_id)
             .where(
                 SourceOccurrence.entity_type == EntityType.CONTACT_POINT,
                 SourceOccurrence.entity_id.in_(contact_ids),
             )
         )
-        for entity_id, url in rows:
-            result[entity_id].add(url)
+        seen = defaultdict(set)
+        for entity_id, official_url, final_url, page_url, observed_at, method, kind in rows:
+            actual_url = final_url or page_url
+            key = (official_url, actual_url, method.value if method else "WEB_PAGE", kind, observed_at)
+            if key in seen[entity_id]:
+                continue
+            seen[entity_id].add(key)
+            result[entity_id].append({
+                "official_url": official_url,
+                "actual_url": actual_url,
+                "method": user_method_label(method or CollectionMethod.WEB_PAGE, kind),
+                "verified": observed_at.strftime("%Y-%m-%d %H:%M"),
+                "legacy_snapshot": method is None,
+            })
         return result
 
     def _histories(self, contact_ids):

@@ -53,6 +53,28 @@ class CollectionMethod(str, Enum):
     DOCUMENT = "DOCUMENT"
 
 
+class ApiSourceKind(str, Enum):
+    OPEN_API = "OPEN_API"
+    RSS = "RSS"
+    ATOM = "ATOM"
+
+
+class CrawlScope(str, Enum):
+    PATH_PREFIX = "PATH_PREFIX"
+    SAME_DOMAIN = "SAME_DOMAIN"
+
+
+class ApiPaginationMode(str, Enum):
+    NONE = "NONE"
+    PAGE_NUMBER = "PAGE_NUMBER"
+
+
+class ApiAuthMode(str, Enum):
+    NONE = "NONE"
+    QUERY_API_KEY = "QUERY_API_KEY"
+    HEADER_API_KEY = "HEADER_API_KEY"
+
+
 class DataFormat(str, Enum):
     HTML = "HTML"
     JSON = "JSON"

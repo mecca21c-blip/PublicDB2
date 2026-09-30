@@ -29,6 +29,7 @@
         <header class="detail-panel-heading"><div><small>확정 연락처 상세</small><h2>{{detail.agency}}</h2></div><span class="demo-badge">실제 데이터</span></header>
         <div class="detail-content">
           <section class="detail-section"><dl class="detail-grid"><dt>기관</dt><dd>{{detail.agency}}</dd><dt>부서</dt><dd>{{detail.department}}</dd><dt>업무</dt><dd>{{detail.task}}</dd><dt>담당자</dt><dd>{{detail.person}}</dd><dt>전화</dt><dd>{{detail.phone}}</dd><dt>이메일</dt><dd>{{detail.email}}</dd><dt>팩스</dt><dd>{{detail.fax}}</dd><dt>공식 출처</dt><dd class="url-cell">{{detail.source}}</dd><dt>확인일</dt><dd>{{detail.verified}}</dd></dl></section>
+          <section class="detail-section"><h3>수집 출처</h3>{% for source in detail.provenance %}<dl class="detail-grid"><dt>공식 출처 URL</dt><dd class="url-cell">{{source.official_url}}</dd><dt>실제 발견 URL / endpoint</dt><dd class="url-cell">{{source.actual_url}}</dd><dt>수집 방식</dt><dd>{{source.method}}{% if source.legacy_snapshot %} (legacy){% endif %}</dd><dt>확인일</dt><dd>{{source.verified}}</dd></dl>{% else %}<p class="detail-note">출처 증거 없음</p>{% endfor %}</section>
           <section class="detail-section"><h3>최근 변경 이력</h3>{% for history in detail.history %}<p class="detail-note">{{history}}</p>{% endfor %}</section>
         </div>
       </article>{% else %}<p class="detail-content">확정 연락처가 등록되면 상세가 표시됩니다.</p>{% endfor %}

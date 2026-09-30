@@ -72,12 +72,150 @@
 
   const jsonFromForm = (form) => {
     const payload = {};
-    new FormData(form).forEach((value, key) => {
-      const cleaned = typeof value === "string" ? value.trim() : value;
-      payload[key] = cleaned === "" ? null : cleaned;
+    const assign = (path, value) => {
+      const parts = path.split(".");
+      let target = payload;
+      parts.slice(0, -1).forEach((part) => { target = target[part] ||= {}; });
+      target[parts.at(-1)] = value;
+    };
+    form.querySelectorAll("[name]:not(:disabled)").forEach((control) => {
+      if (control.type === "file") return;
+      let value = control.type === "checkbox" ? control.checked : control.value.trim();
+      if (control.dataset.jsonField !== undefined) {
+        try { value = JSON.parse(value || "{}"); }
+        catch (_error) { throw new Error("JSON 설정 형식을 확인하세요."); }
+      }
+      assign(control.name, value === "" ? null : value);
     });
     return payload;
   };
+
+  document.querySelectorAll("form [data-method-selector]").forEach((selector) => {
+    const form = selector.form;
+    const editUrl = form.closest("[data-modal]")?.previousElementSibling?.querySelector(".url-cell")?.textContent?.trim();
+    if (editUrl) form.querySelectorAll('[name="url"]').forEach((input) => { input.value = editUrl; });
+    try {
+      const initial = JSON.parse(form.querySelector("[data-initial-method-config]")?.value || "{}");
+      const applyInitial = (prefix, values) => Object.entries(values || {}).forEach(([key, value]) => {
+        const name = prefix + "." + key;
+        if (value && typeof value === "object" && !Array.isArray(value) && key !== "static_params") {
+          applyInitial(name, value);
+          return;
+        }
+        const control = form.querySelector('[name="' + name + '"]');
+        if (!control || value === null) return;
+        if (control.type === "checkbox") control.checked = Boolean(value);
+        else control.value = control.dataset.jsonField !== undefined ? JSON.stringify(value) : String(value);
+      });
+      applyInitial("method_config", initial);
+    } catch (_error) { /* server-owned projection stays authoritative */ }
+    const refresh = () => {
+      form.querySelectorAll("[data-method-panel]").forEach((panel) => {
+        const active = panel.dataset.methodPanel === selector.value;
+        panel.hidden = !active;
+        panel.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
+      });
+      const kind = form.querySelector("[data-api-kind]");
+      const openApiFields = form.querySelectorAll("[data-openapi-fields]");
+      if (kind && openApiFields.length) {
+        const active = selector.value === "API" && kind.value === "OPEN_API";
+        openApiFields.forEach((openApi) => {
+          openApi.hidden = !active;
+          openApi.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
+        });
+      }
+      form.querySelectorAll("[data-feed-preview]").forEach((control) => {
+        const active = selector.value === "API" && kind?.value !== "OPEN_API";
+        control.hidden = !active;
+        control.disabled = !active;
+      });
+      const auth = form.querySelector("[data-api-auth]");
+      const credentialFields = form.querySelectorAll("[data-credential-fields]");
+      if (auth && credentialFields.length) {
+        const active = selector.value === "API" && kind?.value === "OPEN_API" && auth.value !== "NONE";
+        credentialFields.forEach((credential) => {
+          credential.hidden = !active;
+          credential.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
+        });
+      }
+    };
+    selector.addEventListener("change", refresh);
+    form.querySelector("[data-api-kind]")?.addEventListener("change", refresh);
+    form.querySelector("[data-api-auth]")?.addEventListener("change", refresh);
+    refresh();
+  });
+
+  document.querySelectorAll("[data-config-preview]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = button.form;
+      const output = button.parentElement.querySelector("[data-preview-result]") || form.querySelector("[data-preview-result]");
+      button.disabled = true;
+      try {
+        const payload = jsonFromForm(form);
+        const response = await fetch("/api/source-config/preview", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({url: payload.url, method_config: payload.method_config}),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "설정을 확인하지 못했습니다.");
+        output.textContent = "HTTP " + result.http_status + " · 원시 " + result.raw_count + "건 · 표본 " + result.mapped_sample.length + "건";
+      } catch (error) {
+        output.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-credential-save]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = button.form;
+      const secret = form.querySelector("[data-credential-secret]")?.value || "";
+      const ref = form.querySelector('[name="method_config.credential_ref"]');
+      const output = button.closest("[data-credential-fields]").querySelector("[data-credential-result]");
+      try {
+        const response = await fetch("/api/api-credentials", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({secret_value: secret, credential_ref: ref?.value || null}),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "자격증명을 저장하지 못했습니다.");
+        if (ref) ref.value = result.credential_ref;
+        form.querySelector("[data-credential-secret]").value = "";
+        output.textContent = "자격증명이 저장되었습니다. 비밀 값은 다시 표시되지 않습니다.";
+      } catch (error) { output.textContent = error.message; }
+    });
+  });
+
+  document.querySelectorAll("[data-credential-remove]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = button.form;
+      const ref = form.querySelector('[name="method_config.credential_ref"]');
+      const output = button.closest("[data-credential-fields]").querySelector("[data-credential-result]");
+      if (!ref?.value) { output.textContent = "삭제할 credential ref가 없습니다."; return; }
+      const response = await fetch("/api/api-credentials/" + encodeURIComponent(ref.value), {
+        method: "DELETE", headers: csrfHeaders(),
+      });
+      if (response.ok) { ref.value = ""; output.textContent = "자격증명을 제거했습니다."; }
+      else { output.textContent = "자격증명을 제거하지 못했습니다."; }
+    });
+  });
+
+  document.querySelectorAll("[data-catalog-use]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = button.form;
+      const agencyId = form.querySelector('[name="agency_id"]')?.value;
+      const orgUnitId = form.querySelector('[name="org_unit_id"]')?.value || null;
+      if (!agencyId) { window.alert("기본 공개 소스를 사용할 기관을 선택하세요."); return; }
+      const response = await fetch("/api/public-source-catalog/" + encodeURIComponent(button.dataset.catalogUse) + "/activate", {
+        method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+        body: JSON.stringify({agency_id: agencyId, org_unit_id: orgUnitId}),
+      });
+      const result = await response.json();
+      if (!response.ok) { window.alert(result.detail || "기본 공개 소스를 활성화하지 못했습니다."); return; }
+      window.location.reload();
+    });
+  });
 
   document.querySelectorAll("[data-api-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
