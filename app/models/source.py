@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.common import ActiveLifecycleMixin, UTCDateTime, UUIDPrimaryKeyMixin, enum_type, utc_now
 from app.models.entities import Agency, OrgUnit
-from app.models.enums import CollectionMethod, DataFormat, SourceType
+from app.models.enums import CollectionMethod, DataFormat, SourceCoverageMode, SourceType
 
 
 class Source(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
@@ -23,6 +23,9 @@ class Source(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
     source_type: Mapped[SourceType] = mapped_column(enum_type(SourceType), default=SourceType.GENERAL_PAGE, nullable=False)
     collection_method: Mapped[CollectionMethod] = mapped_column(enum_type(CollectionMethod), default=CollectionMethod.WEB_PAGE, nullable=False)
     data_format: Mapped[DataFormat] = mapped_column(enum_type(DataFormat), default=DataFormat.HTML, nullable=False)
+    coverage_mode: Mapped[SourceCoverageMode] = mapped_column(
+        enum_type(SourceCoverageMode), default=SourceCoverageMode.UNKNOWN, nullable=False
+    )
     last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Agency,
+    ChangeDetection,
     CrawlRun,
     ExtractedContactCandidate,
     ExtractedDirectoryRecord,
@@ -19,7 +20,11 @@ from app.models import (
     RunStatus,
     Source,
     SourceBinding,
+    SourceOccurrence,
 )
+from app.services.master_promotion_apply_service import MasterPromotionApplyService
+from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
+from app.services.source_change_detection_service import SourceChangeDetectionService
 
 
 STATUS_LABELS = {
@@ -116,6 +121,73 @@ class RunService:
             extraction.candidates_found for extraction in extraction_runs
             if extraction.extractor_name == "staff_directory" and extraction.status.value == "SUCCESS"
         )
+        staff_extraction = next((
+            extraction for extraction in extraction_runs
+            if extraction.extractor_name == "staff_directory"
+            and extraction.status.value == "SUCCESS"
+        ), None)
+        master = {
+            "available": False, "extraction_id": None, "agency_choices": (),
+            "context_required": False, "action": None, "preview": None,
+            "state": "미반영", "tone": "neutral",
+        }
+        if staff_extraction is not None:
+            planner = MasterPromotionPlanner(self.session)
+            detector = SourceChangeDetectionService(self.session)
+            choices = planner.agency_choices(run.source_id)
+            master.update({
+                "available": True,
+                "extraction_id": str(staff_extraction.id),
+                "agency_choices": choices,
+                "context_required": len(choices) != 1,
+            })
+            if len(choices) == 1:
+                resolved_agency = uuid.UUID(choices[0]["id"])
+                baseline = detector.baseline_exists(run.source_id, resolved_agency)
+                current_occurrence = self.session.scalar(
+                    select(SourceOccurrence.id)
+                    .where(SourceOccurrence.observation_id == observation.id)
+                    .limit(1)
+                )
+                detection = self.session.scalar(
+                    select(ChangeDetection)
+                    .where(
+                        ChangeDetection.extraction_run_id == staff_extraction.id,
+                        ChangeDetection.agency_id == resolved_agency,
+                        ChangeDetection.status == RunStatus.SUCCESS,
+                    )
+                    .limit(1)
+                )
+                if detection is not None:
+                    unresolved = any(
+                        candidate.review_status.value in ("PENDING_REVIEW", "DEFERRED")
+                        for candidate in detection.candidates
+                    )
+                    master.update({
+                        "state": "검토 필요" if unresolved else "반영 완료",
+                        "tone": "warning" if unresolved else "success",
+                    })
+                elif current_occurrence is not None:
+                    reapplied = MasterPromotionApplyService(self.session).preview(
+                        staff_extraction.id, resolved_agency
+                    )
+                    partial = reapplied["rows_requiring_review"] > 0
+                    master.update({
+                        "state": "일부 반영" if partial else "반영 완료",
+                        "tone": "warning" if partial else "success",
+                    })
+                elif not baseline:
+                    try:
+                        master["preview"] = MasterPromotionApplyService(self.session).preview(
+                            staff_extraction.id, resolved_agency
+                        )
+                        master.update({"action": "promote", "state": "미반영", "tone": "neutral"})
+                    except PromotionError:
+                        master.update({"state": "검토 필요", "tone": "warning"})
+                else:
+                    master.update({"action": "detect", "state": "변경 검토 대기", "tone": "warning"})
+            else:
+                master.update({"state": "검토 필요", "tone": "warning"})
         artifact_path = observation.artifact_path if observation else None
         if artifact_path and Path(artifact_path).is_absolute():
             artifact_path = None
@@ -137,6 +209,7 @@ class RunService:
             ("발견 결과", f"{run.records_observed}건", "info"),
             ("확정 DB 반영", "미반영", "neutral"),
         )
+        stages = (*stages[:-1], (stages[-1][0], master["state"], master["tone"]))
         detail = {
             "id": str(run.id),
             "title": f"{context} · {run.source.title or run.source.url}",
@@ -154,5 +227,6 @@ class RunService:
             "started_at": run.started_at.isoformat(),
             "finished_at": run.finished_at.isoformat() if run.finished_at else "-",
             "duration": item["duration"],
+            "master": master,
         }
         return item, detail

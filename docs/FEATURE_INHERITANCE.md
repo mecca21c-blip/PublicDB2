@@ -8,17 +8,17 @@ production DB를 참조하지 않는다.
 |---|---|---|
 | Agency, OrgUnit, Duty 모델 의미 | INHERITED_AND_ACTIVE | app/models/entities.py; PublicDB2 DB 소유 |
 | AgencyRegistry 이름 정규화·등록 규칙 | ADAPTED_AND_ACTIVE | app/services/agency_service.py; repository/API/UI 경계 추가 |
-| Person / PersonAssignment / ContactPoint | INHERITED_AND_ACTIVE | schema foundation 활성, 현재 UI writer는 STILL_PENDING |
+| Person / PersonAssignment / ContactPoint | INHERITED_AND_ACTIVE | ContactPoint writer/read model 활성; Person 계열 자동 writer는 의도적으로 비활성 |
 | Source URL validation/normalization | ADAPTED_AND_ACTIVE | app/services/normalization.py; fragment 제거, public host 검증 유지 |
 | legacy Source의 직접 Agency ownership | DO_NOT_INHERIT | 다중 context 요구와 충돌 |
 | Canonical Source | ADAPTED_AND_ACTIVE | 전역 unique normalized_url은 물리 URL identity만 소유 |
 | SourceBinding | NEW_PUBLICDB2 | Source와 Agency/optional OrgUnit 관계, context별 active/excluded 소유 |
 | SourceRegistry / SourceAdministrationService | ADAPTED_AND_ACTIVE | app/services/source_service.py; metadata-only transaction, HTTP 없음 |
 | CrawlRun / Observation | ADAPTED_AND_ACTIVE | app/models/evidence.py; Source 소유 stage lifecycle과 HTTP/RAW metadata 활성 |
-| SourceOccurrence | INHERITED_AND_ACTIVE | schema foundation만 유지; discovery promotion writer는 STILL_PENDING |
-| ChangeEvent / ChangeDetection / ContactHistory | INHERITED_AND_ACTIVE | 이력 schema foundation; review/apply는 STILL_PENDING |
+| SourceOccurrence | INHERITED_AND_ACTIVE | app/services/master_promotion_apply_service.py와 review_service.py가 idempotent provenance 기록 |
+| ChangeEvent / ChangeDetection / ContactHistory | ADAPTED_AND_ACTIVE | app/models/evidence.py; baseline/change/review/contact temporal contract 활성 |
 | SQLAlchemy base/session/config | ADAPTED_AND_ACTIVE | app/db, app/core; 독립 DB와 환경 override |
-| Alembic migration | NEW_PUBLICDB2 | 68ed1d36c20d core, 2dd871292d0a import, 7c1f04a04a01 collection/extraction |
+| Alembic migration | NEW_PUBLICDB2 | core/import/04A에 이어 9b2d04b04b01 confirmed review workflow |
 | 기관/부서/업무 API와 live UI | NEW_PUBLICDB2 | app/api/agencies.py, /agencies |
 | SourceBinding API와 live UI | NEW_PUBLICDB2 | app/api/sources.py, /sources |
 | binding 제외·복구 | NEW_PUBLICDB2 | 물리 삭제 없이 binding 상태와 사유/시각 보존 |
@@ -29,10 +29,16 @@ production DB를 참조하지 않는다.
 | HTML contact extractor | INHERITED_AND_ACTIVE | app/collectors/html_contact_extractor.py; 결정적 PHONE/EMAIL/FAX discovery |
 | staff-directory extractor | INHERITED_AND_ACTIVE | app/collectors/staff_directory_extractor.py; header 기반 구조 행 discovery |
 | extraction persistence | ADAPTED_AND_ACTIVE | ExtractionRun, ExtractedContactCandidate, ExtractedDirectoryRecord |
-| Master promotion / change detection / review apply | STILL_PENDING | 04A discovery는 확정 entity와 이력을 쓰지 않음 |
+| MasterPromotionPlanner / normalization / promotion plan | ADAPTED_AND_ACTIVE | app/services/master_promotion_planner.py, master_normalization.py, promotion_plan.py; exact context match와 person 비차단으로 적응 |
+| MasterPromotionApply | ADAPTED_AND_ACTIVE | app/services/master_promotion_apply_service.py; preview 재계산, atomic safe apply, occurrence/event/history |
+| SourceChangeDetection | ADAPTED_AND_ACTIVE | app/services/source_change_detection_service.py; canonical Source + Agency scope, persisted candidate, idempotent generation |
+| SourceCoverage | ADAPTED_AND_ACTIVE | app/services/source_coverage_service.py; canonical Source의 UNKNOWN/ADDITIVE_ONLY/COMPLETE_SNAPSHOT |
+| Review apply | NEW_PUBLICDB2 | app/services/review_service.py; candidate별 stale revalidation, approve/keep/defer |
+| Contacts read model | NEW_PUBLICDB2 | app/services/contact_service.py; confirmed ContactPoint context grouping과 provenance/history |
 | Excel/CSV URL import와 충돌 검토 | NEW_PUBLICDB2 | PREVIEW/CONFIRM, 7개 분류, stale DB 재검증과 파일 audit 활성 |
 | /runs live read model | NEW_PUBLICDB2 | app/services/run_service.py; SourceBinding 기반 filter와 다중 context 표시 |
-| Dashboard/contacts/review/settings live read model | STILL_PENDING | 기존 fixture/demo 유지 |
+| /contacts와 /review live read model | NEW_PUBLICDB2 | fixture 비활성, ContactPoint/DetectedChangeCandidate 실 DB 소유 |
+| Dashboard/settings live read model | STILL_PENDING | 기존 fixture/demo 유지 |
 | PublicDB1 Dashboard/UI/지도 placeholder | DO_NOT_INHERIT | PublicDB2 동결 UI 계약과 무관 |
 | PublicDB1 production DB와 RAW 파일 | DO_NOT_INHERIT | 직접 연결·복사·import 금지 |
 

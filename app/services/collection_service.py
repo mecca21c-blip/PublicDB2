@@ -15,6 +15,7 @@ from app.collectors.http_fetcher import HTTPFetchError, HTTPFetcher
 from app.models import (
     CollectionMethod,
     CrawlRun,
+    ExtractionRun,
     ExtractionStatus,
     Observation,
     RunStatus,
@@ -25,6 +26,7 @@ from app.models.common import utc_now
 from app.services.contact_extraction_service import ContactExtractionService
 from app.services.directory_extraction_service import DirectoryExtractionService
 from app.services.raw_artifact_store import RawArtifactStore, StoredArtifact
+from app.services.source_change_detection_service import SourceChangeDetectionService
 
 
 HTML_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
@@ -226,6 +228,7 @@ class CollectionService:
             statuses = (contact_result.extraction_run.status, directory_result.extraction_run.status)
             if all(status is ExtractionStatus.SUCCESS for status in statuses):
                 run = self._finalize(run_id, RunStatus.SUCCESS, StageStatus.SUCCESS, total, None)
+                self._detect_changes_best_effort(directory_result.extraction_run.id)
             elif any(status is ExtractionStatus.SUCCESS for status in statuses):
                 failed = [
                     result.extraction_run.extractor_name
@@ -241,6 +244,19 @@ class CollectionService:
             return CollectionResult(run, observation, artifact, contact_count, directory_count)
         finally:
             self.coordinator.release(source_id)
+
+    def _detect_changes_best_effort(self, extraction_run_id: uuid.UUID) -> None:
+        """Review generation is independent from an already successful CrawlRun."""
+        try:
+            extraction = self.session.get(ExtractionRun, extraction_run_id)
+            if extraction is None:
+                return
+            detector = SourceChangeDetectionService(self.session)
+            agency_id = detector.planner.resolve_agency(extraction.observation.source_id)
+            if detector.baseline_exists(extraction.observation.source_id, agency_id):
+                detector.generate(extraction_run_id, agency_id)
+        except Exception:
+            self.session.rollback()
 
     def _get_run(self, run_id: uuid.UUID) -> CrawlRun:
         run = self.session.get(CrawlRun, run_id)

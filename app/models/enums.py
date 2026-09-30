@@ -64,6 +64,12 @@ class DataFormat(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class SourceCoverageMode(str, Enum):
+    UNKNOWN = "UNKNOWN"
+    ADDITIVE_ONLY = "ADDITIVE_ONLY"
+    COMPLETE_SNAPSHOT = "COMPLETE_SNAPSHOT"
+
+
 class RunStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -118,6 +124,7 @@ class ReviewStatus(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     IGNORED = "IGNORED"
+    DEFERRED = "DEFERRED"
 
 
 class ChangeEventType(str, Enum):
@@ -126,4 +133,6 @@ class ChangeEventType(str, Enum):
     ENTITY_MISSING = "ENTITY_MISSING"
     ENTITY_RESTORED = "ENTITY_RESTORED"
     CONTACT_CHANGED = "CONTACT_CHANGED"
+    CONTACT_ADDED = "CONTACT_ADDED"
+    CONTACT_MISSING = "CONTACT_MISSING"
     OTHER = "OTHER"

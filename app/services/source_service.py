@@ -193,6 +193,7 @@ class SourceService:
             "department": binding.org_unit.name if binding.org_unit else "기관 공통",
             "url": binding.source.url,
             "normalized_url": binding.source.normalized_url,
+            "coverage_mode": binding.source.coverage_mode.value,
             "description": binding.description or "-",
             "checked": checked.strftime("%Y-%m-%d %H:%M") if checked else "미확인",
             "found": run.records_observed if run else "-",

@@ -15,13 +15,18 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.agencies import router as agencies_api
 from app.api.collection import router as collection_api
+from app.api.master_review import router as master_review_api
 from app.api.sources import router as sources_api
 from app.core.config import runtime_paths
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
-from app.models import AgencyType, OrgUnit, RunStatus
+from app.models import (
+    AgencyType, ChangeEventType, ContactType, OrgUnit, ReviewStatus, RunStatus,
+)
 from app.services.agency_service import AgencyService
 from app.services.collection_service import CollectionCoordinator, CollectionService
+from app.services.contact_service import ContactService
+from app.services.review_read_service import ReviewReadService
 from app.services.run_service import RunService
 from app.services.source_service import SourceService
 from app.services.source_import_service import PreviewStore
@@ -104,6 +109,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     application.include_router(agencies_api)
     application.include_router(sources_api)
     application.include_router(collection_api)
+    application.include_router(master_review_api)
     application.mount(
         "/static",
         StaticFiles(directory=str(WEB_ROOT / "static")),
@@ -199,8 +205,85 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             ),
         )
 
+    @application.get('/contacts', response_class=HTMLResponse, name='contacts')
+    def contacts(
+        request: Request,
+        search: str | None = None,
+        agency_id: str | None = None,
+        org_unit_id: str | None = None,
+        contact_type: ContactType | None = None,
+    ) -> HTMLResponse:
+        session = application.state.session_factory()
+        try:
+            agencies_page = AgencyService(session).list_page()
+            units = list(session.query(OrgUnit).filter(OrgUnit.active.is_(True)).order_by(OrgUnit.name))
+            workspace = ContactService(session).list_page(
+                search=search,
+                agency_id=_uuid_or_none(agency_id),
+                org_unit_id=_uuid_or_none(org_unit_id),
+                contact_type=contact_type,
+            )
+            db_error = None
+        except SQLAlchemyError:
+            session.rollback()
+            agencies_page, units = {'items': ()}, []
+            workspace = {'items': (), 'details': ()}
+            db_error = 'Confirmed contacts could not be loaded.'
+        finally:
+            session.close()
+        return templates.TemplateResponse(
+            request=request, name='contacts.html',
+            context=_page_context(
+                'contacts', workspace=workspace, db_error=db_error,
+                agencies=agencies_page['items'], org_units=units,
+                contact_types=ContactType,
+                filters={
+                    'search': search or '', 'agency_id': agency_id or '',
+                    'org_unit_id': org_unit_id or '',
+                    'contact_type': contact_type.value if contact_type else '',
+                },
+            ),
+        )
+
+    @application.get('/review', response_class=HTMLResponse, name='review')
+    def review(
+        request: Request,
+        search: str | None = None,
+        agency_id: str | None = None,
+        review_status: ReviewStatus | None = None,
+        change_type: ChangeEventType | None = None,
+    ) -> HTMLResponse:
+        session = application.state.session_factory()
+        try:
+            agencies_page = AgencyService(session).list_page()
+            workspace = ReviewReadService(session).list_page(
+                search=search, agency_id=_uuid_or_none(agency_id),
+                review_status=review_status, change_type=change_type,
+            )
+            db_error = None
+        except SQLAlchemyError:
+            session.rollback()
+            agencies_page = {'items': ()}
+            workspace = {'items': (), 'details': ()}
+            db_error = 'Review candidates could not be loaded.'
+        finally:
+            session.close()
+        return templates.TemplateResponse(
+            request=request, name='review.html',
+            context=_page_context(
+                'review', workspace=workspace, db_error=db_error,
+                agencies=agencies_page['items'],
+                review_statuses=ReviewStatus, change_types=ChangeEventType,
+                filters={
+                    'search': search or '', 'agency_id': agency_id or '',
+                    'review_status': review_status.value if review_status else '',
+                    'change_type': change_type.value if change_type else '',
+                },
+            ),
+        )
+
     for route_key, template_name in WORKSPACE_PAGES.items():
-        if route_key in {'agencies', 'sources', 'runs'}:
+        if route_key in {'agencies', 'sources', 'runs', 'contacts', 'review'}:
             continue
         application.add_api_route(
             f"/{route_key}",

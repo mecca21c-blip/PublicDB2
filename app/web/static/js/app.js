@@ -236,4 +236,71 @@
     importWorkflow.closest("[data-modal]").querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", discardPreview));
     importWorkflow.querySelector("[data-import-refresh]").addEventListener("click", () => window.location.reload());
   }
+  document.querySelectorAll("[data-review-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const errorBox = button.closest(".detail-content")?.querySelector("[data-review-error]");
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/review/" + button.dataset.candidateId + "/" + button.dataset.reviewAction, {
+          method: "POST", headers: {"Content-Type": "application/json"}, body: "{}",
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "검토 작업을 완료하지 못했습니다.");
+        window.location.reload();
+      } catch (error) {
+        button.disabled = false;
+        if (errorBox) { errorBox.textContent = error.message; errorBox.hidden = false; }
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-master-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const box = button.closest("[data-master-workflow]");
+      const extractionId = box.dataset.extractionId;
+      const agencyId = box.querySelector("[data-master-agency]")?.value || "";
+      const errorBox = box.querySelector("[data-master-error]");
+      button.disabled = true;
+      try {
+        let action = button.dataset.masterAction;
+        if (action === "resolve") {
+          if (!agencyId) throw new Error("대상 기관을 선택하세요.");
+          const stateResponse = await fetch("/api/extractions/" + extractionId + "/workflow?agency_id=" + encodeURIComponent(agencyId));
+          const state = await stateResponse.json();
+          if (!stateResponse.ok) throw new Error(state.detail || "처리 경로를 확인하지 못했습니다.");
+          action = state.action;
+          if (action === "promote") {
+            const preview = state.preview;
+            if (!window.confirm("확정 DB에 반영할까요? 새 부서 " + preview.org_units_to_create + " / 새 업무 " + preview.duties_to_create + " / 새 연락처 " + preview.contacts_to_create + " / 검토 필요 행 " + preview.rows_requiring_review)) {
+              button.disabled = false; return;
+            }
+          }
+        } else if (action === "promote" && !window.confirm("표시된 미리보기의 안전한 항목을 확정 DB에 반영할까요?")) {
+          button.disabled = false; return;
+        }
+        const suffix = agencyId ? "?agency_id=" + encodeURIComponent(agencyId) : "";
+        const endpoint = action === "promote" ? "promote" : "detect";
+        const response = await fetch("/api/extractions/" + extractionId + "/" + endpoint + suffix, {method: "POST"});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "작업을 완료하지 못했습니다.");
+        window.location.reload();
+      } catch (error) {
+        button.disabled = false;
+        if (errorBox) { errorBox.textContent = error.message; errorBox.hidden = false; }
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-coverage-source]").forEach((select) => {
+    select.addEventListener("change", async () => {
+      const previous = select.dataset.previous || select.defaultValue;
+      const response = await fetch("/api/sources/" + select.dataset.coverageSource + "/coverage", {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({coverage_mode: select.value}),
+      });
+      if (!response.ok) select.value = previous;
+      else select.dataset.previous = select.value;
+    });
+    select.dataset.previous = select.value;
+  });
 })();

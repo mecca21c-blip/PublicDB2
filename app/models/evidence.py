@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text, Uuid
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -14,6 +14,7 @@ from app.models.common import UTCDateTime, UUIDPrimaryKeyMixin, enum_type, utc_n
 from app.models.enums import (
     CandidateType, ChangeEventType, DetectionMethod, DirectoryRecordType,
     EntityType, ExtractionStatus, ReviewStatus, RunStatus, StageStatus,
+    SourceCoverageMode,
 )
 
 
@@ -154,9 +155,19 @@ class ChangeEvent(UUIDPrimaryKeyMixin, Base):
 
 class ChangeDetection(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "change_detections"
+    __table_args__ = (
+        Index("ix_change_detections_identity", "extraction_run_id", "agency_id", "detector_name", "detector_version"),
+    )
 
     source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observations.id"), nullable=False, index=True)
+    extraction_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("extraction_runs.id"), nullable=True, index=True)
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agencies.id"), nullable=True, index=True)
+    detector_name: Mapped[str] = mapped_column(String(100), default="source_change", nullable=False)
+    detector_version: Mapped[str] = mapped_column(String(50), default="1.0", nullable=False)
+    coverage_mode: Mapped[SourceCoverageMode] = mapped_column(
+        enum_type(SourceCoverageMode), default=SourceCoverageMode.UNKNOWN, nullable=False
+    )
     status: Mapped[RunStatus] = mapped_column(enum_type(RunStatus), nullable=False)
     candidates_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -164,6 +175,49 @@ class ChangeDetection(UUIDPrimaryKeyMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
 
+    source: Mapped["Source"] = relationship("Source")
+    observation: Mapped[Observation] = relationship("Observation")
+    extraction_run: Mapped[ExtractionRun | None] = relationship("ExtractionRun")
+    candidates: Mapped[list["DetectedChangeCandidate"]] = relationship(
+        "DetectedChangeCandidate", back_populates="detection_run"
+    )
+
+
+class DetectedChangeCandidate(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "detected_change_candidates"
+    __table_args__ = (
+        UniqueConstraint("detection_run_id", "candidate_key", name="uq_detected_candidate_key"),
+        Index("ix_detected_candidates_review", "review_status", "actionable"),
+    )
+
+    detection_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("change_detections.id"), nullable=False, index=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
+    observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("observations.id"), nullable=False, index=True)
+    agency_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agencies.id"), nullable=False, index=True)
+    directory_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("extracted_directory_records.id"), nullable=True, index=True
+    )
+    contact_candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("extracted_contact_candidates.id"), nullable=True, index=True
+    )
+    entity_type: Mapped[EntityType] = mapped_column(enum_type(EntityType), nullable=False, index=True)
+    existing_entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    proposed_event_type: Mapped[ChangeEventType] = mapped_column(enum_type(ChangeEventType), nullable=False)
+    old_value: Mapped[dict[str, Any] | list[Any] | str | int | None] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[dict[str, Any] | list[Any] | str | int | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    review_status: Mapped[ReviewStatus] = mapped_column(
+        enum_type(ReviewStatus), default=ReviewStatus.PENDING_REVIEW, nullable=False, index=True
+    )
+    candidate_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_locator: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    actionable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    detection_run: Mapped[ChangeDetection] = relationship("ChangeDetection", back_populates="candidates")
     source: Mapped["Source"] = relationship("Source")
     observation: Mapped[Observation] = relationship("Observation")
 

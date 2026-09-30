@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.models import AgencyType, OrgUnitType
+from app.models import AgencyType, OrgUnitType, SourceCoverageMode
 
 
 class AgencyCreate(BaseModel):
@@ -49,4 +49,12 @@ class SourceBindingUpdate(BaseModel):
 
 class ExclusionRequest(BaseModel):
     reason: str | None = None
+
+
+class ReviewDecision(BaseModel):
+    note: str | None = None
+
+
+class SourceCoverageUpdate(BaseModel):
+    coverage_mode: SourceCoverageMode
 

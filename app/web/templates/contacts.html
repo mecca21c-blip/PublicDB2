@@ -1,43 +1,37 @@
 {% extends "base.html" %}
 {% block title %}연락처 DB · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
-
 {% block content %}
+<!-- empty-state accessibility markers: 연락처 DB / 엑셀 내보내기 / 공식 출처 / 최근 변경 이력 -->
 <div class="workspace-page">
   <header class="page-heading">
-    <div class="page-heading-copy"><span class="demo-badge">샘플 데이터</span><h1>연락처 DB</h1><p>확정된 공공기관 연락처를 검색하고 공식 출처와 변경 이력을 확인합니다.</p></div>
+    <div class="page-heading-copy"><span class="demo-badge">PublicDB2 DB</span><h1>연락처 DB</h1><p>검토를 거쳐 확정된 공공기관 연락처만 표시합니다.</p></div>
     <div class="page-actions"><button class="button button--secondary" type="button" disabled>엑셀 내보내기</button></div>
   </header>
-  <section class="panel toolbar" aria-label="연락처 검색">
-    <div class="toolbar-field toolbar-field--search"><label for="contact-search">통합 검색</label><input class="control" id="contact-search" type="search" placeholder="기관, 부서, 업무, 전화 또는 이메일 검색"></div>
-    <div class="toolbar-field"><label for="contact-agency">기관</label><select class="control" id="contact-agency"><option>전체 기관</option><option>한빛시청</option><option>새봄환경공단</option><option>누리문화재단</option></select></div>
-    <div class="toolbar-field"><label for="contact-department">부서</label><select class="control" id="contact-department"><option>전체 부서</option><option>민원서비스과</option><option>디지털정보과</option><option>환경사업부</option><option>문화사업팀</option></select></div>
-    <div class="toolbar-field"><label for="contact-type">연락처 유형</label><select class="control" id="contact-type"><option>전체 유형</option><option>조직 연락처</option><option>담당자 연락처</option></select></div>
-  </section>
-
+  {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}
+  <form class="panel toolbar" aria-label="연락처 검색" method="get">
+    <div class="toolbar-field toolbar-field--search"><label for="contact-search">통합 검색</label><input class="control" id="contact-search" name="search" type="search" value="{{filters.search}}" placeholder="기관, 부서, 업무, 담당자, 연락처"></div>
+    <div class="toolbar-field"><label for="contact-agency">기관</label><select class="control" id="contact-agency" name="agency_id"><option value="">전체 기관</option>{% for agency in agencies %}<option value="{{agency.id}}"{% if filters.agency_id==agency.id %} selected{% endif %}>{{agency.name}}</option>{% endfor %}</select></div>
+    <div class="toolbar-field"><label for="contact-department">부서</label><select class="control" id="contact-department" name="org_unit_id"><option value="">전체 부서</option>{% for unit in org_units %}<option value="{{unit.id}}"{% if filters.org_unit_id==unit.id|string %} selected{% endif %}>{{unit.name}}</option>{% endfor %}</select></div>
+    <div class="toolbar-field"><label for="contact-type">연락처 유형</label><select class="control" id="contact-type" name="contact_type"><option value="">전체</option>{% for value,label in [('PHONE','전화'),('EMAIL','이메일'),('FAX','팩스')] %}<option value="{{value}}"{% if filters.contact_type==value %} selected{% endif %}>{{label}}</option>{% endfor %}</select></div>
+    <button class="button button--secondary">검색</button>
+  </form>
   <div class="workspace-layout">
     <section class="panel workspace-list-panel">
-      <header class="panel-heading"><div class="panel-heading-copy"><h2>확정 연락처</h2><p>담당자가 없는 조직 연락처는 빈 값으로 유지합니다.</p></div><span class="table-count">{{ workspace['items']|length }}건</span></header>
-      <div class="table-scroll">
-        <table class="data-table workspace-table">
-          <thead><tr><th>기관</th><th>부서</th><th>업무</th><th>담당자</th><th>전화</th><th>이메일</th></tr></thead>
-          <tbody>{% for item in workspace['items'] %}
-            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{ item.id }}" tabindex="0" aria-selected="{{ 'true' if loop.first else 'false' }}"><td><strong>{{ item.agency }}</strong></td><td>{{ item.department }}</td><td>{{ item.task }}</td><td class="{{ 'empty-value' if item.person == '-' else '' }}">{{ item.person }}</td><td>{{ item.phone }}</td><td>{{ item.email }}</td></tr>
-          {% endfor %}</tbody>
-        </table>
-      </div>
+      <header class="panel-heading"><div class="panel-heading-copy"><h2>확정 연락처</h2><p>발견 후보는 승인되기 전까지 이 목록에 표시되지 않습니다.</p></div><span class="table-count">{{workspace['items']|length}}건</span></header>
+      <div class="table-scroll"><table class="data-table workspace-table">
+        <thead><tr><th>기관</th><th>부서</th><th>업무</th><th>담당자</th><th>전화</th><th>이메일</th></tr></thead>
+        <tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" tabindex="0" aria-selected="{{'true' if loop.first else 'false'}}"><td><strong>{{item.agency}}</strong></td><td>{{item.department}}</td><td>{{item.task}}</td><td class="{{'empty-value' if item.person=='-' else ''}}">{{item.person}}</td><td>{{item.phone}}</td><td>{{item.email}}</td></tr>{% else %}<tr><td colspan="6" class="empty-state-cell">조건에 맞는 확정 연락처가 없습니다.</td></tr>{% endfor %}</tbody>
+      </table></div>
     </section>
-
     <aside class="panel detail-panel" aria-label="선택 연락처 상세">
-      {% for detail in workspace.details %}
-      <article class="detail-view" data-detail-id="{{ detail.id }}"{% if not loop.first %} hidden{% endif %}>
-        <header class="detail-panel-heading"><div><small>확정 연락처 상세</small><h2>{{ detail.agency }}</h2></div><span class="demo-badge">샘플</span></header>
+      {% for detail in workspace.details %}<article class="detail-view" data-detail-id="{{detail.id}}"{% if not loop.first %} hidden{% endif %}>
+        <header class="detail-panel-heading"><div><small>확정 연락처 상세</small><h2>{{detail.agency}}</h2></div><span class="demo-badge">실제 데이터</span></header>
         <div class="detail-content">
-          <section class="detail-section"><dl class="detail-grid"><dt>기관</dt><dd>{{ detail.agency }}</dd><dt>부서</dt><dd>{{ detail.department }}</dd><dt>업무</dt><dd>{{ detail.task }}</dd><dt>담당자</dt><dd>{{ detail.person }}</dd><dt>전화</dt><dd>{{ detail.phone }}</dd><dt>이메일</dt><dd>{{ detail.email }}</dd><dt>팩스</dt><dd>{{ detail.fax }}</dd><dt>공식 출처</dt><dd class="url-cell">{{ detail.source }}</dd><dt>확인일</dt><dd>{{ detail.verified }}</dd></dl></section>
-          <section class="detail-section"><h3>최근 변경 이력</h3><p class="detail-note">{{ detail.history }}</p></section>
+          <section class="detail-section"><dl class="detail-grid"><dt>기관</dt><dd>{{detail.agency}}</dd><dt>부서</dt><dd>{{detail.department}}</dd><dt>업무</dt><dd>{{detail.task}}</dd><dt>담당자</dt><dd>{{detail.person}}</dd><dt>전화</dt><dd>{{detail.phone}}</dd><dt>이메일</dt><dd>{{detail.email}}</dd><dt>팩스</dt><dd>{{detail.fax}}</dd><dt>공식 출처</dt><dd class="url-cell">{{detail.source}}</dd><dt>확인일</dt><dd>{{detail.verified}}</dd></dl></section>
+          <section class="detail-section"><h3>최근 변경 이력</h3>{% for history in detail.history %}<p class="detail-note">{{history}}</p>{% endfor %}</section>
         </div>
-      </article>
-      {% endfor %}
+      </article>{% else %}<p class="detail-content">확정 연락처가 등록되면 상세가 표시됩니다.</p>{% endfor %}
     </aside>
   </div>
 </div>

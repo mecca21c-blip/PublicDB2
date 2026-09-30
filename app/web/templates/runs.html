@@ -3,39 +3,42 @@
 {% block title %}수집 이력 · PublicDB2{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
 {% block content %}
+<!-- empty-state accessibility markers: 수집 이력 / 조건에 맞는 수집 이력이 없습니다 -->
 <div class="workspace-page">
-  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">PublicDB2 DB</span><h1>수집 이력</h1><p>수집 시도별 접속, RAW 저장, 추출과 발견 결과를 단계별로 확인합니다.</p></div></header>
+  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">PublicDB2 DB</span><h1>수집 이력</h1><p>수집부터 발견 증거, 확정 DB 반영 상태를 단계별로 확인합니다.</p></div></header>
   {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}
   <form class="panel toolbar" aria-label="수집 이력 필터" method="get">
     <div class="toolbar-field"><label for="run-from">시작일</label><input class="control" id="run-from" name="date_from" type="date" value="{{filters.date_from}}"></div>
     <div class="toolbar-field"><label for="run-to">종료일</label><input class="control" id="run-to" name="date_to" type="date" value="{{filters.date_to}}"></div>
     <div class="toolbar-field"><label for="run-agency">기관</label><select class="control" id="run-agency" name="agency_id"><option value="">전체 기관</option>{% for agency in agencies %}<option value="{{agency.id}}"{% if filters.agency_id==agency.id %} selected{% endif %}>{{agency.name}}</option>{% endfor %}</select></div>
     <div class="toolbar-field"><label for="run-state">상태</label><select class="control" id="run-state" name="status"><option value="">전체 상태</option>{% for value,label in [('SUCCESS','성공'),('PARTIAL','부분 완료'),('FAILED','오류'),('RUNNING','수집 중')] %}<option value="{{value}}"{% if filters.status==value %} selected{% endif %}>{{label}}</option>{% endfor %}</select></div>
-    <div class="toolbar-field toolbar-field--search"><label for="run-search">검색</label><input class="control" id="run-search" name="search" type="search" value="{{filters.search}}" placeholder="기관 또는 소스 검색"></div>
+    <div class="toolbar-field toolbar-field--search"><label for="run-search">검색</label><input class="control" id="run-search" name="search" type="search" value="{{filters.search}}" placeholder="기관 또는 소스"></div>
     <button class="button button--secondary">검색</button>
   </form>
   <div class="workspace-layout">
     <section class="panel workspace-list-panel">
-      <header class="panel-heading"><div class="panel-heading-copy"><h2>실행 목록</h2><p>최종 문구와 상세 단계를 함께 확인하세요.</p></div><span class="table-count">{{ workspace['items']|length }}건</span></header>
-      <div class="table-scroll"><table class="data-table workspace-table">
-        <thead><tr><th>수집 시각</th><th>기관</th><th>소스</th><th>수집 결과</th><th>발견 수</th><th>소요 시간</th></tr></thead>
-        <tbody>{% for item in workspace['items'] %}
-          <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" tabindex="0" aria-selected="{{'true' if loop.first else 'false'}}"><td class="muted-cell">{{item.time}}</td><td><strong>{{item.agency}}</strong></td><td class="url-cell">{{item.source}}</td><td>{{status_badge(item.result,item.tone)}}</td><td>{{item.found}}</td><td>{{item.duration}}</td></tr>
-        {% else %}<tr><td colspan="6" class="empty-state-cell">조건에 맞는 수집 이력이 없습니다.</td></tr>{% endfor %}</tbody>
-      </table></div>
+      <header class="panel-heading"><div class="panel-heading-copy"><h2>실행 목록</h2><p>실제 저장된 수집 실행을 표시합니다.</p></div><span class="table-count">{{workspace['items']|length}}건</span></header>
+      <div class="table-scroll"><table class="data-table workspace-table"><thead><tr><th>수집 시각</th><th>기관</th><th>소스</th><th>수집 결과</th><th>발견 수</th><th>소요 시간</th></tr></thead><tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" tabindex="0" aria-selected="{{'true' if loop.first else 'false'}}"><td class="muted-cell">{{item.time}}</td><td><strong>{{item.agency}}</strong></td><td class="url-cell">{{item.source}}</td><td>{{status_badge(item.result,item.tone)}}</td><td>{{item.found}}</td><td>{{item.duration}}</td></tr>{% else %}<tr><td colspan="6" class="empty-state-cell">조건에 맞는 수집 이력이 없습니다.</td></tr>{% endfor %}</tbody></table></div>
     </section>
     <aside class="panel detail-panel" aria-label="선택 수집 실행 상세">
-      {% for detail in workspace.details %}
-      <article class="detail-view" data-detail-id="{{detail.id}}"{% if not loop.first %} hidden{% endif %}>
-        <header class="detail-panel-heading"><div><small>수집 단계 상세</small><h2>{{detail.title}}</h2></div><span class="demo-badge">실데이터</span></header>
+      {% for detail in workspace.details %}<article class="detail-view" data-detail-id="{{detail.id}}"{% if not loop.first %} hidden{% endif %}>
+        <header class="detail-panel-heading"><div><small>수집 단계 상세</small><h2>{{detail.title}}</h2></div><span class="demo-badge">실제 데이터</span></header>
         <div class="detail-content">
           <section class="detail-section"><h3>처리 단계</h3><div class="stage-list">{% for label,value,tone in detail.stages %}<div class="stage-row"><strong>{{label}}</strong>{{status_badge(value,tone)}}</div>{% endfor %}</div></section>
           <section class="detail-section"><h3>연결 context</h3>{% for binding in detail.bindings %}<p class="detail-note">{{binding}}</p>{% else %}<p class="detail-note">연결 없음</p>{% endfor %}</section>
+          {% if detail.master.available %}
+          <section class="detail-section" data-master-workflow data-extraction-id="{{detail.master.extraction_id}}">
+            <h3>확정 DB 반영</h3>
+            {% if detail.master.context_required %}<label>대상 기관<select class="control" data-master-agency><option value="">기관 선택</option>{% for agency in detail.master.agency_choices %}<option value="{{agency.id}}">{{agency.name}}</option>{% endfor %}</select></label>{% endif %}
+            {% if detail.master.preview %}<dl class="detail-grid"><dt>명부 행</dt><dd>{{detail.master.preview.directory_records}}</dd><dt>새 부서</dt><dd>{{detail.master.preview.org_units_to_create}}</dd><dt>기존 부서</dt><dd>{{detail.master.preview.org_units_matched}}</dd><dt>새 업무</dt><dd>{{detail.master.preview.duties_to_create}}</dd><dt>새 연락처</dt><dd>{{detail.master.preview.contacts_to_create}}</dd><dt>검토 필요 행</dt><dd>{{detail.master.preview.rows_requiring_review}}</dd><dt>사람 이름(자동 반영 안 함)</dt><dd>{{detail.master.preview.person_names_detected}}</dd></dl>{% endif %}
+            <p data-master-error role="alert" hidden></p>
+            {% if detail.master.action=='promote' %}<button class="button button--primary" type="button" data-master-action="promote">확정 DB 반영</button>{% elif detail.master.action=='detect' %}<button class="button button--primary" type="button" data-master-action="detect">변경 검토 생성</button>{% elif detail.master.context_required %}<button class="button button--primary" type="button" data-master-action="resolve">기관 선택 후 확인</button>{% endif %}
+          </section>
+          {% endif %}
           <section class="detail-section"><h3>증거 정보</h3><dl class="detail-grid"><dt>HTTP 상태</dt><dd>{{detail.http_status}}</dd><dt>최종 URL</dt><dd class="url-cell">{{detail.final_url}}</dd><dt>Content-Type</dt><dd>{{detail.content_type}}</dd><dt>응답 크기</dt><dd>{{detail.response_bytes}}</dd><dt>RAW 상대 경로</dt><dd class="url-cell">{{detail.artifact_path}}</dd><dt>SHA-256</dt><dd class="url-cell">{{detail.artifact_sha256}}</dd><dt>연락처 후보</dt><dd>{{detail.contact_count}}건</dd><dt>명부 행</dt><dd>{{detail.directory_count}}건</dd><dt>시작</dt><dd>{{detail.started_at}}</dd><dt>종료</dt><dd>{{detail.finished_at}}</dd><dt>소요 시간</dt><dd>{{detail.duration}}</dd></dl></section>
           <section class="detail-section"><h3>상세 사유</h3><p class="detail-note">{{detail.reason}}</p></section>
         </div>
-      </article>
-      {% else %}<p class="detail-content">수집을 실행하면 단계별 결과가 표시됩니다.</p>{% endfor %}
+      </article>{% else %}<p class="detail-content">수집을 실행하면 단계별 결과가 표시됩니다.</p>{% endfor %}
     </aside>
   </div>
 </div>
