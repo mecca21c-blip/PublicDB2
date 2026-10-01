@@ -10,5 +10,45 @@
 <div class="workspace-layout"><section class="panel workspace-list-panel"><header class="panel-heading"><div><h2>기관 목록</h2><p>행을 선택하면 기관의 조직 관계를 확인할 수 있습니다.</p></div><span>{{workspace['items']|length}}개 기관</span></header><div class="table-scroll"><table class="data-table workspace-table"><thead><tr><th>기관명</th><th>기관 유형</th><th>부서 수</th><th>연락처 수</th><th>수집 소스 수</th><th>상태</th></tr></thead><tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}"><td><strong>{{item.name}}</strong></td><td>{{item.type}}</td><td>{{item.departments}}</td><td>{{item.contacts}}</td><td>{{item.sources}}</td><td>{{status_badge(item.status,item.tone)}}</td></tr>{% else %}<tr><td colspan="6" class="empty-state-cell">등록된 기관이 없습니다. 기관 추가에서 첫 기관을 등록하세요.</td></tr>{% endfor %}</tbody></table></div>{{ pager(workspace.pagination) }}</section>
 <aside class="panel detail-panel">{% for d in workspace.details %}<article class="detail-view" data-detail-id="{{d.id}}"{% if not loop.first %} hidden{% endif %}><header class="detail-panel-heading"><div><small>기관 기본 정보</small><h2>{{d.name}}</h2></div><span class="demo-badge">실데이터</span></header><div class="detail-content"><dl class="detail-grid"><dt>기관 유형</dt><dd>{{d.type}}</dd><dt>기관 식별값</dt><dd>{{d.identifier}}</dd><dt>주소</dt><dd>{{d.address}}</dd></dl><section class="detail-section"><h3>조직/부서</h3><ul>{% for v in d.departments %}<li>{{v.name}}</li>{% else %}<li>등록된 부서가 없습니다.</li>{% endfor %}</ul><button data-modal-open="org-{{d.id}}">부서 추가</button></section><section class="detail-section"><h3>업무</h3><ul>{% for v in d.duties %}<li>{{v.title}}</li>{% else %}<li>등록된 업무가 없습니다.</li>{% endfor %}</ul><button data-modal-open="duty-{{d.id}}">업무 추가</button></section><section><h3>연결된 수집 소스</h3><ul>{% for v in d.sources %}<li>{{v.url}}</li>{% else %}<li>연결된 소스가 없습니다.</li>{% endfor %}</ul></section></div></article>
 {% for kind in ['org','duty'] %}<div class="modal-backdrop" data-modal="{{kind}}-{{d.id}}" hidden><section class="modal-shell"><header class="modal-heading"><h2>{{'부서' if kind=='org' else '업무'}} 추가</h2><button data-modal-close>×</button></header><form class="modal-body" data-api-form action="/api/agencies/{{d.id}}/{{'org-units' if kind=='org' else 'duties'}}" data-method="POST">{% if kind=='org' %}<label>부서명<input class="control" name="name" required></label><input type="hidden" name="unit_type" value="DEPARTMENT">{% else %}<label>부서<select name="org_unit_id">{% for u in d.departments %}<option value="{{u.id}}">{{u.name}}</option>{% endfor %}</select></label><label>업무명<input class="control" name="title" required></label>{% endif %}<p data-form-error hidden></p><button class="button button--primary">등록</button></form></section></div>{% endfor %}{% else %}<p class="detail-content">기관을 등록하면 조직 상세가 표시됩니다.</p>{% endfor %}</aside></div></div>
-<div class="modal-backdrop" data-modal="agency-create" hidden><section class="modal-shell"><header class="modal-heading"><h2>기관 추가</h2><button data-modal-close>×</button></header><form class="modal-body" data-api-form action="/api/agencies" data-method="POST"><label>기관명<input class="control" name="official_name" required></label><label>기관 유형<select name="agency_type"><option value="OTHER">기타</option><option value="CENTRAL_GOVERNMENT">중앙행정기관</option><option value="PUBLIC_INSTITUTION">공공기관</option></select></label><label>기관 식별값<input class="control" name="external_identifier"></label><label>주소<input class="control" name="address"></label><p data-form-error hidden></p><button class="button button--primary">등록</button></form></section></div>
+<div class="modal-backdrop" data-modal="agency-create" hidden>
+  <section class="modal-shell modal-shell--agency-create">
+    <header class="modal-heading">
+      <div><h2>기관 추가</h2><p>PublicDB2에서 관리할 기관의 기본 정보를 등록합니다.</p></div>
+      <button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button>
+    </header>
+    <form class="modal-body agency-create-form" data-api-form action="/api/agencies" data-method="POST">
+      <label class="agency-form-field">
+        <span class="field-label">기관명 <strong aria-hidden="true">*</strong></span>
+        <input class="control" name="official_name" placeholder="예: 서울특별시" required>
+      </label>
+      <label class="agency-form-field">
+        <span class="field-label">기관 유형 <strong aria-hidden="true">*</strong></span>
+        <select class="control" name="agency_type" required>
+          <option value="" selected disabled>기관 유형 선택</option>
+          <option value="CENTRAL_GOVERNMENT">중앙행정기관</option>
+          <option value="AGENCY">외청/청</option>
+          <option value="COMMISSION">위원회</option>
+          <option value="METROPOLITAN_GOVERNMENT">광역지방자치단체</option>
+          <option value="BASIC_LOCAL_GOVERNMENT">기초지방자치단체</option>
+          <option value="PUBLIC_INSTITUTION">공공기관</option>
+          <option value="OTHER">기타</option>
+        </select>
+      </label>
+      <label class="agency-form-field">
+        <span class="field-label">기관 식별값 (선택)</span>
+        <input class="control" name="external_identifier" aria-describedby="agency-identifier-help">
+        <small class="field-help" id="agency-identifier-help">기관에서 사용하는 공식 관리코드가 있는 경우 입력합니다.</small>
+      </label>
+      <label class="agency-form-field">
+        <span class="field-label">주소 (선택)</span>
+        <input class="control" name="address">
+      </label>
+      <p data-form-error hidden></p>
+      <div class="modal-actions">
+        <button class="button button--ghost" type="button" data-modal-close>취소</button>
+        <button class="button button--primary" type="submit">등록</button>
+      </div>
+    </form>
+  </section>
+</div>
 {% endblock %}

@@ -80,6 +80,12 @@ select.control { appearance: auto; }
 .file-drop small { color: var(--color-text-muted); }
 .import-table { min-width: 760px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.modal-shell--agency-create { width: min(700px, calc(100vw - 48px)); max-width: 100%; }
+.agency-create-form { display: grid; gap: 17px; }
+.agency-form-field { width: 100%; display: grid; gap: 6px; }
+.agency-form-field .field-label strong { color: var(--color-red-500, #bd4249); }
+.agency-form-field .field-help { color: var(--color-text-muted); font-size: 11px; line-height: 1.5; }
+.agency-create-form .modal-actions { margin-top: 3px; }
 
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .settings-card { padding: 20px; }

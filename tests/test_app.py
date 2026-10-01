@@ -1,8 +1,10 @@
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from app.db.base import Base
 from app.db.engine import create_db_engine
 from app.main import WORKSPACE_PAGES
+from app.models import AgencyType
 from app.services.dashboard_service import _points
 from tests.support import regression_app
 
@@ -72,3 +74,52 @@ def test_workspace_templates_and_static_assets_are_registered(tmp_path):
     assert 'data-modal="excel-import"' in sources.text
     assert 'workspace.css' not in dashboard.text
     assert 'kpi-grid' in dashboard.text
+
+
+def test_agency_create_modal_presentation_and_contract(tmp_path):
+    with TestClient(make_app(tmp_path)) as client:
+        response = client.get('/agencies')
+        workspace_css = client.get('/static/css/workspace.css')
+
+    assert response.status_code == 200
+    modal = BeautifulSoup(response.text, 'html.parser').select_one('[data-modal="agency-create"]')
+    assert modal is not None
+    shell = modal.select_one('.modal-shell.modal-shell--agency-create')
+    assert shell is not None
+    form = modal.select_one('form.agency-create-form[data-api-form]')
+    assert form is not None
+    assert form.get('action') == '/api/agencies'
+    assert form.get('data-method') == 'POST'
+
+    official_name = form.select_one('[name="official_name"]')
+    agency_type = form.select_one('select.control[name="agency_type"]')
+    external_identifier = form.select_one('[name="external_identifier"]')
+    address = form.select_one('[name="address"]')
+    assert official_name is not None and official_name.has_attr('required')
+    assert agency_type is not None and agency_type.has_attr('required')
+    assert external_identifier is not None and not external_identifier.has_attr('required')
+    assert address is not None and not address.has_attr('required')
+
+    options = agency_type.select('option')
+    assert options[0].get('value') == ''
+    assert options[0].get_text(strip=True) == '기관 유형 선택'
+    assert options[0].has_attr('selected') and options[0].has_attr('disabled')
+    assert {option.get('value') for option in options[1:]} == {item.value for item in AgencyType}
+    assert {option.get('value'): option.get_text(strip=True) for option in options[1:]} == {
+        'CENTRAL_GOVERNMENT': '중앙행정기관',
+        'AGENCY': '외청/청',
+        'COMMISSION': '위원회',
+        'METROPOLITAN_GOVERNMENT': '광역지방자치단체',
+        'BASIC_LOCAL_GOVERNMENT': '기초지방자치단체',
+        'PUBLIC_INSTITUTION': '공공기관',
+        'OTHER': '기타',
+    }
+    assert options[1].get('value') != AgencyType.OTHER.value
+
+    close = modal.select_one('button.modal-close[data-modal-close][aria-label="닫기"]')
+    cancel = form.select_one('.modal-actions button[type="button"][data-modal-close]')
+    submit = form.select_one('.modal-actions button[type="submit"]')
+    assert close is not None and cancel is not None and submit is not None
+    assert '공식 관리코드가 있는 경우 입력합니다.' in form.get_text(' ', strip=True)
+    assert 'modal-shell--agency-create { width: min(700px, calc(100vw - 48px)); max-width: 100%; }' in workspace_css.text
+    assert '.modal-shell { width: min(960px, calc(100vw - 56px));' in workspace_css.text
