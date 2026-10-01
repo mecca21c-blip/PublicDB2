@@ -146,6 +146,9 @@ def test_all_seven_routes_and_dashboard_freeze(database):
     assert "운영 대시보드" in pages["/"].text
     assert "샘플 데이터" not in pages["/"].text
     assert "kpi-grid" in pages["/"].text
-    assert "PublicDB2 DB" in pages["/agencies"].text
-    assert "PublicDB2 DB" in pages["/sources"].text
+    assert "PublicDB2 DB" not in pages["/agencies"].text
+    assert "PublicDB2 DB" not in pages["/sources"].text
+    assert "PublicDB2 DB" not in pages["/runs"].text
+    assert "PublicDB2 DB" not in pages["/contacts"].text
+    assert "PublicDB2 DB" not in pages["/review"].text
 

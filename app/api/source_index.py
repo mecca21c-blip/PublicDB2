@@ -28,6 +28,7 @@ def _methods(value: str | None) -> list[CollectionMethod] | None:
 
 @router.get("/preview")
 def preview_source_filter(
+    scope: str = "filter",
     search: str | None = Query(default=None, max_length=100),
     region_code: list[str] = Query(default=[]),
     agency_id: uuid.UUID | None = None,
@@ -38,17 +39,25 @@ def preview_source_filter(
     session: Session = Depends(get_session),
 ) -> dict:
     try:
-        spec = SourceFilterSpec.build(
-            search=search, region_codes=region_code, agency_id=agency_id,
-            org_unit_id=org_unit_id, methods=_methods(methods),
-            status=source_status, scheduled=scheduled,
+        if scope not in {"filter", "all"}:
+            raise SourceFilterError("지원하지 않는 미리보기 범위입니다.")
+        spec = (
+            SourceFilterSpec.build(methods=None)
+            if scope == "all"
+            else SourceFilterSpec.build(
+                search=search, region_codes=region_code, agency_id=agency_id,
+                org_unit_id=org_unit_id, methods=_methods(methods),
+                status=source_status, scheduled=scheduled,
+            )
         )
         service = SourceQueryService(session)
+        eligible_total = service.count(spec, eligible_only=True)
         return {
             "total": service.count(spec),
-            "eligible_total": service.count(spec, eligible_only=True),
+            "eligible_total": eligible_total,
             "method_counts": service.method_counts(spec),
-            "filter": service.snapshot(spec, resolved_count=service.count(spec, eligible_only=True)),
+            "filter": service.snapshot(spec, resolved_count=eligible_total),
+            "scope": scope,
         }
     except SourceFilterError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

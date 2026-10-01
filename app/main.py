@@ -318,13 +318,21 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             )
             query = SourceQueryService(session)
             workspace = query.list_page(spec, page=page, page_size=page_size)
+            workspace['registered_total'] = query.registered_count()
+            workspace['all_eligible_total'] = query.count(
+                SourceFilterSpec.build(methods=None), eligible_only=True
+            )
             filter_snapshot = query.snapshot(spec, resolved_count=workspace['eligible_total'])
             catalog = CatalogService(session).list()
             db_error = None
         except (SQLAlchemyError, SourceFilterError, ValueError):
             session.rollback()
             catalog = ()
-            workspace = {'items': (), 'details': (), 'total': 0, 'eligible_total': 0, 'method_counts': {}, 'pagination': page_metadata(0, 1, 100)}
+            workspace = {
+                'items': (), 'details': (), 'total': 0, 'eligible_total': 0,
+                'registered_total': 0, 'all_eligible_total': 0,
+                'method_counts': {}, 'pagination': page_metadata(0, 1, 100),
+            }
             filter_snapshot = {}
             db_error = '수집 소스 필터를 확인하지 못했습니다. 선택한 기관·부서와 필터 값을 확인하세요.'
         finally:

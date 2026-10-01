@@ -28,7 +28,17 @@ select.control { appearance: auto; }
 .panel-heading-copy p { margin: 0; color: var(--color-text-muted); font-size: 12px; }
 .table-count { color: var(--color-text-muted); font-size: 12px; }
 .workspace-table { min-width: 820px; }
-.workspace-table--sources { min-width: 1080px; }
+.workspace-table--sources { width: 100%; min-width: 760px; table-layout: fixed; }
+.workspace-table--sources th:nth-child(1) { width: 36px; }
+.workspace-table--sources th:nth-child(2) { width: 16%; }
+.workspace-table--sources th:nth-child(3) { width: 12%; }
+.workspace-table--sources th:nth-child(4) { width: 25%; }
+.workspace-table--sources th:nth-child(5) { width: 13%; }
+.workspace-table--sources th:nth-child(6) { width: 12%; }
+.workspace-table--sources th:nth-child(7) { width: 58px; }
+.workspace-table--sources th:nth-child(8) { width: 76px; }
+.workspace-table--sources th:nth-child(9) { width: 70px; }
+.workspace-table--sources .url-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .binding-count { display: block; margin-top: 3px; color: var(--color-text-muted); font-weight: 500; }
 .workspace-table tr.selectable-row { cursor: pointer; }
 .workspace-table tr.selectable-row.is-selected { background: #f0f6ff; box-shadow: inset 3px 0 var(--color-blue-500); }
@@ -95,7 +105,7 @@ select.control { appearance: auto; }
 .modal-shell--agency-create { width: min(700px, calc(100vw - 48px)); max-width: 100%; }
 .modal-shell--source-create { width: min(760px, calc(100vw - 48px)); max-width: 100%; }
 .modal-shell--compact { width: min(560px, calc(100vw - 48px)); max-width: 100%; }
-.source-create-form { display: grid; gap: 18px; max-height: calc(100vh - 150px); }
+.source-create-form { display: grid; gap: 16px; max-height: calc(100vh - 145px); padding-bottom: 0; }
 .form-section { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #fbfcfe; }
 .form-section h3 { margin: 0; font-size: 14px; }
 .form-section label { display: grid; gap: 6px; }
@@ -109,6 +119,29 @@ select.control { appearance: auto; }
 .method-card strong { font-size: 12px; }
 .method-card small { color: var(--color-text-muted); font-size: 11px; line-height: 1.45; }
 .method-panel, .method-panel-fields { display: grid; gap: 12px; }
+[data-wizard-step][hidden], [data-method-panel][hidden], [data-api-mode-panel][hidden], [data-api-subtype][hidden], [data-credential-fields][hidden], [data-preview-result][hidden] { display: none; }
+.wizard-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.wizard-steps li { padding: 8px 10px; border-radius: 7px; color: var(--color-text-muted); background: #f1f4f8; font-size: 11px; font-weight: 750; text-align: center; }
+.wizard-steps li.is-active { color: var(--color-blue-600); background: var(--color-blue-100); }
+.source-wizard-step { display: grid; gap: 12px; min-height: 310px; align-content: start; }
+.source-wizard-step > h3 { margin: 0; font-size: 17px; }
+.source-wizard-step > p { margin: -5px 0 2px; color: var(--color-text-muted); font-size: 12px; }
+.source-wizard-step > label, .method-panel > label, .method-panel-fields > label, .credential-fields > label { display: grid; gap: 6px; }
+.extraction-options, .choice-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 11px 13px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); }
+.extraction-options legend, .choice-group legend { padding: 0 5px; color: var(--color-text-subtle); font-size: 11px; font-weight: 800; }
+.extraction-options small { margin-left: auto; color: var(--color-text-muted); }
+.advanced-settings { border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #fff; }
+.advanced-settings summary { padding: 11px 13px; cursor: pointer; color: var(--color-text-subtle); font-size: 12px; font-weight: 750; }
+.advanced-settings[open] summary { border-bottom: 1px solid var(--color-border-soft); }
+.advanced-settings .method-panel-fields { padding: 13px; }
+.auto-refresh-section { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--color-border-soft); }
+.auto-refresh-section h3 { margin: 0 0 3px; font-size: 13px; }
+.auto-refresh-section p { margin: 0; color: var(--color-text-muted); font-size: 11px; }
+.catalog-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); }
+.catalog-entry span, .catalog-entry small { display: block; }
+.catalog-entry small { margin-top: 3px; color: var(--color-text-muted); }
+.inline-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.credential-fields { display: grid; gap: 10px; padding: 12px; border-radius: var(--radius-sm); background: #f7f9fc; }
 
 .source-filter { display: grid; gap: 14px; padding: 16px; margin-bottom: 16px; }
 .source-filter-grid { display: grid; grid-template-columns: minmax(220px,1.25fr) repeat(5,minmax(145px,1fr)); gap: 10px; align-items: end; }

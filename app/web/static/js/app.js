@@ -32,13 +32,17 @@
     document.body.style.overflow = "";
   };
 
+  const openModal = (modal) => {
+    if (!modal) return;
+    modal.hidden = false;
+    document.body.style.overflow = "hidden";
+    modal.querySelector("[data-modal-close]")?.focus();
+  };
+
   document.querySelectorAll("[data-modal-open]").forEach((button) => {
     button.addEventListener("click", () => {
       const modal = document.querySelector('[data-modal="' + button.dataset.modalOpen + '"]');
-      if (!modal) return;
-      modal.hidden = false;
-      document.body.style.overflow = "hidden";
-      modal.querySelector("[data-modal-close]")?.focus();
+      openModal(modal);
     });
   });
 
@@ -99,8 +103,9 @@
         selector.dispatchEvent(new Event("change"));
       });
     });
+    const selectedPanel = () => form.querySelector('[data-method-panel="' + selector.value + '"]');
     const editUrl = form.closest("[data-modal]")?.previousElementSibling?.querySelector(".url-cell")?.textContent?.trim();
-    if (editUrl) form.querySelectorAll('[name="url"]').forEach((input) => { input.value = editUrl; });
+    if (editUrl) selectedPanel()?.querySelectorAll('[name="url"]').forEach((input) => { input.value = editUrl; });
     try {
       const initial = JSON.parse(form.querySelector("[data-initial-method-config]")?.value || "{}");
       const applyInitial = (prefix, values) => Object.entries(values || {}).forEach(([key, value]) => {
@@ -109,7 +114,7 @@
           applyInitial(name, value);
           return;
         }
-        const control = form.querySelector('[name="' + name + '"]');
+        const control = selectedPanel()?.querySelector('[name="' + name + '"]');
         if (!control || value === null) return;
         if (control.type === "checkbox") control.checked = Boolean(value);
         else control.value = control.dataset.jsonField !== undefined ? JSON.stringify(value) : String(value);
@@ -122,24 +127,28 @@
         panel.hidden = !active;
         panel.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
       });
+      const apiActive = selector.value === "API";
+      const apiMode = form.querySelector("[data-api-add-mode]:checked")?.value || "DIRECT";
+      form.querySelectorAll("[data-api-mode-panel]").forEach((panel) => {
+        const active = apiActive && panel.dataset.apiModePanel === apiMode;
+        panel.hidden = !active;
+        panel.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
+      });
+      const wizardSubmit = form.querySelector("[data-wizard-submit]");
+      if (wizardSubmit) wizardSubmit.disabled = apiActive && apiMode === "CATALOG";
       const kind = form.querySelector("[data-api-kind]");
-      const openApiFields = form.querySelectorAll("[data-openapi-fields]");
-      if (kind && openApiFields.length) {
-        const active = selector.value === "API" && kind.value === "OPEN_API";
-        openApiFields.forEach((openApi) => {
-          openApi.hidden = !active;
-          openApi.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
-        });
-      }
-      form.querySelectorAll("[data-feed-preview]").forEach((control) => {
-        const active = selector.value === "API" && kind?.value !== "OPEN_API";
-        control.hidden = !active;
-        control.disabled = !active;
+      const kindChoice = form.querySelector("[data-api-kind-choice]:checked")?.value || "OPEN_API";
+      const feedKind = form.querySelector("[data-feed-kind]");
+      if (kind) kind.value = kindChoice === "FEED" ? (feedKind?.value || "RSS") : "OPEN_API";
+      form.querySelectorAll("[data-api-subtype]").forEach((panel) => {
+        const active = apiActive && apiMode === "DIRECT" && panel.dataset.apiSubtype === kindChoice;
+        panel.hidden = !active;
+        panel.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
       });
       const auth = form.querySelector("[data-api-auth]");
       const credentialFields = form.querySelectorAll("[data-credential-fields]");
       if (auth && credentialFields.length) {
-        const active = selector.value === "API" && kind?.value === "OPEN_API" && auth.value !== "NONE";
+        const active = apiActive && apiMode === "DIRECT" && kindChoice === "OPEN_API" && auth.value !== "NONE";
         credentialFields.forEach((credential) => {
           credential.hidden = !active;
           credential.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
@@ -147,9 +156,42 @@
       }
     };
     selector.addEventListener("change", refresh);
-    form.querySelector("[data-api-kind]")?.addEventListener("change", refresh);
+    form.querySelectorAll("[data-api-add-mode], [data-api-kind-choice]").forEach((control) => control.addEventListener("change", refresh));
+    form.querySelector("[data-feed-kind]")?.addEventListener("change", refresh);
     form.querySelector("[data-api-auth]")?.addEventListener("change", refresh);
     refresh();
+  });
+
+  document.querySelectorAll("[data-source-wizard]").forEach((form) => {
+    let step = 1;
+    const showStep = (nextStep) => {
+      step = nextStep;
+      form.querySelectorAll("[data-wizard-step]").forEach((section) => { section.hidden = Number(section.dataset.wizardStep) !== step; });
+      form.querySelectorAll("[data-wizard-indicator]").forEach((item) => item.classList.toggle("is-active", Number(item.dataset.wizardIndicator) === step));
+      form.querySelector("[data-wizard-prev]").hidden = step === 1;
+      form.querySelector("[data-wizard-next]").hidden = step === 3;
+      form.querySelector("[data-wizard-submit]").hidden = step !== 3;
+    };
+    const validateStep = () => {
+      if (step === 1) {
+        const agencyValue = form.querySelector('[name="agency_id"]');
+        const agencyInput = agencyValue?.closest("[data-lookup-combobox]")?.querySelector("[data-lookup-input]");
+        agencyInput?.setCustomValidity(agencyValue?.value ? "" : "기관을 목록에서 선택하세요.");
+      }
+      if (step === 3 && ["WEB_PAGE", "WEB_CRAWL"].includes(form.querySelector("[data-method-selector]")?.value)) {
+        const panel = form.querySelector('[data-method-panel="' + form.querySelector("[data-method-selector]").value + '"]');
+        const checks = [...panel.querySelectorAll('[name^="method_config.extract_"]')];
+        checks[0]?.setCustomValidity(checks.some((control) => control.checked) ? "" : "가져올 정보를 하나 이상 선택하세요.");
+      }
+      const active = form.querySelector('[data-wizard-step="' + step + '"]');
+      const invalid = active?.querySelector(":invalid");
+      if (invalid) { invalid.reportValidity(); return false; }
+      return true;
+    };
+    form.querySelector("[data-wizard-next]").addEventListener("click", () => { if (validateStep()) showStep(step + 1); });
+    form.querySelector("[data-wizard-prev]").addEventListener("click", () => showStep(step - 1));
+    form.addEventListener("submit", (event) => { if (!validateStep()) event.preventDefault(); }, {capture: true});
+    showStep(1);
   });
 
   document.querySelectorAll("[data-config-preview]").forEach((button) => {
@@ -169,6 +211,7 @@
       } catch (error) {
         output.textContent = error.message;
       } finally {
+        if (output) output.hidden = false;
         button.disabled = false;
       }
     });
@@ -191,6 +234,7 @@
         form.querySelector("[data-credential-secret]").value = "";
         output.textContent = "자격증명이 저장되었습니다. 비밀 값은 다시 표시되지 않습니다.";
       } catch (error) { output.textContent = error.message; }
+      output.hidden = false;
     });
   });
 
@@ -199,12 +243,13 @@
       const form = button.form;
       const ref = form.querySelector('[name="method_config.credential_ref"]');
       const output = button.closest("[data-credential-fields]").querySelector("[data-credential-result]");
-      if (!ref?.value) { output.textContent = "삭제할 credential ref가 없습니다."; return; }
+      if (!ref?.value) { output.textContent = "삭제할 자격증명이 없습니다."; output.hidden = false; return; }
       const response = await fetch("/api/api-credentials/" + encodeURIComponent(ref.value), {
         method: "DELETE", headers: csrfHeaders(),
       });
       if (response.ok) { ref.value = ""; output.textContent = "자격증명을 제거했습니다."; }
       else { output.textContent = "자격증명을 제거하지 못했습니다."; }
+      output.hidden = false;
     });
   });
 
@@ -226,6 +271,7 @@
 
   document.querySelectorAll("[data-api-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
+      if (event.defaultPrevented) return;
       event.preventDefault();
       const errorBox = form.querySelector("[data-form-error]");
       try {
@@ -356,15 +402,60 @@
     try { await createCollectionJob({trigger_type: "MANUAL_SELECTION", source_ids: sourceIds}, sharedJobStatus); }
     catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
   });
-  document.querySelector("[data-job-all]")?.addEventListener("click", async (event) => {
-    if (!window.confirm("활성 수집 소스 전체를 지금 수집하시겠습니까?")) return;
+  const sourceFilterSnapshot = () => {
+    try { return JSON.parse(document.querySelector("#source-filter-state")?.textContent || "{}"); }
+    catch (_error) { throw new Error("필터 상태를 읽지 못했습니다."); }
+  };
+  const filterPreviewUrl = () => {
+    const filter = sourceFilterSnapshot();
+    const params = new URLSearchParams();
+    if (filter.search) params.set("search", filter.search);
+    (filter.region_codes || []).forEach((value) => params.append("region_code", value));
+    if (filter.agency_id) params.set("agency_id", filter.agency_id);
+    if (filter.org_unit_id) params.set("org_unit_id", filter.org_unit_id);
+    if (filter.methods !== null && filter.methods !== undefined) params.set("methods", filter.methods.join(","));
+    if (filter.status) params.set("source_status", filter.status);
+    if (filter.scheduled) params.set("scheduled", filter.scheduled);
+    return "/api/source-index/preview?" + params.toString();
+  };
+  const openBulkConfirmation = async (scope) => {
+    const modal = document.querySelector('[data-modal="' + (scope === "all" ? "all-job-confirm" : "filtered-job-confirm") + '"]');
+    const trigger = document.querySelector(scope === "all" ? "[data-job-all-open]" : "[data-job-filtered-open]");
+    const confirm = modal?.querySelector(scope === "all" ? "[data-job-all-confirm]" : "[data-job-filter-confirm]");
+    const errorBox = modal?.querySelector("[data-bulk-error]");
+    trigger.disabled = true;
+    try {
+      const response = await fetch(scope === "all" ? "/api/source-index/preview?scope=all" : filterPreviewUrl());
+      const preview = await response.json();
+      if (!response.ok) throw new Error(preview.detail || "수집 대상을 확인하지 못했습니다.");
+      const counts = preview.method_counts || {};
+      modal.querySelector("[data-bulk-total]").textContent = preview.eligible_total + "개";
+      modal.querySelector("[data-bulk-methods]").textContent = "웹페이지 " + (counts.WEB_PAGE || 0) + " · 웹사이트 탐색 " + (counts.WEB_CRAWL || 0) + " · API/RSS " + (counts.API || 0);
+      confirm.textContent = preview.eligible_total + "개 수집 시작";
+      confirm.disabled = preview.eligible_total === 0;
+      errorBox.hidden = true;
+      openModal(modal);
+    } catch (error) {
+      sharedJobStatus.hidden = false;
+      sharedJobStatus.textContent = error.message;
+    } finally {
+      trigger.disabled = false;
+    }
+  };
+  document.querySelector("[data-job-filtered-open]")?.addEventListener("click", () => openBulkConfirmation("filter"));
+  document.querySelector("[data-job-all-open]")?.addEventListener("click", () => openBulkConfirmation("all"));
+  document.querySelector("[data-job-all-confirm]")?.addEventListener("click", async (event) => {
     event.currentTarget.disabled = true;
-    try { await createCollectionJob({trigger_type: "MANUAL_ALL"}, sharedJobStatus); }
-    catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
+    try {
+      closeModal(event.currentTarget.closest("[data-modal]"));
+      await createCollectionJob({trigger_type: "MANUAL_ALL"}, sharedJobStatus);
+    } catch (error) {
+      sharedJobStatus.hidden = false; sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false;
+    }
   });
   document.querySelector("[data-job-filter-confirm]")?.addEventListener("click", async (event) => {
     let filter;
-    try { filter = JSON.parse(document.querySelector("#source-filter-state")?.textContent || "{}"); }
+    try { filter = sourceFilterSnapshot(); }
     catch (_error) { sharedJobStatus.hidden = false; sharedJobStatus.textContent = "필터 상태를 읽지 못했습니다."; return; }
     event.currentTarget.disabled = true;
     try {

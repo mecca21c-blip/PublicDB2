@@ -5,7 +5,7 @@
 {% block content %}
 <!-- empty-state accessibility markers: 변경/검토 / CURRENT VALUE / DISCOVERED VALUE / 반영 / 보류 -->
 <div class="workspace-page">
-  <header class="page-heading"><div class="page-heading-copy"><span class="demo-badge">PublicDB2 DB</span><h1>변경 검토</h1><p>발견된 값과 현재 확정 값을 비교하고 반영·유지·보류합니다.</p></div></header>
+  <header class="page-heading"><div class="page-heading-copy"><h1>변경 검토</h1><p>발견된 값과 현재 확정 값을 비교하고 반영·유지·보류합니다.</p></div></header>
   {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}
   <form class="panel toolbar" aria-label="변경 후보 필터" method="get">
     <div class="toolbar-field toolbar-field--search"><label for="review-search">검색</label><input class="control" id="review-search" name="search" type="search" value="{{filters.search}}" placeholder="기관, 대상, 값, 사유"></div>

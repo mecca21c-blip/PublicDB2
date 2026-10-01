@@ -6,7 +6,7 @@
 <!-- empty-state accessibility markers: 연락처 DB / 엑셀 내보내기 / 공식 출처 / 최근 변경 이력 -->
 <div class="workspace-page">
   <header class="page-heading">
-    <div class="page-heading-copy"><span class="demo-badge">PublicDB2 DB</span><h1>연락처 DB</h1><p>검토를 거쳐 확정된 공공기관 연락처만 표시합니다.</p></div>
+    <div class="page-heading-copy"><h1>연락처 DB</h1><p>검토를 거쳐 확정된 공공기관 연락처만 표시합니다.</p></div>
     <div class="page-actions">{% if current_user.role.value in ['ADMIN', 'OPERATOR'] %}<button class="button button--secondary" type="button" data-contact-export>엑셀 내보내기</button>{% endif %}</div>
   </header>
   {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}

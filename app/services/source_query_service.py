@@ -169,6 +169,9 @@ class SourceQueryService:
         ids = self.source_ids_statement(spec, eligible_only=eligible_only).subquery()
         return self.session.scalar(select(func.count()).select_from(ids)) or 0
 
+    def registered_count(self) -> int:
+        return self.session.scalar(select(func.count()).select_from(Source)) or 0
+
     def resolve_sources(self, spec: SourceFilterSpec, *, eligible_only: bool = True) -> list[Source]:
         ids = self.source_ids_statement(spec, eligible_only=eligible_only).subquery()
         return list(self.session.scalars(

@@ -330,14 +330,14 @@ def test_source_page_filter_state_ui_actions_and_server_preview(facet_db):
     assert page.status_code == 200
     assert "서울 UI기관" in page.text
     assert 'name="methods" value="API"' in page.text
-    assert "필터 결과 1개 수집 가능" in page.text
+    assert "필터 결과 1개" in page.text
     assert "현재 페이지 수집 가능한 소스 전체 선택" in page.text
     assert "필터 결과 전체 지금 수집" in page.text
     assert "data-job-region-run" not in page.text
-    assert "자동 전체 수집에 포함" in page.text
-    assert "개별 URL · 스크래핑" in page.text
-    assert "Index URL · 크롤링" in page.text
-    assert "공개 API / RSS" in page.text
+    assert "정기 전체 수집 대상에 포함" in page.text
+    assert "개별 웹페이지" in page.text
+    assert "웹사이트 탐색" in page.text
+    assert "공개 API · RSS" in page.text
     preview = client.get("/api/source-index/preview", params=params)
     assert preview.status_code == 200
     assert preview.json()["eligible_total"] == 1
