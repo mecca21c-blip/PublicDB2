@@ -53,6 +53,7 @@ class SourceService:
         description: str | None = None,
         collection_method: CollectionMethod | str = CollectionMethod.WEB_PAGE,
         method_config: dict | None = None,
+        scheduled_refresh_enabled: bool = True,
         commit: bool = True,
     ) -> tuple[dict, bool]:
         try:
@@ -60,7 +61,10 @@ class SourceService:
             normalized = normalize_source_url(url)
             source = self.repository.get_source_by_normalized_url(normalized)
             if source is None:
-                source = Source(url=url.strip(), normalized_url=normalized)
+                source = Source(
+                    url=url.strip(), normalized_url=normalized,
+                    scheduled_refresh_enabled=scheduled_refresh_enabled,
+                )
                 self.repository.add_source(source)
                 self.session.flush()
                 SourceMethodService(self.session).configure(
@@ -107,6 +111,7 @@ class SourceService:
         description: str | None | object = ...,
         collection_method: CollectionMethod | str | None = None,
         method_config: dict | None = None,
+        scheduled_refresh_enabled: bool | None = None,
     ) -> dict:
         try:
             binding = self.repository.get_binding(binding_id)
@@ -120,7 +125,10 @@ class SourceService:
                 normalized = normalize_source_url(url)
                 source = self.repository.get_source_by_normalized_url(normalized)
                 if source is None:
-                    source = Source(url=url.strip(), normalized_url=normalized)
+                    source = Source(
+                        url=url.strip(), normalized_url=normalized,
+                        scheduled_refresh_enabled=True if scheduled_refresh_enabled is None else scheduled_refresh_enabled,
+                    )
                     self.repository.add_source(source)
                     self.session.flush()
                     SourceMethodService(self.session).configure(
@@ -136,6 +144,8 @@ class SourceService:
             binding.scope_key = scope
             if description is not ...:
                 binding.description = collapse_whitespace(str(description or "")) or None
+            if scheduled_refresh_enabled is not None:
+                source.scheduled_refresh_enabled = bool(scheduled_refresh_enabled)
             if collection_method is not None:
                 acquired = OperationClaimService(self.session).acquire(
                     source_claim_key(source.id), 'METHOD_EDIT'
@@ -281,6 +291,7 @@ class SourceService:
             "normalized_url": binding.source.normalized_url,
             "coverage_mode": binding.source.coverage_mode.value,
             "collection_method": binding.source.collection_method.value,
+            "scheduled_refresh_enabled": binding.source.scheduled_refresh_enabled,
             "collection_method_label": user_method_label(
                 binding.source.collection_method,
                 binding.source.api_config.kind if binding.source.api_config else None,

@@ -19,6 +19,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.agencies import router as agencies_api
 from app.api.collection import router as collection_api
+from app.api.collection_jobs import router as collection_jobs_api
 from app.api.master_review import router as master_review_api
 from app.api.operations import router as operations_api
 from app.api.sources import router as sources_api
@@ -34,9 +35,13 @@ from app.db.session import create_session_factory
 from app.models import (
     AgencyType, ChangeEventType, ContactType, OrgUnit, ReviewStatus, RunStatus, User,
 )
-from app.services.agency_service import AgencyService
+from app.services.agency_service import AGENCY_TYPE_LABELS, AgencyService
 from app.services.collection_service import CollectionCoordinator, CollectionService
 from app.services.collection_recovery_service import reconcile_stale_collections
+from app.services.collection_job_service import CollectionJobService
+from app.services.collection_job_worker import CollectionJobWorker, recover_interrupted_jobs
+from app.services.collection_scheduler import CollectionScheduler
+from app.services.collection_background_runtime import CollectionBackgroundRuntime
 from app.services.catalog_service import CatalogService
 from app.services.contact_service import ContactService
 from app.services.dashboard_service import DashboardService
@@ -46,6 +51,7 @@ from app.services.settings_service import SettingsService
 from app.services.source_service import SourceService
 from app.services.source_import_service import PreviewStore
 from app.services.user_service import UserService
+from app.services.regions import REGIONS
 
 
 logger = logging.getLogger('publicdb2')
@@ -110,14 +116,19 @@ async def _lifespan(application: FastAPI):
     with application.state.session_factory() as recovery_session:
         try:
             recovered = reconcile_stale_collections(recovery_session)
+            interrupted = recover_interrupted_jobs(recovery_session)
             if recovered:
                 logger.warning('recovered interrupted collection runs count=%s', recovered)
+            if interrupted:
+                logger.warning('recovered interrupted collection job items count=%s', interrupted)
         except SQLAlchemyError:
             recovery_session.rollback()
             logger.warning('collection recovery deferred until database is ready')
+    application.state.collection_background_runtime.start()
     try:
         yield
     finally:
+        application.state.collection_background_runtime.stop()
         logger.info('application shutdown')
         application.state.engine.dispose()
         close_file_logging(handler)
@@ -156,6 +167,14 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             ),
         )
     application.state.collection_service_factory = collection_service_factory
+    application.state.collection_job_worker = CollectionJobWorker(
+        application.state.session_factory,
+        lambda session: application.state.collection_service_factory(session),
+    )
+    application.state.collection_scheduler = CollectionScheduler(application.state.session_factory)
+    application.state.collection_background_runtime = CollectionBackgroundRuntime(
+        application.state.collection_job_worker, application.state.collection_scheduler
+    )
     def preview_fetcher_factory():
         with application.state.session_factory() as preview_session:
             settings = SettingsService(preview_session).snapshot()
@@ -168,6 +187,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     application.include_router(agencies_api)
     application.include_router(sources_api)
     application.include_router(collection_api)
+    application.include_router(collection_jobs_api)
     application.include_router(master_review_api)
     application.include_router(operations_api)
     application.include_router(three_way_api)
@@ -259,10 +279,10 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         )
 
     @application.get('/agencies', response_class=HTMLResponse, name='agencies', dependencies=[Depends(require_viewer)])
-    def agencies(request: Request, search: str | None = None, agency_type: AgencyType | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
+    def agencies(request: Request, search: str | None = None, agency_type: AgencyType | None = None, region_code: str | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            workspace = AgencyService(session).list_page(search=search, agency_type=agency_type, page=page, page_size=page_size)
+            workspace = AgencyService(session).list_page(search=search, agency_type=agency_type, region_code=region_code, page=page, page_size=page_size)
             db_error = None
         except SQLAlchemyError:
             session.rollback()
@@ -270,7 +290,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             db_error = '기관 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
         finally:
             session.close()
-        return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context(request, 'agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': agency_type.value if agency_type else ''}, agency_types=AgencyType))
+        return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context(request, 'agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': agency_type.value if agency_type else '', 'region_code': region_code or ''}, agency_types=AgencyType, agency_type_labels=AGENCY_TYPE_LABELS, regions=REGIONS))
 
     @application.get('/sources', response_class=HTMLResponse, name='sources', dependencies=[Depends(require_viewer)])
     def sources(request: Request, search: str | None = None, agency_id: str | None = None, org_unit_id: str | None = None, source_status: str | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
@@ -291,7 +311,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             db_error = '수집 소스 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
         finally:
             session.close()
-        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context(request, 'sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, catalog=catalog, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
+        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context(request, 'sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, catalog=catalog, regions=REGIONS, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
 
     @application.get('/runs', response_class=HTMLResponse, name='runs', dependencies=[Depends(require_viewer)])
     def runs(
@@ -316,11 +336,15 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                 page=page,
                 page_size=page_size,
             )
+            collection_jobs = CollectionJobService(session).list_recent(
+                failures_only=(status == RunStatus.FAILED), limit=50, include_items=True
+            )
             db_error = None
         except SQLAlchemyError:
             session.rollback()
             agencies_page = {'items': ()}
             workspace = {'items': (), 'details': ()}
+            collection_jobs = ()
             db_error = '수집 이력을 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
         finally:
             session.close()
@@ -330,6 +354,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             context=_page_context(request,
                 'runs',
                 workspace=workspace,
+                collection_jobs=collection_jobs,
                 db_error=db_error,
                 agencies=agencies_page['items'],
                 run_statuses=RunStatus,
@@ -435,11 +460,12 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         session = application.state.session_factory()
         try:
             snapshot = SettingsService(session).snapshot()
+            next_refresh = application.state.collection_scheduler.next_run()
             users = UserService(session).list_users()
             db_error = None
         except SQLAlchemyError:
             session.rollback()
-            snapshot, users = None, ()
+            snapshot, users, next_refresh = None, (), None
             db_error = '설정 데이터를 불러오지 못했습니다. 데이터베이스 연결 상태를 확인하세요.'
         finally:
             session.close()
@@ -452,7 +478,8 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         return templates.TemplateResponse(
             request=request, name='settings.html',
             context=_page_context(request, 'settings', settings=snapshot, users=users,
-                                  portable_paths=portable_paths, db_error=db_error),
+                                  portable_paths=portable_paths, regions=REGIONS,
+                                  next_refresh=next_refresh, db_error=db_error),
         )
 
     return application

@@ -23,18 +23,34 @@ def failure(error: ValueError):
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
 
 
+def _settings_projection(value, next_run=None):
+    return {
+        'http_timeout_seconds': value.http_timeout_seconds,
+        'max_response_bytes': value.max_response_bytes,
+        'user_agent': value.user_agent,
+        'automatic_refresh_enabled': value.automatic_refresh_enabled,
+        'refresh_recurrence': value.refresh_recurrence.value,
+        'refresh_weekday': value.refresh_weekday,
+        'refresh_day_of_month': value.refresh_day_of_month,
+        'refresh_time_of_day': value.refresh_time_of_day,
+        'retry_failed_next_day': value.retry_failed_next_day,
+        'next_run': next_run.isoformat() if next_run else None,
+    }
+
+
 @router.get('/settings', dependencies=[Depends(require_admin)])
-def get_settings(session: Session = Depends(get_session)):
+def get_settings(request: Request, session: Session = Depends(get_session)):
     value = SettingsService(session).snapshot()
-    return {'http_timeout_seconds': value.http_timeout_seconds, 'max_response_bytes': value.max_response_bytes, 'user_agent': value.user_agent}
+    return _settings_projection(value, request.app.state.collection_scheduler.next_run())
 
 
 @router.put('/settings', dependencies=[Depends(require_admin)])
-def update_settings(payload: SettingsUpdate, session: Session = Depends(get_session)):
+def update_settings(payload: SettingsUpdate, request: Request, session: Session = Depends(get_session)):
     try:
         value = SettingsService(session).update(**payload.model_dump())
         logger.info('operational settings updated')
-        return {'http_timeout_seconds': value.http_timeout_seconds, 'max_response_bytes': value.max_response_bytes, 'user_agent': value.user_agent}
+        request.app.state.collection_background_runtime.notify()
+        return _settings_projection(value, request.app.state.collection_scheduler.next_run())
     except SettingsServiceError as error:
         raise failure(error) from error
 

@@ -6,12 +6,12 @@ from datetime import datetime
 
 from typing import Any
 
-from sqlalchemy import JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, JSON, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.common import ActiveLifecycleMixin, CreatedUpdatedMixin, UTCDateTime, UUIDPrimaryKeyMixin, enum_type
-from app.models.enums import UserRole
+from app.models.enums import RefreshRecurrence, UserRole
 
 
 class User(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
@@ -32,6 +32,14 @@ class OperationalSettings(UUIDPrimaryKeyMixin, CreatedUpdatedMixin, Base):
     http_timeout_seconds: Mapped[float] = mapped_column(nullable=False)
     max_response_bytes: Mapped[int] = mapped_column(nullable=False)
     user_agent: Mapped[str] = mapped_column(String(500), nullable=False)
+    automatic_refresh_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    refresh_recurrence: Mapped[RefreshRecurrence] = mapped_column(
+        enum_type(RefreshRecurrence), nullable=False, default=RefreshRecurrence.WEEKLY
+    )
+    refresh_weekday: Mapped[int | None] = mapped_column(Integer, nullable=True, default=5)
+    refresh_day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refresh_time_of_day: Mapped[str] = mapped_column(String(5), nullable=False, default='02:00')
+    retry_failed_next_day: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class OperationClaim(UUIDPrimaryKeyMixin, Base):

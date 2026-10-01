@@ -26,6 +26,7 @@ class Source(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
     coverage_mode: Mapped[SourceCoverageMode] = mapped_column(
         enum_type(SourceCoverageMode), default=SourceCoverageMode.UNKNOWN, nullable=False
     )
+    scheduled_refresh_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

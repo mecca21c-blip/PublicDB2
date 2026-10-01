@@ -12,6 +12,7 @@ from app.models import Agency, AgencyType, ContactPoint, Duty, OrgUnit, OrgUnitT
 from app.repositories.agency_repository import AgencyRepository
 from app.services.normalization import collapse_whitespace, normalize_agency_name, normalize_org_unit_name
 from app.services.pagination import page_metadata, page_values
+from app.services.regions import REGION_LABELS, validate_region_code
 
 
 class AgencyServiceError(ValueError):
@@ -41,6 +42,7 @@ class AgencyService:
         agency_type: AgencyType,
         external_identifier: str | None = None,
         address: str | None = None,
+        region_code: str | None = None,
         commit: bool = True,
     ) -> tuple[dict, bool]:
         displayed = collapse_whitespace(official_name)
@@ -51,6 +53,7 @@ class AgencyService:
             raise AgencyServiceError("기관명은 300자를 초과할 수 없습니다.")
         external_identifier = collapse_whitespace(external_identifier or "") or None
         address = collapse_whitespace(address or "") or None
+        region_code = validate_region_code(region_code)
         matches = self.repository.get_by_normalized_name(normalized)
         if matches:
             if len(matches) == 1 and matches[0].agency_type == agency_type:
@@ -62,6 +65,7 @@ class AgencyService:
             agency_type=agency_type,
             external_identifier=external_identifier,
             address=address,
+            region_code=region_code,
         )
         try:
             self.repository.add(agency)
@@ -91,6 +95,8 @@ class AgencyService:
             if field in values:
                 cleaned = collapse_whitespace(str(values[field] or "")) or None
                 setattr(agency, field, cleaned)
+        if "region_code" in values:
+            agency.region_code = validate_region_code(values["region_code"])
         try:
             self.session.commit()
         except Exception:
@@ -161,12 +167,13 @@ class AgencyService:
 
     def list_page(
         self, *, search: str | None = None, agency_type: AgencyType | None = None,
+        region_code: str | None = None,
         page: int = 1, page_size: int = 100,
     ) -> dict:
         page, page_size, offset = page_values(page, page_size)
-        total = self.repository.count(search=search, agency_type=agency_type)
+        total = self.repository.count(search=search, agency_type=agency_type, region_code=region_code)
         agencies = self.repository.list(
-            search=search, agency_type=agency_type, offset=offset, limit=page_size
+            search=search, agency_type=agency_type, region_code=region_code, offset=offset, limit=page_size
         )
         ids = [agency.id for agency in agencies]
         unit_counts = {key: count for key, count in self.session.execute(
@@ -208,6 +215,8 @@ class AgencyService:
                 "id": str(agency.id), "name": agency.official_name,
                 "type": AGENCY_TYPE_LABELS[agency.agency_type],
                 "agency_type": agency.agency_type.value,
+                "region_code": agency.region_code,
+                "region": REGION_LABELS.get(agency.region_code, "미지정"),
                 "departments": unit_counts.get(agency.id, 0),
                 "contacts": contact_counts.get(agency.id, 0),
                 "sources": source_counts.get(agency.id, 0),
@@ -219,6 +228,9 @@ class AgencyService:
                 "type": AGENCY_TYPE_LABELS[agency.agency_type],
                 "identifier": agency.external_identifier or "-",
                 "address": agency.address or "-",
+                "agency_type": agency.agency_type.value,
+                "region_code": agency.region_code,
+                "region": REGION_LABELS.get(agency.region_code, "미지정"),
                 "departments": tuple(self.org_unit_projection(unit) for unit in units[agency.id]),
                 "duties": tuple({
                     "id": str(duty.id),
@@ -245,6 +257,8 @@ class AgencyService:
             "name": agency.official_name,
             "type": AGENCY_TYPE_LABELS[agency.agency_type],
             "agency_type": agency.agency_type.value,
+            "region_code": agency.region_code,
+            "region": REGION_LABELS.get(agency.region_code, "미지정"),
             "departments": unit_count,
             "contacts": contact_count,
             "sources": source_count,
@@ -265,6 +279,9 @@ class AgencyService:
             "type": AGENCY_TYPE_LABELS[agency.agency_type],
             "identifier": agency.external_identifier or "-",
             "address": agency.address or "-",
+            "agency_type": agency.agency_type.value,
+            "region_code": agency.region_code,
+            "region": REGION_LABELS.get(agency.region_code, "미지정"),
             "departments": tuple(self.org_unit_projection(unit) for unit in units),
             "duties": tuple({"id": str(duty.id), "org_unit_id": str(duty.org_unit_id) if duty.org_unit_id else None, "title": duty.title, "description": duty.description} for duty in duties),
             "sources": tuple({"binding_id": str(binding.id), "url": binding.source.url, "description": binding.description, "active": binding.active} for binding in bindings),

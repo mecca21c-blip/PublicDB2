@@ -20,6 +20,7 @@ from app.models.enums import (
     SourceType,
     StageStatus,
     UserRole, CrawlScope,
+    CollectionJobItemStatus, CollectionJobStatus, CollectionTriggerType, RefreshRecurrence,
 )
 from app.models.evidence import (
     ChangeDetection, ChangeEvent, ContactHistory, CrawlRun, DetectedChangeCandidate,
@@ -30,6 +31,7 @@ from app.models.source import Source, SourceBinding
 from app.models.collection import SourceScrapeConfig, SourceCrawlConfig, SourceApiConfig, ExtractedFeedItem
 from app.models.source_import import SourceImportLog
 from app.models.operations import OperationalSettings, OperationClaim, User
+from app.models.jobs import CollectionJob, CollectionJobItem
 
 __all__ = [
     "Agency", "AgencyType", "ApiAuthMode", "ApiPaginationMode", "ApiSourceKind", "ChangeDetection", "ChangeEvent", "ChangeEventType",
@@ -42,3 +44,7 @@ __all__ = [
 ]
 
 __all__ += ['OperationalSettings', 'OperationClaim', 'User', 'UserRole']
+__all__ += [
+    'CollectionJob', 'CollectionJobItem', 'CollectionJobItemStatus',
+    'CollectionJobStatus', 'CollectionTriggerType', 'RefreshRecurrence',
+]

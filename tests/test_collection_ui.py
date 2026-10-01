@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import time
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
@@ -73,6 +74,19 @@ def install_mock_collection(app, root: Path, handler=None):
     )
 
 
+def wait_for_job(client, response, timeout=10.0):
+    assert response.status_code == 202
+    job_id = response.json()["job"]["id"]
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        client.app.state.collection_job_worker.run_one()
+        job = client.get(f"/api/collection-jobs/{job_id}").json()["job"]
+        if job["status"] in {"COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED"}:
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"collection job did not reach a terminal status: {job}")
+
+
 def test_sources_collect_action_calls_real_pipeline_and_runs_are_real(web_db):
     url, factory, root = web_db
     with factory() as session:
@@ -83,8 +97,8 @@ def test_sources_collect_action_calls_real_pipeline_and_runs_are_real(web_db):
         source_page = client.get("/sources")
         assert f'data-collect-source="{source_id}"' in source_page.text
         response = client.post(f"/api/sources/{source_id}/collect")
-        assert response.status_code == 200
-        assert response.json()["run"]["status"] == "SUCCESS"
+        assert response.status_code == 202
+        assert wait_for_job(client, response)["status"] == "COMPLETED"
         updated_sources = client.get("/sources")
         runs = client.get("/runs")
     assert "정상" in updated_sources.text
@@ -106,7 +120,7 @@ def test_runs_filters_through_all_bindings_and_shows_multi_context(web_db):
     app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
-        assert client.post(f"/api/sources/{source_id}/collect").status_code == 200
+        assert wait_for_job(client, client.post(f"/api/sources/{source_id}/collect"))["status"] == "COMPLETED"
         first = client.get(f"/runs?agency_id={first_agency}")
         second = client.get(f"/runs?agency_id={second_agency}")
         failed_only = client.get("/runs?status=FAILED")
@@ -127,7 +141,7 @@ def test_run_detail_never_exposes_absolute_artifact_path(web_db):
     app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
-        client.post(f"/api/sources/{source_id}/collect")
+        wait_for_job(client, client.post(f"/api/sources/{source_id}/collect"))
     with factory() as session:
         observation = session.scalar(select(Observation))
         observation.artifact_path = r"C:\private\secret\response.html"
@@ -155,7 +169,7 @@ def test_excluded_and_unsupported_collection_controls_are_disabled(web_db):
     assert f'data-collect-source="{unsupported_source}" disabled title="지원하지 않는 수집 방식입니다."' in page.text
 
 
-def test_api_busy_unknown_and_unsupported_are_truthful(web_db):
+def test_api_unknown_is_rejected_and_source_failures_are_job_scoped(web_db):
     url, factory, root = web_db
     with factory() as session:
         _, busy_source, _ = add_binding(session, agency_name="busy")
@@ -172,8 +186,10 @@ def test_api_busy_unknown_and_unsupported_are_truthful(web_db):
     app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
-        assert client.post(f"/api/sources/{busy_source}/collect").status_code == 409
-        assert client.post(f"/api/sources/{unsupported_source}/collect").status_code == 409
+        assert client.post(f"/api/sources/{busy_source}/collect").status_code == 202
+        unsupported = client.post(f"/api/sources/{unsupported_source}/collect")
+        assert unsupported.status_code == 202
+        assert wait_for_job(client, unsupported)["status"] == "COMPLETED_WITH_ERRORS"
         assert client.post(f"/api/sources/{uuid.uuid4()}/collect").status_code == 404
 
 
@@ -207,7 +223,7 @@ def test_source_state_is_shared_but_exclusion_overrides(web_db):
     app = regression_app(url, project_root=root)
     install_mock_collection(app, root)
     with TestClient(app) as client:
-        client.post(f"/api/sources/{source_id}/collect")
+        wait_for_job(client, client.post(f"/api/sources/{source_id}/collect"))
     with factory() as session:
         service = SourceService(session)
         assert service.get_binding(first_binding)["status"] == "정상"

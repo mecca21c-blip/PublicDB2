@@ -250,6 +250,45 @@
     });
   });
 
+  const jobStatusText = (job) => {
+    const progress = job.completed_items + "/" + job.total_items;
+    if (job.status === "PENDING") return "수집 작업 대기 중 · " + progress;
+    if (job.status === "RUNNING") return "수집 진행 중 · " + progress;
+    if (job.status === "COMPLETED") return "수집 완료 · " + progress;
+    if (job.status === "COMPLETED_WITH_ERRORS") return "오류 포함 완료 · 성공 " + job.succeeded_items + " / 실패 " + job.failed_items;
+    return "수집 작업 " + job.status + " · " + progress;
+  };
+
+  const pollCollectionJob = (job, output, onTerminal) => {
+    if (output) { output.hidden = false; output.textContent = jobStatusText(job); }
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch("/api/collection-jobs/" + job.id);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "수집 작업 상태를 확인하지 못했습니다.");
+        if (output) { output.hidden = false; output.textContent = jobStatusText(result.job); }
+        if (["COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"].includes(result.job.status)) {
+          window.clearInterval(timer);
+          if (onTerminal) onTerminal(result.job);
+        }
+      } catch (error) {
+        window.clearInterval(timer);
+        if (output) output.textContent = error.message;
+      }
+    }, 3000);
+  };
+
+  const createCollectionJob = async (payload, output) => {
+    const response = await fetch("/api/collection-jobs", {
+      method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "수집 작업을 만들지 못했습니다.");
+    pollCollectionJob(result.job, output, () => window.location.reload());
+    return result.job;
+  };
+
   document.querySelectorAll("[data-collect-source]").forEach((button) => {
     button.addEventListener("click", async () => {
       const sourceId = button.dataset.collectSource;
@@ -265,8 +304,8 @@
       try {
         const response = await fetch("/api/sources/" + sourceId + "/collect", {method: "POST", headers: csrfHeaders()});
         const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || "수집을 완료하지 못했습니다.");
-        window.location.reload();
+        if (!response.ok) throw new Error(result.detail || "수집 작업을 만들지 못했습니다.");
+        pollCollectionJob(result.job, errorBox, () => window.location.reload());
       } catch (error) {
         related.forEach((item) => {
           item.disabled = item.dataset.collectWasDisabled === "true";
@@ -280,6 +319,57 @@
       }
     });
   });
+
+  const sharedJobStatus = document.querySelector("[data-job-status]");
+  document.querySelector("[data-job-selection]")?.addEventListener("click", async (event) => {
+    const sourceIds = [...new Set([...document.querySelectorAll("[data-source-select]:checked")].map((item) => item.value))];
+    if (!sourceIds.length) { sharedJobStatus.textContent = "수집할 소스를 선택하세요."; return; }
+    if (sourceIds.length > 20 && !window.confirm(sourceIds.length + "개 소스를 수집하시겠습니까?")) return;
+    event.currentTarget.disabled = true;
+    try { await createCollectionJob({trigger_type: "MANUAL_SELECTION", source_ids: sourceIds}, sharedJobStatus); }
+    catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
+  });
+  document.querySelector("[data-job-all]")?.addEventListener("click", async (event) => {
+    if (!window.confirm("활성 수집 소스 전체를 지금 수집하시겠습니까?")) return;
+    event.currentTarget.disabled = true;
+    try { await createCollectionJob({trigger_type: "MANUAL_ALL"}, sharedJobStatus); }
+    catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
+  });
+  document.querySelector("[data-job-region-run]")?.addEventListener("click", async (event) => {
+    const region = document.querySelector("[data-job-region]")?.value;
+    if (!region) { sharedJobStatus.textContent = "지역을 선택하세요."; return; }
+    event.currentTarget.disabled = true;
+    try { await createCollectionJob({trigger_type: "MANUAL_REGION", region_code: region}, sharedJobStatus); }
+    catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
+  });
+  document.querySelectorAll("[data-job-agency]").forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    const output = button.closest(".detail-content")?.querySelector("[data-job-status]");
+    try { await createCollectionJob({trigger_type: "MANUAL_AGENCY", agency_id: button.dataset.jobAgency}, output); }
+    catch (error) { if (output) output.textContent = error.message; button.disabled = false; }
+  }));
+  document.querySelectorAll("[data-job-org-unit]").forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    const output = button.closest(".detail-content")?.querySelector("[data-job-status]");
+    try { await createCollectionJob({trigger_type: "MANUAL_ORG_UNIT", org_unit_id: button.dataset.jobOrgUnit}, output); }
+    catch (error) { if (output) output.textContent = error.message; button.disabled = false; }
+  }));
+  const liveJobRows = [...document.querySelectorAll("[data-job-summary]")];
+  if (liveJobRows.some((row) => ["PENDING", "RUNNING"].includes(row.querySelector("[data-job-state]")?.dataset.jobStateCode))) {
+    window.setInterval(async () => {
+      await Promise.all(liveJobRows.map(async (row) => {
+        const response = await fetch("/api/collection-jobs/" + row.dataset.jobSummary);
+        if (!response.ok) return;
+        const job = (await response.json()).job;
+        row.querySelector("[data-job-progress]").textContent = job.completed_items + " / " + job.total_items + " (" + job.progress_percent + "%)";
+        row.querySelector("[data-job-success]").textContent = job.succeeded_items;
+        row.querySelector("[data-job-failed]").textContent = job.failed_items;
+        const labels = {PENDING: "대기", RUNNING: "진행 중", COMPLETED: "완료", COMPLETED_WITH_ERRORS: "오류 포함 완료", FAILED: "실패", CANCELLED: "취소"};
+        row.querySelector("[data-job-state]").textContent = labels[job.status] || job.status;
+        row.querySelector("[data-job-state]").dataset.jobStateCode = job.status;
+      }));
+    }, 3000);
+  }
 
   document.querySelectorAll("[data-agency-select]").forEach((agencySelect) => {
     const orgSelect = agencySelect.form?.querySelector('[name="org_unit_id"]');

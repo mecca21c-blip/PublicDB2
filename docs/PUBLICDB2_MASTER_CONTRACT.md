@@ -81,10 +81,11 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   최근 검토는 unresolved candidate 5건이다. 빈 DB는 0/빈 상태이고 DB 장애는 한국어
   오류로 표시한다.
 - OperationalSettings 단일 typed row는 HTTP timeout, 최대 response bytes,
-  PublicDB User-Agent만 소유한다. row가 없으면 안전한 코드 기본값을 사용하고 ADMIN
-  저장 후 다음 collection action의 HTTPFetcher부터 재시작 없이 반영한다.
+  PublicDB User-Agent와 하나의 전역 자동 수집 일정을 소유한다. row가 없으면 안전한
+  코드 기본값(자동 수집 꺼짐, 매주 토요일 02:00 Asia/Seoul, 실패 다음 날 1회 재시도)을
+  사용하고 ADMIN 저장 후 재시작 없이 반영한다.
 - /settings는 ADMIN 전용이며 PROJECT_ROOT 소유 DB/RAW/import/export/temp/log/backup/
-  config 경로와 3-Way 지원, 자동 수집 미사용을 read-only로 표시한다.
+  config 경로, 3-Way 지원, 전역 자동 수집 설정과 다음 실행 시각을 표시한다.
 - 확정 연락처 export는 현재 연락처 필터를 적용해 ContactPoint당 한 행 XLSX를 만들며
   discovery candidate를 포함하지 않는다. 파일은 data/exports/YYYY/MM/DD 아래에서만
   생성하고 수식 시작 문자를 literal로 방어한다. OPERATOR와 ADMIN만 실행한다.
@@ -201,7 +202,45 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   수집 방식을 보존한다. RSS item은 review/Master 경로를 우회하지 않는다.
 - built-in catalog는 code-owned template이며 검증된 무인증 PublicDB 관련 항목만
   포함한다. 활성화는 Agency context를 요구하고 network나 collection을 시작하지 않는다.
-- 자동 scheduler와 startup network는 계속 비활성이다.
+- Source의 수집 방법 HOW는 이 3-Way typed config가 계속 소유한다. 작업 queue와
+  scheduler는 방법을 재구현하지 않고 실제 실행을 `CollectionService.collect(source_id)`에
+  위임한다.
+
+## 06C-3 Scoped Refresh and Scheduler Contract
+
+- CollectionJob은 사용자가 왜(수동/정기), 무엇을(소스·선택·부서·기관·지역·전체),
+  언제 실행하도록 요청했는지 소유한다. CollectionJobItem은 canonical Source별 순서,
+  상태, CrawlRun 연결, 오류와 시도를 소유한다. 같은 Source가 여러 binding에 있어도
+  한 job에서는 한 항목이고 HTTP 실행도 한 번이다.
+- 요청 API는 job과 item을 DB에 확정한 뒤 즉시 반환한다. 원격 수집은 요청 thread가
+  수행하지 않는다. VIEWER는 상태/이력을 읽고 OPERATOR는 수동 job을 만들며 ADMIN만
+  전역 schedule을 변경한다. 기존 session role과 CSRF 경계를 그대로 적용한다.
+- 배경 worker는 한 번에 한 Source만 순차 실행하고 각 항목 경계에서 우선순위를 다시
+  평가한다. 수동 작업, 정기 실패 재시도, 정기 전체 순이다. 각 항목은 새 DB session/
+  transaction과 기존 Source claim/CrawlRun 규칙을 사용한다.
+- 일반 `Exception`, HTTP 실패, 추출 실패와 미지원 방법은 해당 item만 FAILED로 만들고
+  다음 item을 계속한다. 소스 실패가 있는 job은 COMPLETED_WITH_ERRORS다. DB 소유권,
+  결과 기록 또는 영속성 장애는 worker를 안전하게 멈추고 남은 PENDING 항목을 보존한다.
+  `BaseException`은 소스 실패로 삼아 계속하지 않는다.
+- 재시작 시 terminal item은 반복하지 않는다. RUNNING item만
+  `INTERRUPTED_BY_RESTART` 실패로 확정하고 남은 PENDING item부터 계속한다. 기존
+  CrawlRun stale recovery를 먼저 적용하며 별도 경쟁 Source lock을 만들지 않는다.
+- Agency.region_code는 이름/주소에서 추론하지 않는 명시적 선택값이다. 기관 범위는
+  기관 공통과 모든 부서 binding, 부서 범위는 해당 부서 직접 binding만 포함한다.
+  지역 범위는 같은 region_code 기관의 active binding을 canonical Source로 중복 제거한다.
+- Source.scheduled_refresh_enabled는 정기 전체/재시도 포함 여부만 소유한다. 수동 범위는
+  active Source와 active binding이면 이 값을 무시한다. 정기 전체는 active Source,
+  하나 이상의 active binding, schedule 포함 조건을 모두 요구한다.
+- scheduler는 Asia/Seoul의 DAILY/WEEKLY/MONTHLY 한 일정만 사용한다. 최신 누락 slot 한
+  번만 catch-up하고 DB unique slot으로 같은 시각의 중복 job을 막는다. 이전 정기 전체가
+  PENDING/RUNNING이면 새 정기 전체를 만들지 않는다. 실패 재시도는 다음 날 같은 시각,
+  바로 앞 정기 전체의 실패 Source만 1회 실행한다.
+- `/sources`는 개별·선택·지역·전체 수동 job을, `/agencies`는 기관·직접 부서 job을,
+  `/runs`는 job 진행률·오류와 기존 CrawlRun 증거를, `/settings`는 전역 일정을 소유한다.
+  브라우저는 3초 polling을 사용하며 WebSocket이나 별도 queue 제품은 사용하지 않는다.
+- desktop 종료는 새 item 시작을 막고 bounded join을 수행한다. 서버 mode도 같은 app
+  lifespan worker/scheduler를 사용한다. Redis, Celery, RQ, RabbitMQ, APScheduler,
+  Windows Task Scheduler는 이 실행 모델에 포함하지 않는다.
 
 ## PORTABLE PROJECT CONTRACT
 
@@ -242,4 +281,5 @@ project-relative 저장 경로, SHA-256, 확정 시각과 결과 집계를 기�
 기관/부서/업무, SourceBinding 등록·수정·제외·복구, Excel/CSV import, 05B
 3-Way 수집·RAW·발견 추출·수집 이력과 04B 확정값 반영·변경 검토를 활성화한다.
 Dashboard 실집계, typed 운영 설정, confirmed XLSX export와 인증/권한을 활성화한다.
-자동 scheduler와 실제 Apache/HTTPS/Windows service 구성은 활성화하지 않는다.
+06C-3 영속 범위 수집 job과 app-lifespan 전역 scheduler를 활성화한다. 실제
+Apache/HTTPS/Windows service 구성은 이 계약의 범위가 아니다.

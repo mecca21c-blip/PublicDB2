@@ -4,7 +4,10 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.models import AgencyType, CollectionMethod, OrgUnitType, SourceCoverageMode, UserRole
+from app.models import (
+    AgencyType, CollectionMethod, CollectionTriggerType, OrgUnitType,
+    RefreshRecurrence, SourceCoverageMode, UserRole,
+)
 
 
 class AgencyCreate(BaseModel):
@@ -12,6 +15,7 @@ class AgencyCreate(BaseModel):
     agency_type: AgencyType = AgencyType.OTHER
     external_identifier: str | None = None
     address: str | None = None
+    region_code: str | None = None
 
 
 class AgencyUpdate(BaseModel):
@@ -19,6 +23,7 @@ class AgencyUpdate(BaseModel):
     agency_type: AgencyType | None = None
     external_identifier: str | None = None
     address: str | None = None
+    region_code: str | None = None
 
 
 class OrgUnitCreate(BaseModel):
@@ -40,6 +45,7 @@ class SourceBindingCreate(BaseModel):
     description: str | None = None
     collection_method: CollectionMethod = CollectionMethod.WEB_PAGE
     method_config: dict = Field(default_factory=dict)
+    scheduled_refresh_enabled: bool = True
 
 
 class SourceBindingUpdate(BaseModel):
@@ -49,6 +55,7 @@ class SourceBindingUpdate(BaseModel):
     description: str | None = None
     collection_method: CollectionMethod | None = None
     method_config: dict | None = None
+    scheduled_refresh_enabled: bool | None = None
 
 
 class CredentialCreate(BaseModel):
@@ -77,6 +84,21 @@ class SettingsUpdate(BaseModel):
     http_timeout_seconds: float
     max_response_bytes: int
     user_agent: str
+    automatic_refresh_enabled: bool = False
+    refresh_recurrence: RefreshRecurrence = RefreshRecurrence.WEEKLY
+    refresh_weekday: int | None = 5
+    refresh_day_of_month: int | None = None
+    refresh_time_of_day: str = "02:00"
+    retry_failed_next_day: bool = True
+
+
+class CollectionJobCreate(BaseModel):
+    trigger_type: CollectionTriggerType
+    source_id: uuid.UUID | None = None
+    source_ids: list[uuid.UUID] = Field(default_factory=list, max_length=5000)
+    agency_id: uuid.UUID | None = None
+    org_unit_id: uuid.UUID | None = None
+    region_code: str | None = None
 
 
 class UserCreate(BaseModel):

@@ -11,6 +11,15 @@
         <label class="settings-field"><span class="field-label">HTTP 요청 제한 시간(초)</span><input class="control" name="http_timeout_seconds" type="number" min="1" max="60" step="0.5" value="{{ settings.http_timeout_seconds }}" required></label>
         <label class="settings-field"><span class="field-label">최대 응답 크기(bytes)</span><input class="control" name="max_response_bytes" type="number" min="65536" max="52428800" value="{{ settings.max_response_bytes }}" required></label>
         <label class="settings-field"><span class="field-label">PublicDB User-Agent</span><input class="control" name="user_agent" maxlength="500" value="{{ settings.user_agent }}" required></label>
+        <hr>
+        <h3>전역 자동 수집 일정</h3>
+        <label class="settings-field"><span class="field-label">자동 수집</span><span><input name="automatic_refresh_enabled" type="checkbox"{% if settings.automatic_refresh_enabled %} checked{% endif %}> 사용</span></label>
+        <label class="settings-field"><span class="field-label">반복</span><select class="control" name="refresh_recurrence"><option value="DAILY"{% if settings.refresh_recurrence.value=='DAILY' %} selected{% endif %}>매일</option><option value="WEEKLY"{% if settings.refresh_recurrence.value=='WEEKLY' %} selected{% endif %}>매주</option><option value="MONTHLY"{% if settings.refresh_recurrence.value=='MONTHLY' %} selected{% endif %}>매월</option></select></label>
+        <label class="settings-field"><span class="field-label">요일 (매주)</span><select class="control" name="refresh_weekday">{% for value,label in [(0,'월요일'),(1,'화요일'),(2,'수요일'),(3,'목요일'),(4,'금요일'),(5,'토요일'),(6,'일요일')] %}<option value="{{value}}"{% if settings.refresh_weekday==value %} selected{% endif %}>{{label}}</option>{% endfor %}</select></label>
+        <label class="settings-field"><span class="field-label">일자 (매월)</span><input class="control" name="refresh_day_of_month" type="number" min="1" max="31" value="{{settings.refresh_day_of_month or 1}}"></label>
+        <label class="settings-field"><span class="field-label">실행 시각 (Asia/Seoul)</span><input class="control" name="refresh_time_of_day" type="time" value="{{settings.refresh_time_of_day}}" required></label>
+        <label class="settings-field"><span class="field-label">실패 재시도</span><span><input name="retry_failed_next_day" type="checkbox"{% if settings.retry_failed_next_day %} checked{% endif %}> 다음 날 같은 시각에 실패 소스만 1회 재시도</span></label>
+        <p class="detail-note">다음 실행: {{next_refresh.isoformat() if next_refresh else '자동 수집 사용 안 함'}}</p>
         <p data-form-error class="form-error" hidden></p><button class="button button--primary" type="submit">저장</button>
       </form>
     </section>
@@ -18,7 +27,7 @@
       <label class="settings-field"><span class="field-label">수집 지원</span><textarea class="control" readonly>개별 URL · 스크래핑
 Index URL · 크롤링
 공개 API / RSS</textarea></label>
-      <label class="settings-field"><span class="field-label">자동 수집</span><input class="control" value="사용 안 함" readonly></label>
+      <label class="settings-field"><span class="field-label">자동 수집</span><input class="control" value="{{'사용' if settings.automatic_refresh_enabled else '사용 안 함'}}" readonly></label>
     </div></section>
     <section class="panel settings-card"><h2>프로젝트 소유 경로</h2><p>브라우저에서는 변경할 수 없습니다.</p><div class="settings-fields">
       {% for label,path in portable_paths %}<label class="settings-field"><span class="field-label">{{ label }}</span><input class="control" value="{{ path }}" readonly></label>{% endfor %}

@@ -51,7 +51,7 @@ def test_health_has_no_database_claim(tmp_path):
 def test_all_workspace_routes_render_without_placeholders(tmp_path):
     required = {
         'agencies': ('기관/조직', '기관 추가'),
-        'sources': ('수집 소스', '엑셀 업로드', 'URL 추가'),
+        'sources': ('수집 소스', '엑셀 업로드', '수집 소스 추가'),
         'runs': ('수집 이력', '조건에 맞는 수집 이력이 없습니다'),
         'contacts': ('연락처 DB', '엑셀 내보내기', '공식 출처'),
         'review': ('변경/검토', 'CURRENT VALUE', 'DISCOVERED VALUE'),

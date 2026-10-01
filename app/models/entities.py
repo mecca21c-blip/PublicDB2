@@ -22,6 +22,7 @@ class Agency(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
     external_identifier: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     homepage_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    region_code: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     parent_agency_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agencies.id"), nullable=True, index=True)
 
     parent: Mapped[Agency | None] = relationship("Agency", remote_side="Agency.id", foreign_keys=[parent_agency_id])

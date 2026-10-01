@@ -11,7 +11,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.collectors.http_fetcher import HTTPFetcher
 from app.db.engine import create_db_engine
@@ -21,6 +21,7 @@ from app.models import (
     ExtractedFeedItem, ExtractionRun, Observation, RunStatus, Source,
     SourceApiConfig, SourceCrawlConfig, SourceScrapeConfig,
 )
+from app.models.common import utc_now
 from app.services.agency_service import AgencyService
 from app.services.api_credential_store import ApiCredentialStore
 from app.services.catalog_service import CatalogService
@@ -422,17 +423,21 @@ def test_migration_materializes_existing_web_page_config(tmp_path, monkeypatch):
     command.upgrade(config, "a5c105a05a01")
     engine = create_db_engine(url)
     factory = create_session_factory(engine)
-    with factory() as session:
-        source = Source(url="https://example.org/legacy", normalized_url="https://example.org/legacy")
-        session.add(source)
-        session.commit()
-        source_id = source.id
+    source_id = uuid.uuid4()
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO sources "
+            "(id, url, normalized_url, source_type, collection_method, data_format, coverage_mode, active, created_at, updated_at) "
+            "VALUES (:id, :url, :url, 'GENERAL_PAGE', 'WEB_PAGE', 'HTML', 'UNKNOWN', 1, :now, :now)"
+        ), {"id": source_id.hex, "url": "https://example.org/legacy", "now": utc_now()})
+        assert connection.execute(text("SELECT id, collection_method FROM sources")).all() == [(source_id.hex, "WEB_PAGE")]
     engine.dispose()
     command.upgrade(config, "head")
     engine = create_db_engine(url)
     factory = create_session_factory(engine)
     with factory() as session:
-        migrated = session.scalar(select(SourceScrapeConfig).where(SourceScrapeConfig.source_id == source_id))
+        migrated = session.scalar(select(SourceScrapeConfig))
         assert migrated is not None
+        assert migrated.source_id == source_id
         assert migrated.extract_contacts and migrated.extract_directory
     engine.dispose()
