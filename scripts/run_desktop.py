@@ -66,6 +66,8 @@ class DesktopServer:
             reload=False,
             proxy_headers=True,
             forwarded_allow_ips=LOOPBACK_HOST,
+            log_config=None,
+            access_log=False,
         )
         self._server = uvicorn.Server(config)
         self._socket = config.bind_socket()

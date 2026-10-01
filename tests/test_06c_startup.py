@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 
 from scripts import run_desktop
@@ -89,11 +90,37 @@ def test_server_prebinds_dynamic_loopback_port_and_stops_owned_uvicorn():
     assert calls["config"][0] == "app.main:app"
     assert calls["config"][1]["host"] == "127.0.0.1"
     assert calls["config"][1]["port"] == 0
+    assert calls["config"][1]["log_config"] is None
+    assert calls["config"][1]["access_log"] is False
     assert server.base_url == "http://127.0.0.1:49152"
     assert calls["sockets"] == [socket]
     server.stop()
     assert calls["server"].should_exit is True
     assert socket.closed is True
+
+
+def test_desktop_uvicorn_config_constructs_without_console_streams(monkeypatch):
+    class Server:
+        def __init__(self, config):
+            self.config = config
+            self.should_exit = False
+            self.force_exit = False
+
+        def run(self, sockets):
+            return None
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    server = run_desktop.DesktopServer(
+        lambda: SimpleNamespace(Config=uvicorn.Config, Server=Server),
+    )
+    try:
+        server.start()
+        server._thread.join(timeout=1)
+        assert server._server.config.log_config is None
+        assert server._server.config.access_log is False
+    finally:
+        server.stop()
 
 
 def test_readiness_poll_is_bounded():
