@@ -11,6 +11,7 @@ from app.models import (
     Agency, CollectionJob, CollectionJobItem, CollectionJobItemStatus,
     CollectionJobStatus, CollectionTriggerType, OrgUnit, Source, SourceBinding,
 )
+from app.services.source_query_service import SourceFilterError, SourceFilterSpec, SourceQueryService
 
 
 MANUAL_PRIORITY = 100
@@ -19,6 +20,7 @@ SCHEDULED_FULL_PRIORITY = 10
 MANUAL_TRIGGERS = {
     CollectionTriggerType.MANUAL_SOURCE,
     CollectionTriggerType.MANUAL_SELECTION,
+    CollectionTriggerType.MANUAL_FILTER,
     CollectionTriggerType.MANUAL_ORG_UNIT,
     CollectionTriggerType.MANUAL_AGENCY,
     CollectionTriggerType.MANUAL_REGION,
@@ -44,6 +46,7 @@ class CollectionJobService:
         agency_id: uuid.UUID | None = None,
         org_unit_id: uuid.UUID | None = None,
         region_code: str | None = None,
+        filter_spec: SourceFilterSpec | None = None,
     ) -> CollectionJob:
         if trigger_type not in MANUAL_TRIGGERS:
             raise CollectionJobError("Manual API cannot create scheduled jobs.")
@@ -60,6 +63,19 @@ class CollectionJobService:
                 raise CollectionJobError("source_ids is required.")
             statement = statement.where(Source.id.in_(selected))
             context["source_ids"] = [str(value) for value in selected]
+        elif trigger_type is CollectionTriggerType.MANUAL_FILTER:
+            if filter_spec is None:
+                raise CollectionJobError("filter is required.")
+            try:
+                query = SourceQueryService(self.session)
+                source_values = query.resolve_sources(filter_spec, eligible_only=True)
+                context["filter"] = query.snapshot(filter_spec, resolved_count=len(source_values))
+            except SourceFilterError as error:
+                raise CollectionJobError(str(error)) from error
+            return self.create_from_sources(
+                trigger_type, source_values, priority=MANUAL_PRIORITY,
+                requested_by_user_id=requested_by_user_id, trigger_context=context,
+            )
         elif trigger_type is CollectionTriggerType.MANUAL_ORG_UNIT:
             if org_unit_id is None:
                 raise CollectionJobError("org_unit_id is required.")
@@ -183,6 +199,7 @@ class CollectionJobService:
             "started_at": job.started_at.isoformat() if job.started_at else None,
             "finished_at": job.finished_at.isoformat() if job.finished_at else None,
             "parent_job_id": str(job.parent_job_id) if job.parent_job_id else None,
+            "scope_summary": CollectionJobService._scope_summary(job),
         }
         if include_items:
             value["items"] = [
@@ -199,3 +216,27 @@ class CollectionJobService:
                 for item in job.items
             ]
         return value
+
+    @staticmethod
+    def _scope_summary(job: CollectionJob) -> str:
+        if job.trigger_type is not CollectionTriggerType.MANUAL_FILTER:
+            return job.trigger_type.value
+        snapshot = job.trigger_context.get("filter", {})
+        parts = []
+        if snapshot.get("region_codes"):
+            parts.append("지역 " + ", ".join(snapshot["region_codes"]))
+        if snapshot.get("agency_name"):
+            parts.append("기관 " + snapshot["agency_name"])
+        if snapshot.get("org_unit_name"):
+            parts.append("부서 " + snapshot["org_unit_name"])
+        if snapshot.get("methods"):
+            labels = {"WEB_PAGE": "스크래핑", "WEB_CRAWL": "크롤링", "API": "API/RSS"}
+            parts.append("방식 " + ", ".join(labels.get(value, value) for value in snapshot["methods"]))
+        if snapshot.get("status"):
+            parts.append("상태 " + snapshot["status"])
+        if snapshot.get("scheduled") and snapshot["scheduled"] != "all":
+            parts.append("자동 전체 수집 " + ("포함" if snapshot["scheduled"] == "included" else "제외"))
+        if snapshot.get("search"):
+            parts.append("검색 “" + snapshot["search"] + "”")
+        parts.append(f"{snapshot.get('resolved_count', job.total_items)}개")
+        return " · ".join(parts)

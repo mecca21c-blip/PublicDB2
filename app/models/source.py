@@ -21,7 +21,9 @@ class Source(UUIDPrimaryKeyMixin, ActiveLifecycleMixin, Base):
     normalized_url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_type: Mapped[SourceType] = mapped_column(enum_type(SourceType), default=SourceType.GENERAL_PAGE, nullable=False)
-    collection_method: Mapped[CollectionMethod] = mapped_column(enum_type(CollectionMethod), default=CollectionMethod.WEB_PAGE, nullable=False)
+    collection_method: Mapped[CollectionMethod] = mapped_column(
+        enum_type(CollectionMethod), default=CollectionMethod.WEB_PAGE, nullable=False, index=True
+    )
     data_format: Mapped[DataFormat] = mapped_column(enum_type(DataFormat), default=DataFormat.HTML, nullable=False)
     coverage_mode: Mapped[SourceCoverageMode] = mapped_column(
         enum_type(SourceCoverageMode), default=SourceCoverageMode.UNKNOWN, nullable=False

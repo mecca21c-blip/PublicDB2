@@ -11,6 +11,7 @@ from app.api.dependencies import get_session, require_operator, require_viewer
 from app.api.schemas import CollectionJobCreate
 from app.models import User
 from app.services.collection_job_service import CollectionJobError, CollectionJobService
+from app.services.source_query_service import SourceFilterError, SourceFilterSpec
 
 
 router = APIRouter(prefix="/api/collection-jobs", tags=["collection-jobs"])
@@ -42,6 +43,9 @@ def create_job(
 ) -> dict:
     try:
         service = CollectionJobService(session)
+        filter_spec = None
+        if payload.filter is not None:
+            filter_spec = SourceFilterSpec.build(**payload.filter.model_dump())
         job = service.create_manual(
             payload.trigger_type,
             requested_by_user_id=user.id if isinstance(user.id, uuid.UUID) else None,
@@ -50,8 +54,9 @@ def create_job(
             agency_id=payload.agency_id,
             org_unit_id=payload.org_unit_id,
             region_code=payload.region_code,
+            filter_spec=filter_spec,
         )
         request.app.state.collection_background_runtime.notify()
         return {"job": service.project(job)}
-    except CollectionJobError as error:
+    except (CollectionJobError, SourceFilterError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

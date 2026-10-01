@@ -16,6 +16,7 @@ from app.services.collection_recovery_service import source_claim_key
 from app.services.operation_claim_service import OperationClaimService
 from app.services.pagination import page_metadata, page_values
 from app.services.source_method_service import SourceMethodService, user_method_label
+from app.services.source_status import classify_source_status
 
 
 class SourceServiceError(ValueError):
@@ -266,18 +267,7 @@ class SourceService:
             and source.api_config.credential_expires_on < date.today()
             else None
         )
-        if not binding.active:
-            status_code, status, tone = "excluded", "제외", "warning"
-        elif run is None:
-            status_code, status, tone = "unchecked", "미확인", "neutral"
-        elif run.status == RunStatus.SUCCESS and run.records_observed == 0 and all(
-            value == StageStatus.SUCCESS for value in (run.connection_status, run.raw_status, run.extraction_status)
-        ):
-            status_code, status, tone = "empty", "자료없음", "info"
-        elif run.status == RunStatus.SUCCESS:
-            status_code, status, tone = "success", "정상", "success"
-        else:
-            status_code, status, tone = "error", "오류", "danger"
+        status_code, status, tone = classify_source_status(binding.active, run)
         checked = run.finished_at or run.started_at if run else None
         return {
             "id": str(binding.id),

@@ -78,7 +78,7 @@
       parts.slice(0, -1).forEach((part) => { target = target[part] ||= {}; });
       target[parts.at(-1)] = value;
     };
-    form.querySelectorAll("[name]:not(:disabled)").forEach((control) => {
+    form.querySelectorAll("[name]:not(:disabled):not([data-ui-only])").forEach((control) => {
       if (control.type === "file") return;
       let value = control.type === "checkbox" ? control.checked : control.value.trim();
       if (control.dataset.jsonField !== undefined) {
@@ -92,6 +92,13 @@
 
   document.querySelectorAll("form [data-method-selector]").forEach((selector) => {
     const form = selector.form;
+    form.querySelectorAll("[data-method-choice]").forEach((choice) => {
+      choice.addEventListener("change", () => {
+        if (!choice.checked) return;
+        selector.value = choice.value;
+        selector.dispatchEvent(new Event("change"));
+      });
+    });
     const editUrl = form.closest("[data-modal]")?.previousElementSibling?.querySelector(".url-cell")?.textContent?.trim();
     if (editUrl) form.querySelectorAll('[name="url"]').forEach((input) => { input.value = editUrl; });
     try {
@@ -321,8 +328,28 @@
   });
 
   const sharedJobStatus = document.querySelector("[data-job-status]");
-  document.querySelector("[data-job-selection]")?.addEventListener("click", async (event) => {
-    const sourceIds = [...new Set([...document.querySelectorAll("[data-source-select]:checked")].map((item) => item.value))];
+  const selectionButton = document.querySelector("[data-job-selection]");
+  const selectedSourceIds = () => [...new Set([...document.querySelectorAll("[data-source-select]:checked")].map((item) => item.value))];
+  const updateSelectionState = () => {
+    if (selectionButton) selectionButton.disabled = selectedSourceIds().length === 0;
+    const pageSelector = document.querySelector("[data-source-select-page]");
+    const available = [...document.querySelectorAll("[data-source-select]:not(:disabled)")];
+    if (pageSelector) {
+      pageSelector.checked = available.length > 0 && available.every((item) => item.checked);
+      pageSelector.indeterminate = available.some((item) => item.checked) && !pageSelector.checked;
+    }
+  };
+  document.querySelectorAll("[data-source-select]").forEach((item) => {
+    item.addEventListener("click", (event) => event.stopPropagation());
+    item.addEventListener("change", updateSelectionState);
+  });
+  document.querySelector("[data-source-select-page]")?.addEventListener("change", (event) => {
+    document.querySelectorAll("[data-source-select]:not(:disabled)").forEach((item) => { item.checked = event.currentTarget.checked; });
+    updateSelectionState();
+  });
+  updateSelectionState();
+  selectionButton?.addEventListener("click", async (event) => {
+    const sourceIds = selectedSourceIds();
     if (!sourceIds.length) { sharedJobStatus.textContent = "수집할 소스를 선택하세요."; return; }
     if (sourceIds.length > 20 && !window.confirm(sourceIds.length + "개 소스를 수집하시겠습니까?")) return;
     event.currentTarget.disabled = true;
@@ -335,12 +362,19 @@
     try { await createCollectionJob({trigger_type: "MANUAL_ALL"}, sharedJobStatus); }
     catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
   });
-  document.querySelector("[data-job-region-run]")?.addEventListener("click", async (event) => {
-    const region = document.querySelector("[data-job-region]")?.value;
-    if (!region) { sharedJobStatus.textContent = "지역을 선택하세요."; return; }
+  document.querySelector("[data-job-filter-confirm]")?.addEventListener("click", async (event) => {
+    let filter;
+    try { filter = JSON.parse(document.querySelector("#source-filter-state")?.textContent || "{}"); }
+    catch (_error) { sharedJobStatus.hidden = false; sharedJobStatus.textContent = "필터 상태를 읽지 못했습니다."; return; }
     event.currentTarget.disabled = true;
-    try { await createCollectionJob({trigger_type: "MANUAL_REGION", region_code: region}, sharedJobStatus); }
-    catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
+    try {
+      closeModal(event.currentTarget.closest("[data-modal]"));
+      await createCollectionJob({trigger_type: "MANUAL_FILTER", filter}, sharedJobStatus);
+    } catch (error) {
+      sharedJobStatus.hidden = false;
+      sharedJobStatus.textContent = error.message;
+      event.currentTarget.disabled = false;
+    }
   });
   document.querySelectorAll("[data-job-agency]").forEach((button) => button.addEventListener("click", async () => {
     button.disabled = true;
@@ -371,17 +405,125 @@
     }, 3000);
   }
 
-  document.querySelectorAll("[data-agency-select]").forEach((agencySelect) => {
-    const orgSelect = agencySelect.form?.querySelector('[name="org_unit_id"]');
-    if (!orgSelect) return;
-    const filterUnits = () => {
-      orgSelect.querySelectorAll("[data-agency-id]").forEach((option) => {
-        option.hidden = option.dataset.agencyId !== agencySelect.value;
-      });
-      if (orgSelect.selectedOptions[0]?.hidden) orgSelect.value = "";
+  document.querySelectorAll("[data-method-filter]").forEach((control) => {
+    control.addEventListener("change", () => {
+      const hidden = control.closest("form").querySelector("[data-method-filter-value]");
+      hidden.value = [...control.closest("fieldset").querySelectorAll("[data-method-filter]:checked")].map((item) => item.value).join(",");
+    });
+  });
+
+  const clearLookup = (root, notify = true) => {
+    const input = root.querySelector("[data-lookup-input]");
+    const value = root.querySelector("[data-lookup-value]");
+    input.value = "";
+    value.value = "";
+    input.setAttribute("aria-expanded", "false");
+    root.querySelector("[data-lookup-results]").hidden = true;
+    root.querySelector("[data-lookup-clear]").hidden = true;
+    if (notify) value.dispatchEvent(new Event("change", {bubbles: true}));
+  };
+
+  document.querySelectorAll("[data-lookup-combobox]").forEach((root) => {
+    const input = root.querySelector("[data-lookup-input]");
+    const value = root.querySelector("[data-lookup-value]");
+    const results = root.querySelector("[data-lookup-results]");
+    const clear = root.querySelector("[data-lookup-clear]");
+    const form = root.closest("form");
+    let timer;
+    let controller;
+    let activeIndex = -1;
+    const agencyValue = () => form?.querySelector('[name="agency_id"]')?.value || "";
+    const close = () => { results.hidden = true; input.setAttribute("aria-expanded", "false"); activeIndex = -1; };
+    const selectItem = (item) => {
+      input.value = item.label;
+      value.value = item.id;
+      clear.hidden = false;
+      input.setCustomValidity("");
+      close();
+      value.dispatchEvent(new Event("change", {bubbles: true}));
     };
-    agencySelect.addEventListener("change", filterUnits);
-    filterUnits();
+    const render = (items) => {
+      results.replaceChildren();
+      items.forEach((item, index) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.setAttribute("role", "option");
+        option.dataset.lookupOption = String(index);
+        option.textContent = item.label;
+        option.addEventListener("mousedown", (event) => { event.preventDefault(); selectItem(item); });
+        results.append(option);
+      });
+      results.hidden = items.length === 0;
+      input.setAttribute("aria-expanded", String(items.length > 0));
+      activeIndex = -1;
+    };
+    const search = async () => {
+      const query = input.value.trim();
+      if (root.dataset.lookupKind === "agency" && !query) { close(); return; }
+      const agencyId = agencyValue();
+      if (root.dataset.lookupKind === "org" && !agencyId) { close(); return; }
+      controller?.abort();
+      controller = new AbortController();
+      const params = new URLSearchParams({q: query, limit: "30"});
+      if (root.dataset.lookupKind === "agency") {
+        const region = form?.querySelector('[name="region_code"]')?.value;
+        if (region) params.set("region_code", region);
+      }
+      const endpoint = root.dataset.lookupKind === "agency"
+        ? "/api/lookups/agencies?" + params
+        : "/api/lookups/agencies/" + encodeURIComponent(agencyId) + "/org-units?" + params;
+      try {
+        const response = await fetch(endpoint, {signal: controller.signal});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "검색 결과를 불러오지 못했습니다.");
+        render(result.items);
+      } catch (error) {
+        if (error.name !== "AbortError") render([]);
+      }
+    };
+    input.addEventListener("input", () => {
+      if (value.value) {
+        value.value = "";
+        value.dispatchEvent(new Event("change", {bubbles: true}));
+      }
+      clear.hidden = !input.value;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(search, 250);
+    });
+    input.addEventListener("focus", () => { if (root.dataset.lookupKind === "org" || input.value) search(); });
+    input.addEventListener("blur", () => {
+      window.setTimeout(close, 100);
+      if (input.required && !value.value) input.setCustomValidity("검색 결과에서 기관을 선택하세요.");
+    });
+    input.addEventListener("keydown", (event) => {
+      const options = [...results.querySelectorAll("[data-lookup-option]")];
+      if (event.key === "Escape") { close(); return; }
+      if (!options.length || !["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) return;
+      event.preventDefault();
+      if (event.key === "Enter" && activeIndex >= 0) { options[activeIndex].dispatchEvent(new MouseEvent("mousedown")); return; }
+      activeIndex = event.key === "ArrowDown" ? Math.min(activeIndex + 1, options.length - 1) : Math.max(activeIndex - 1, 0);
+      options.forEach((option, index) => option.setAttribute("aria-selected", String(index === activeIndex)));
+    });
+    clear.addEventListener("click", () => { clearLookup(root); input.focus(); });
+    clear.hidden = !value.value;
+  });
+
+  document.querySelectorAll('input[name="agency_id"][data-lookup-value]').forEach((agencyValue) => {
+    const form = agencyValue.form;
+    const orgRoot = form?.querySelector('[data-lookup-kind="org"]');
+    const sync = () => {
+      if (!orgRoot) return;
+      const orgInput = orgRoot.querySelector("[data-lookup-input]");
+      const orgValue = orgRoot.querySelector("[data-lookup-value]");
+      if (orgValue.value && orgValue.dataset.agencyId && orgValue.dataset.agencyId !== agencyValue.value) clearLookup(orgRoot, false);
+      orgInput.disabled = !agencyValue.value;
+      if (!agencyValue.value && orgValue.value) clearLookup(orgRoot, false);
+    };
+    agencyValue.addEventListener("change", () => {
+      if (orgRoot) clearLookup(orgRoot, false);
+      sync();
+    });
+    sync();
   });
 
   const importWorkflow = document.querySelector("[data-import-workflow]");

@@ -20,9 +20,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.api.agencies import router as agencies_api
 from app.api.collection import router as collection_api
 from app.api.collection_jobs import router as collection_jobs_api
+from app.api.lookups import router as lookups_api
 from app.api.master_review import router as master_review_api
 from app.api.operations import router as operations_api
 from app.api.sources import router as sources_api
+from app.api.source_index import router as source_index_api
 from app.api.three_way import router as three_way_api
 from app.api.dependencies import ensure_csrf_token, get_current_user_optional, get_session, require_admin, require_viewer
 from app.collectors.http_fetcher import HTTPFetcher
@@ -48,7 +50,9 @@ from app.services.dashboard_service import DashboardService
 from app.services.review_read_service import ReviewReadService
 from app.services.run_service import RunService
 from app.services.settings_service import SettingsService
+from app.services.pagination import page_metadata
 from app.services.source_service import SourceService
+from app.services.source_query_service import FILTER_METHODS, SourceFilterError, SourceFilterSpec, SourceQueryService
 from app.services.source_import_service import PreviewStore
 from app.services.user_service import UserService
 from app.services.regions import REGIONS
@@ -188,6 +192,8 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     application.include_router(sources_api)
     application.include_router(collection_api)
     application.include_router(collection_jobs_api)
+    application.include_router(lookups_api)
+    application.include_router(source_index_api)
     application.include_router(master_review_api)
     application.include_router(operations_api)
     application.include_router(three_way_api)
@@ -293,25 +299,47 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context(request, 'agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': agency_type.value if agency_type else '', 'region_code': region_code or ''}, agency_types=AgencyType, agency_type_labels=AGENCY_TYPE_LABELS, regions=REGIONS))
 
     @application.get('/sources', response_class=HTMLResponse, name='sources', dependencies=[Depends(require_viewer)])
-    def sources(request: Request, search: str | None = None, agency_id: str | None = None, org_unit_id: str | None = None, source_status: str | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
+    def sources(
+        request: Request, search: str | None = None, region_code: str | None = None,
+        agency_id: str | None = None, org_unit_id: str | None = None,
+        methods: str | None = None, source_status: str | None = None,
+        scheduled: str = "all", page: int = 1, page_size: int = 100,
+    ) -> HTMLResponse:
         session = application.state.session_factory()
         try:
-            options = AgencyService(session).list_page(page_size=500)
-            units_query = session.query(OrgUnit).filter(OrgUnit.active.is_(True))
-            if _uuid_or_none(agency_id):
-                units_query = units_query.filter(OrgUnit.agency_id == _uuid_or_none(agency_id))
-            units = list(units_query.order_by(OrgUnit.name).limit(500))
-            workspace = SourceService(session).list_page(search=search, agency_id=_uuid_or_none(agency_id), org_unit_id=_uuid_or_none(org_unit_id), status=source_status, page=page, page_size=page_size)
+            method_values = (
+                list(FILTER_METHODS) if methods is None
+                else [value for value in methods.split(",") if value]
+            )
+            spec = SourceFilterSpec.build(
+                search=search, region_codes=[region_code] if region_code else [],
+                agency_id=_uuid_or_none(agency_id), org_unit_id=_uuid_or_none(org_unit_id),
+                methods=method_values, status=source_status, scheduled=scheduled,
+            )
+            query = SourceQueryService(session)
+            workspace = query.list_page(spec, page=page, page_size=page_size)
+            filter_snapshot = query.snapshot(spec, resolved_count=workspace['eligible_total'])
             catalog = CatalogService(session).list()
             db_error = None
-        except SQLAlchemyError:
+        except (SQLAlchemyError, SourceFilterError, ValueError):
             session.rollback()
-            options, units, catalog = {'items': (), 'details': ()}, [], ()
-            workspace = {'items': (), 'details': ()}
-            db_error = '수집 소스 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
+            catalog = ()
+            workspace = {'items': (), 'details': (), 'total': 0, 'eligible_total': 0, 'method_counts': {}, 'pagination': page_metadata(0, 1, 100)}
+            filter_snapshot = {}
+            db_error = '수집 소스 필터를 확인하지 못했습니다. 선택한 기관·부서와 필터 값을 확인하세요.'
         finally:
             session.close()
-        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context(request, 'sources', workspace=workspace, db_error=db_error, agencies=options['items'], org_units=units, catalog=catalog, regions=REGIONS, filters={'search': search or '', 'agency_id': agency_id or '', 'org_unit_id': org_unit_id or '', 'source_status': source_status or ''}))
+        return templates.TemplateResponse(request=request, name='sources.html', context=_page_context(
+            request, 'sources', workspace=workspace, db_error=db_error,
+            catalog=catalog, regions=REGIONS, filter_snapshot=filter_snapshot,
+            filters={
+                'search': search or '', 'region_code': region_code or '',
+                'agency_id': agency_id or '', 'agency_name': filter_snapshot.get('agency_name') or '',
+                'org_unit_id': org_unit_id or '', 'org_unit_name': filter_snapshot.get('org_unit_name') or '',
+                'methods': filter_snapshot.get('methods') or [],
+                'source_status': source_status or '', 'scheduled': scheduled,
+            },
+        ))
 
     @application.get('/runs', response_class=HTMLResponse, name='runs', dependencies=[Depends(require_viewer)])
     def runs(

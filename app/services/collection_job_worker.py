@@ -18,7 +18,7 @@ from app.models import (
     RunStatus,
 )
 from app.models.common import utc_now
-from app.services.collection_service import CollectionFinalizationError, CollectionService
+from app.services.collection_service import CollectionBusyError, CollectionFinalizationError, CollectionService
 
 
 logger = logging.getLogger("publicdb2")
@@ -28,6 +28,7 @@ _PROCESS_WORKER_LOCK = threading.Lock()
 class WorkerResult(str, Enum):
     IDLE = "IDLE"
     ITEM_COMPLETE = "ITEM_COMPLETE"
+    RETRY_LATER = "RETRY_LATER"
     SYSTEM_FAILURE = "SYSTEM_FAILURE"
 
 
@@ -118,6 +119,9 @@ class CollectionJobWorker:
                         error_summary=run_error or "Collection did not complete successfully.",
                     )
                 return WorkerResult.ITEM_COMPLETE
+            except CollectionBusyError as error:
+                self._release_busy_item(claimed.item_id, error)
+                return WorkerResult.RETRY_LATER
             except (SQLAlchemyError, CollectionFinalizationError, WorkerOwnershipError) as error:
                 self._note_system_failure(claimed.item_id, error)
                 logger.exception("collection job worker stopped after systemic failure")
@@ -146,7 +150,7 @@ class CollectionJobWorker:
             if result is WorkerResult.IDLE:
                 break
             results.append(result)
-            if result is WorkerResult.SYSTEM_FAILURE:
+            if result in (WorkerResult.SYSTEM_FAILURE, WorkerResult.RETRY_LATER):
                 break
         return results
 
@@ -159,7 +163,10 @@ class CollectionJobWorker:
                     CollectionJobItem.status == CollectionJobItemStatus.PENDING,
                     CollectionJob.status.in_((CollectionJobStatus.PENDING, CollectionJobStatus.RUNNING)),
                 )
-                .order_by(CollectionJob.priority.desc(), CollectionJob.created_at, CollectionJobItem.sequence)
+                .order_by(
+                    CollectionJob.priority.desc(), CollectionJobItem.attempt_count,
+                    CollectionJob.created_at, CollectionJobItem.sequence,
+                )
                 .limit(1)
             )
             if item is None:
@@ -205,3 +212,16 @@ class CollectionJobWorker:
                     session.commit()
         except SQLAlchemyError:
             logger.exception("system failure marker could not be persisted")
+
+    def _release_busy_item(self, item_id: uuid.UUID, error: Exception) -> None:
+        """Keep manual intent pending when another owner still holds the Source claim."""
+        with self.session_factory() as session:
+            item = session.get(CollectionJobItem, item_id)
+            if item is None or item.status is not CollectionJobItemStatus.RUNNING:
+                raise WorkerOwnershipError("Collection job item ownership was lost.")
+            item.status = CollectionJobItemStatus.PENDING
+            item.started_at = None
+            item.finished_at = None
+            item.error_code = "SOURCE_BUSY_RETRY"
+            item.error_summary = _error_summary(error)
+            session.commit()

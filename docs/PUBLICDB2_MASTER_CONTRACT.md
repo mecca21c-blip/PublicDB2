@@ -242,6 +242,30 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   lifespan worker/scheduler를 사용한다. Redis, Celery, RQ, RabbitMQ, APScheduler,
   Windows Task Scheduler는 이 실행 모델에 포함하지 않는다.
 
+## 06C-4 Faceted Source Targeting Contract
+
+- `SourceFilterSpec`과 `SourceQueryService`가 Source 목록, canonical count, 방식별 count,
+  필터 수동 job target의 단일 predicate owner다. 같은 facet은 OR, 서로 다른 facet은
+  AND이며 지역·기관·부서는 하나의 correlated active SourceBinding 안에서 함께 만족해야
+  한다. 서로 다른 binding의 조건을 합쳐 거짓 일치를 만들지 않는다.
+- 지원 facet은 기관·부서·URL·설명 자유 검색, 명시적 Agency.region_code, Agency,
+  Agency-scoped OrgUnit, 3-Way collection method, 운영 상태, 자동 전체 수집 포함 여부다.
+  상태 표시와 상태 query는 같은 미확인/정상/자료없음/오류 판정 계약을 사용한다.
+- Agency와 OrgUnit selector는 인증된 VIEWER 읽기 API를 30건 이하로 검색한다. 빈 Agency
+  질의는 전체 목록을 반환하지 않고 OrgUnit은 선택한 active Agency 소유 범위만 검색한다.
+  Sources HTML에는 전체 Agency/OrgUnit option 목록을 넣지 않는다.
+- `MANUAL_FILTER`는 서버가 검증·해석한 active Source와 active binding만 canonical
+  Source로 중복 제거해 item을 생성한다. 생성 시 target과 비밀 없는 filter snapshot을
+  고정하므로 이후 Source 추가는 기존 job에 들어오지 않는다. scheduled 제외 Source도
+  수동 filter 대상이 될 수 있다. 결과 0건이면 job을 만들지 않는다.
+- 페이지 헤더 선택은 현재 최대 100개 행에만 적용한다. 필터 결과 전체 액션은 브라우저가
+  ID 목록을 보내지 않고 filter spec을 보내며, 서버가 표시·확인 건수와 target을 결정한다.
+  Source collection HOW와 worker는 기존 `CollectionService.collect(source_id)` 계약을
+  유지한다. 이미 claim된 Source는 intent를 잃지 않고 PENDING으로 되돌려 재시도한다.
+- 사용자 용어는 per-Source schedule이 아닌 `자동 전체 수집에 포함`이며, 등록된 단일
+  전체 수집 일정의 포함 여부만 뜻한다. 별도 preset, per-filter schedule, cron, 새 queue
+  제품은 이 계약에 포함하지 않는다.
+
 ## PORTABLE PROJECT CONTRACT
 
 PublicDB2 설치 폴더가 application과 data의 이동 단위다. 기본 runtime 경로는 모두

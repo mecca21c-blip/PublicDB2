@@ -99,6 +99,22 @@ class CollectionJobCreate(BaseModel):
     agency_id: uuid.UUID | None = None
     org_unit_id: uuid.UUID | None = None
     region_code: str | None = None
+    filter: "SourceFilterPayload | None" = None
+
+
+class SourceFilterPayload(BaseModel):
+    search: str = Field(default="", max_length=100)
+    region_codes: list[str] = Field(default_factory=list, max_length=20)
+    agency_id: uuid.UUID | None = None
+    org_unit_id: uuid.UUID | None = None
+    methods: list[CollectionMethod] = Field(default_factory=lambda: [
+        CollectionMethod.WEB_PAGE, CollectionMethod.WEB_CRAWL, CollectionMethod.API,
+    ], max_length=3)
+    status: str | None = None
+    scheduled: str = "all"
+
+
+CollectionJobCreate.model_rebuild()
 
 
 class UserCreate(BaseModel):

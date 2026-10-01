@@ -13,6 +13,7 @@ from app.services.normalization import SourceURLValidationError
 from app.services.source_service import SourceBindingConflict, SourceService, SourceServiceError
 from app.services.source_method_service import MethodConfigError
 from app.services.source_import_service import MAX_IMPORT_BYTES, SourceImportError, SourceImportService
+from app.services.source_query_service import FILTER_METHODS, SourceFilterError, SourceFilterSpec, SourceQueryService
 
 
 router = APIRouter(prefix="/api/source-bindings", tags=["sources"], dependencies=[Depends(require_viewer)])
@@ -26,17 +27,28 @@ def _failure(error: ValueError) -> HTTPException:
 @router.get("")
 def list_bindings(
     search: str | None = None,
+    region_code: list[str] | None = None,
     agency_id: uuid.UUID | None = None,
     org_unit_id: uuid.UUID | None = None,
+    methods: str | None = None,
     source_status: str | None = None,
+    scheduled: str = "all",
     page: int = 1,
     page_size: int = 100,
     session: Session = Depends(get_session),
 ) -> dict:
-    return SourceService(session).list_page(
-        search=search, agency_id=agency_id, org_unit_id=org_unit_id,
-        status=source_status, page=page, page_size=page_size,
-    )
+    try:
+        parsed_methods = list(FILTER_METHODS) if methods is None else [
+            CollectionMethod(value) for value in methods.split(",") if value
+        ]
+        spec = SourceFilterSpec.build(
+            search=search, region_codes=region_code, agency_id=agency_id,
+            org_unit_id=org_unit_id, methods=parsed_methods,
+            status=source_status, scheduled=scheduled,
+        )
+        return SourceQueryService(session).list_page(spec, page=page, page_size=page_size)
+    except (SourceFilterError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
 def _require_secret_config_admin(method, config, user: User) -> None:
