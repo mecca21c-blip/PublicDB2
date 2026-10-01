@@ -8,8 +8,55 @@
 {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}
 <form class="panel toolbar" method="get"><label>기관명 / 부서명<input class="control" name="search" value="{{filters.search}}"></label><label>기관 유형<select class="control" name="agency_type"><option value="">전체 유형</option>{% for v in agency_types %}<option value="{{v.value}}"{% if filters.agency_type==v.value %} selected{% endif %}>{{v.value}}</option>{% endfor %}</select></label><button class="button button--secondary">검색</button></form>
 <div class="workspace-layout"><section class="panel workspace-list-panel"><header class="panel-heading"><div><h2>기관 목록</h2><p>행을 선택하면 기관의 조직 관계를 확인할 수 있습니다.</p></div><span>{{workspace['items']|length}}개 기관</span></header><div class="table-scroll"><table class="data-table workspace-table"><thead><tr><th>기관명</th><th>기관 유형</th><th>부서 수</th><th>연락처 수</th><th>수집 소스 수</th><th>상태</th></tr></thead><tbody>{% for item in workspace['items'] %}<tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}"><td><strong>{{item.name}}</strong></td><td>{{item.type}}</td><td>{{item.departments}}</td><td>{{item.contacts}}</td><td>{{item.sources}}</td><td>{{status_badge(item.status,item.tone)}}</td></tr>{% else %}<tr><td colspan="6" class="empty-state-cell">등록된 기관이 없습니다. 기관 추가에서 첫 기관을 등록하세요.</td></tr>{% endfor %}</tbody></table></div>{{ pager(workspace.pagination) }}</section>
-<aside class="panel detail-panel">{% for d in workspace.details %}<article class="detail-view" data-detail-id="{{d.id}}"{% if not loop.first %} hidden{% endif %}><header class="detail-panel-heading"><div><small>기관 기본 정보</small><h2>{{d.name}}</h2></div><span class="demo-badge">실데이터</span></header><div class="detail-content"><dl class="detail-grid"><dt>기관 유형</dt><dd>{{d.type}}</dd><dt>기관 식별값</dt><dd>{{d.identifier}}</dd><dt>주소</dt><dd>{{d.address}}</dd></dl><section class="detail-section"><h3>조직/부서</h3><ul>{% for v in d.departments %}<li>{{v.name}}</li>{% else %}<li>등록된 부서가 없습니다.</li>{% endfor %}</ul><button data-modal-open="org-{{d.id}}">부서 추가</button></section><section class="detail-section"><h3>업무</h3><ul>{% for v in d.duties %}<li>{{v.title}}</li>{% else %}<li>등록된 업무가 없습니다.</li>{% endfor %}</ul><button data-modal-open="duty-{{d.id}}">업무 추가</button></section><section><h3>연결된 수집 소스</h3><ul>{% for v in d.sources %}<li>{{v.url}}</li>{% else %}<li>연결된 소스가 없습니다.</li>{% endfor %}</ul></section></div></article>
-{% for kind in ['org','duty'] %}<div class="modal-backdrop" data-modal="{{kind}}-{{d.id}}" hidden><section class="modal-shell"><header class="modal-heading"><h2>{{'부서' if kind=='org' else '업무'}} 추가</h2><button data-modal-close>×</button></header><form class="modal-body" data-api-form action="/api/agencies/{{d.id}}/{{'org-units' if kind=='org' else 'duties'}}" data-method="POST">{% if kind=='org' %}<label>부서명<input class="control" name="name" required></label><input type="hidden" name="unit_type" value="DEPARTMENT">{% else %}<label>부서<select name="org_unit_id">{% for u in d.departments %}<option value="{{u.id}}">{{u.name}}</option>{% endfor %}</select></label><label>업무명<input class="control" name="title" required></label>{% endif %}<p data-form-error hidden></p><button class="button button--primary">등록</button></form></section></div>{% endfor %}{% else %}<p class="detail-content">기관을 등록하면 조직 상세가 표시됩니다.</p>{% endfor %}</aside></div></div>
+<aside class="panel detail-panel">
+{% for d in workspace.details %}
+  <article class="detail-view" data-detail-id="{{d.id}}"{% if not loop.first %} hidden{% endif %}>
+    <header class="detail-panel-heading"><div><small>기관 기본 정보</small><h2>{{d.name}}</h2></div><span class="demo-badge">실데이터</span></header>
+    <div class="detail-content">
+      <dl class="detail-grid"><dt>기관 유형</dt><dd>{{d.type}}</dd><dt>기관 식별값</dt><dd>{{d.identifier}}</dd><dt>주소</dt><dd>{{d.address}}</dd></dl>
+      <section class="detail-section">
+        <h3>조직/부서</h3>
+        {% if d.departments %}<ul class="detail-list">{% for v in d.departments %}<li>{{v.name}}</li>{% endfor %}</ul>{% else %}<p class="detail-note detail-note--empty">등록된 부서가 없습니다.</p>{% endif %}
+        <div class="detail-section-actions"><button class="button button--secondary button--small" type="button" data-modal-open="org-{{d.id}}">부서 추가</button></div>
+      </section>
+      <section class="detail-section">
+        <h3>업무</h3>
+        {% if d.duties %}<ul class="detail-list">{% for v in d.duties %}<li>{{v.title}}</li>{% endfor %}</ul>{% else %}<p class="detail-note detail-note--empty">등록된 업무가 없습니다.</p>{% endif %}
+        <div class="detail-section-actions"><button class="button button--secondary button--small" type="button" data-modal-open="duty-{{d.id}}"{% if not d.departments %} disabled aria-disabled="true" title="먼저 부서를 등록하세요."{% endif %}>업무 추가</button></div>
+        {% if not d.departments %}<p class="detail-action-guidance">먼저 부서를 등록하세요.</p>{% endif %}
+      </section>
+      <section class="detail-section">
+        <h3>연결된 수집 소스</h3>
+        {% if d.sources %}<ul class="detail-list">{% for v in d.sources %}<li>{{v.url}}</li>{% endfor %}</ul>{% else %}<p class="detail-note detail-note--empty">연결된 소스가 없습니다.</p>{% endif %}
+      </section>
+    </div>
+  </article>
+
+  <div class="modal-backdrop" data-modal="org-{{d.id}}" hidden>
+    <section class="modal-shell modal-shell--compact">
+      <header class="modal-heading"><div><h2>부서 추가</h2><p>선택한 기관에 소속될 부서를 등록합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
+      <form class="modal-body organization-create-form" data-api-form action="/api/agencies/{{d.id}}/org-units" data-method="POST">
+        <label class="organization-form-field"><span class="field-label">부서명 <strong aria-hidden="true">*</strong></span><input class="control" name="name" required></label>
+        <input type="hidden" name="unit_type" value="DEPARTMENT">
+        <p data-form-error hidden></p>
+        <div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="submit">등록</button></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" data-modal="duty-{{d.id}}" hidden>
+    <section class="modal-shell modal-shell--compact">
+      <header class="modal-heading"><div><h2>업무 추가</h2><p>부서를 선택하고 해당 부서의 주요 업무를 등록합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
+      <form class="modal-body organization-create-form" data-api-form action="/api/agencies/{{d.id}}/duties" data-method="POST">
+        <label class="organization-form-field"><span class="field-label">부서 <strong aria-hidden="true">*</strong></span><select class="control" name="org_unit_id" required><option value="" selected disabled>부서 선택</option>{% for u in d.departments %}<option value="{{u.id}}">{{u.name}}</option>{% endfor %}</select></label>
+        <label class="organization-form-field"><span class="field-label">업무명 <strong aria-hidden="true">*</strong></span><input class="control" name="title" placeholder="예: 민원 접수 및 처리" required></label>
+        <p data-form-error hidden></p>
+        <div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="submit">등록</button></div>
+      </form>
+    </section>
+  </div>
+{% else %}<p class="detail-content">기관을 등록하면 조직 상세가 표시됩니다.</p>{% endfor %}
+</aside></div></div>
 <div class="modal-backdrop" data-modal="agency-create" hidden>
   <section class="modal-shell modal-shell--agency-create">
     <header class="modal-heading">

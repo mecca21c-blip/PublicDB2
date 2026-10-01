@@ -1,10 +1,13 @@
+import uuid
+
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from app.db.base import Base
 from app.db.engine import create_db_engine
 from app.main import WORKSPACE_PAGES
-from app.models import AgencyType
+from app.models import AgencyType, OrgUnitType
+from app.services.agency_service import AgencyService
 from app.services.dashboard_service import _points
 from tests.support import regression_app
 
@@ -123,3 +126,82 @@ def test_agency_create_modal_presentation_and_contract(tmp_path):
     assert '공식 관리코드가 있는 경우 입력합니다.' in form.get_text(' ', strip=True)
     assert 'modal-shell--agency-create { width: min(700px, calc(100vw - 48px)); max-width: 100%; }' in workspace_css.text
     assert '.modal-shell { width: min(960px, calc(100vw - 56px));' in workspace_css.text
+
+
+def test_organization_workflow_modals_and_detail_actions(tmp_path):
+    app = make_app(tmp_path)
+    with app.state.session_factory() as session:
+        agencies = AgencyService(session)
+        empty_agency, _ = agencies.create_agency(
+            official_name='가 부서없는기관', agency_type=AgencyType.OTHER,
+        )
+        populated_agency, _ = agencies.create_agency(
+            official_name='나 부서있는기관', agency_type=AgencyType.PUBLIC_INSTITUTION,
+        )
+        unit = agencies.create_org_unit(
+            agency_id=uuid.UUID(populated_agency['id']),
+            name='민원부서',
+            unit_type=OrgUnitType.DEPARTMENT,
+        )
+
+    with TestClient(app) as client:
+        response = client.get('/agencies')
+        workspace_css = client.get('/static/css/workspace.css')
+    assert response.status_code == 200
+    page = BeautifulSoup(response.text, 'html.parser')
+
+    empty_id = empty_agency['id']
+    populated_id = populated_agency['id']
+    empty_detail = page.select_one(f'[data-detail-id="{empty_id}"]')
+    populated_detail = page.select_one(f'[data-detail-id="{populated_id}"]')
+    assert empty_detail is not None and populated_detail is not None
+
+    department_action = empty_detail.select_one(f'button.button.button--secondary[data-modal-open="org-{empty_id}"]')
+    empty_duty_action = empty_detail.select_one(f'button.button.button--secondary[data-modal-open="duty-{empty_id}"]')
+    populated_duty_action = populated_detail.select_one(f'button.button.button--secondary[data-modal-open="duty-{populated_id}"]')
+    assert department_action is not None
+    assert empty_duty_action is not None and empty_duty_action.has_attr('disabled')
+    assert populated_duty_action is not None and not populated_duty_action.has_attr('disabled')
+    assert '먼저 부서를 등록하세요.' in empty_detail.get_text(' ', strip=True)
+    empty_notes = [node.get_text(strip=True) for node in empty_detail.select('.detail-note--empty')]
+    assert '등록된 부서가 없습니다.' in empty_notes
+    assert '등록된 업무가 없습니다.' in empty_notes
+    assert '연결된 소스가 없습니다.' in empty_notes
+    assert not {
+        node.get_text(strip=True) for node in empty_detail.select('li')
+    } & {
+        '등록된 부서가 없습니다.', '등록된 업무가 없습니다.', '연결된 소스가 없습니다.',
+    }
+
+    department_modal = page.select_one(f'[data-modal="org-{empty_id}"]')
+    assert department_modal is not None
+    assert department_modal.select_one('.modal-shell.modal-shell--compact') is not None
+    assert department_modal.select_one('button.modal-close[type="button"][data-modal-close][aria-label="닫기"]') is not None
+    department_form = department_modal.select_one('form.organization-create-form[data-api-form]')
+    assert department_form.get('action') == f'/api/agencies/{empty_id}/org-units'
+    assert department_form.get('data-method') == 'POST'
+    department_name = department_form.select_one('input.control[name="name"]')
+    unit_type = department_form.select_one('input[type="hidden"][name="unit_type"]')
+    assert department_name is not None and department_name.has_attr('required')
+    assert unit_type is not None and unit_type.get('value') == 'DEPARTMENT'
+    assert department_form.select_one('.modal-actions button[type="button"][data-modal-close]') is not None
+    assert department_form.select_one('.modal-actions button[type="submit"]') is not None
+
+    duty_modal = page.select_one(f'[data-modal="duty-{populated_id}"]')
+    assert duty_modal is not None
+    assert duty_modal.select_one('.modal-shell.modal-shell--compact') is not None
+    assert duty_modal.select_one('button.modal-close[type="button"][data-modal-close][aria-label="닫기"]') is not None
+    duty_form = duty_modal.select_one('form.organization-create-form[data-api-form]')
+    assert duty_form.get('action') == f'/api/agencies/{populated_id}/duties'
+    assert duty_form.get('data-method') == 'POST'
+    department_select = duty_form.select_one('select.control[name="org_unit_id"]')
+    duty_title = duty_form.select_one('input.control[name="title"]')
+    assert department_select is not None and department_select.has_attr('required')
+    assert duty_title is not None and duty_title.has_attr('required')
+    options = department_select.select('option')
+    assert options[0].get('value') == '' and options[0].get_text(strip=True) == '부서 선택'
+    assert options[0].has_attr('selected') and options[0].has_attr('disabled')
+    assert options[1].get('value') == unit['id']
+    assert duty_form.select_one('.modal-actions button[type="button"][data-modal-close]') is not None
+    assert duty_form.select_one('.modal-actions button[type="submit"]') is not None
+    assert 'modal-shell--compact { width: min(560px, calc(100vw - 48px)); max-width: 100%; }' in workspace_css.text
