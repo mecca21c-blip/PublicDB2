@@ -21,6 +21,8 @@ if str(PROJECT_ROOT) not in sys.path:
 LOOPBACK_HOST = "127.0.0.1"
 APP_IMPORT = "app.main:app"
 READINESS_TIMEOUT_SECONDS = 20.0
+DESKTOP_MUTEX_NAME = "Local\\PublicDB2.Desktop"
+ERROR_ALREADY_EXISTS = 183
 
 
 class DesktopStartupError(RuntimeError):
@@ -30,6 +32,55 @@ class DesktopStartupError(RuntimeError):
         super().__init__(public_message)
         self.public_message = public_message
         self.code = code
+
+
+class DesktopInstanceGuard:
+    """Hold an OS-owned mutex for one logical Windows desktop instance."""
+
+    def __init__(
+        self,
+        name: str = DESKTOP_MUTEX_NAME,
+        kernel32_loader: Callable[[], object] | None = None,
+        last_error_getter: Callable[[], int] | None = None,
+    ) -> None:
+        self.name = name
+        self._kernel32_loader = kernel32_loader
+        self._last_error_getter = last_error_getter
+        self._kernel32 = None
+        self._handle = None
+
+    def acquire(self) -> bool:
+        if sys.platform != "win32":
+            return True
+        kernel32 = (
+            self._kernel32_loader()
+            if self._kernel32_loader
+            else ctypes.WinDLL("kernel32", use_last_error=True)
+        )
+        create_mutex = kernel32.CreateMutexW
+        if hasattr(create_mutex, "argtypes"):
+            create_mutex.argtypes = (ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p)
+            create_mutex.restype = ctypes.c_void_p
+        if self._last_error_getter is None:
+            ctypes.set_last_error(0)
+        handle = create_mutex(None, False, self.name)
+        if not handle:
+            raise DesktopStartupError(
+                "PublicDB2 실행 상태를 확인하지 못했습니다.",
+                "instance-guard-failed",
+            )
+        get_last_error = self._last_error_getter or ctypes.get_last_error
+        if get_last_error() == ERROR_ALREADY_EXISTS:
+            kernel32.CloseHandle(handle)
+            return False
+        self._kernel32 = kernel32
+        self._handle = handle
+        return True
+
+    def release(self) -> None:
+        if self._handle is not None and self._kernel32 is not None:
+            self._kernel32.CloseHandle(self._handle)
+            self._handle = None
 
 
 class DesktopServer:
@@ -189,6 +240,14 @@ def _show_native_error(message: str) -> None:
         print(message, file=sys.stderr)
 
 
+def _show_already_running() -> None:
+    message = "PublicDB2가 이미 실행 중입니다."
+    if sys.platform == "win32":
+        ctypes.windll.user32.MessageBoxW(0, message, "PublicDB2", 0x40)
+    else:
+        print(message, file=sys.stderr)
+
+
 def report_fatal_error(
     error: BaseException,
     project_root: Path = PROJECT_ROOT,
@@ -212,12 +271,23 @@ def report_fatal_error(
     notifier(message)
 
 
-def main() -> int:
+def main(
+    guard_factory: Callable[[], DesktopInstanceGuard] = DesktopInstanceGuard,
+    launcher: Callable[[], None] = launch_desktop,
+    already_running_notifier: Callable[[], None] = _show_already_running,
+    fatal_reporter: Callable[[BaseException], None] = report_fatal_error,
+) -> int:
+    guard = guard_factory()
     try:
-        launch_desktop()
+        if not guard.acquire():
+            already_running_notifier()
+            return 0
+        launcher()
     except BaseException as error:
-        report_fatal_error(error)
+        fatal_reporter(error)
         return 1
+    finally:
+        guard.release()
     return 0
 
 

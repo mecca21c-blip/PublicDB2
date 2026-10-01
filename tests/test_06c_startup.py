@@ -52,6 +52,60 @@ def test_desktop_module_import_has_no_server_or_webview_side_effect(monkeypatch)
     assert module.APP_IMPORT == "app.main:app"
 
 
+def test_windows_instance_guard_allows_owner_and_rejects_second_launch(monkeypatch):
+    monkeypatch.setattr(run_desktop.sys, "platform", "win32")
+
+    class Kernel32:
+        def __init__(self):
+            self.closed = []
+
+        def CreateMutexW(self, security, initial_owner, name):
+            assert security is None and initial_owner is False
+            assert name == "Local\\PublicDB2.Desktop"
+            return 101
+
+        def CloseHandle(self, handle):
+            self.closed.append(handle)
+
+    first_kernel = Kernel32()
+    first = run_desktop.DesktopInstanceGuard(
+        kernel32_loader=lambda: first_kernel,
+        last_error_getter=lambda: 0,
+    )
+    assert first.acquire() is True
+    first.release()
+    assert first_kernel.closed == [101]
+
+    second_kernel = Kernel32()
+    second = run_desktop.DesktopInstanceGuard(
+        kernel32_loader=lambda: second_kernel,
+        last_error_getter=lambda: run_desktop.ERROR_ALREADY_EXISTS,
+    )
+    assert second.acquire() is False
+    assert second_kernel.closed == [101]
+
+
+def test_main_rejects_second_user_launch_without_server_or_window():
+    events = []
+
+    class ExistingInstance:
+        def acquire(self):
+            events.append("guard-acquire")
+            return False
+
+        def release(self):
+            events.append("guard-release")
+
+    result = run_desktop.main(
+        guard_factory=ExistingInstance,
+        launcher=lambda: events.append("launcher-started"),
+        already_running_notifier=lambda: events.append("already-running"),
+        fatal_reporter=lambda error: events.append("fatal-error"),
+    )
+    assert result == 0
+    assert events == ["guard-acquire", "already-running", "guard-release"]
+
+
 class FakeSocket:
     def __init__(self, port=49152):
         self.port = port
@@ -174,6 +228,8 @@ def test_launch_creates_one_window_only_after_readiness_and_always_stops_server(
         "width": 1360, "height": 860, "min_size": (1050, 700), "resizable": True,
     }
     assert events[-2:] == ["webview-start", "server-stop"]
+    assert events.count("server-start") == 1
+    assert sum(isinstance(item, tuple) and item[0] == "window" for item in events) == 1
 
 
 def test_readiness_failure_never_loads_window_and_stops_server():
