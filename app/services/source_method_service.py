@@ -16,6 +16,7 @@ from app.models import (
     SourceScrapeConfig,
 )
 from app.services.normalization import normalize_source_url
+from app.services.crawl_scope import crawl_path_allowed, normalize_path_prefixes
 
 
 MAX_CRAWL_DEPTH = 5
@@ -94,7 +95,8 @@ class SourceMethodService:
             existing = source.crawl_config
             if existing is not None:
                 for name in (
-                    "scope", "allowed_path", "max_depth", "max_pages", "request_delay_ms",
+                    "scope", "allowed_path", "allowed_paths", "excluded_paths",
+                    "max_depth", "max_pages", "request_delay_ms",
                     "extract_contacts", "extract_directory",
                 ):
                     setattr(existing, name, getattr(configured, name))
@@ -165,14 +167,22 @@ class SourceMethodService:
             raise MethodConfigError(f"요청 간격은 최소 {MIN_REQUEST_DELAY_MS}ms입니다.")
         seed_path = urlsplit(normalize_source_url(url)).path or "/"
         default_path = seed_path if seed_path.endswith("/") else seed_path.rsplit("/", 1)[0] or "/"
-        path = str(values.get("allowed_path") or default_path).strip()
-        if not path.startswith("/") or ".." in path.split("/"):
-            raise MethodConfigError("허용 경로는 /로 시작하는 안전한 경로여야 합니다.")
-        prefix = path.rstrip("/") or "/"
-        if scope is CrawlScope.PATH_PREFIX and seed_path != prefix and not seed_path.startswith(prefix.rstrip("/") + "/"):
-            raise MethodConfigError("Index URL은 지정한 허용 경로 안에 있어야 합니다.")
+        try:
+            allowed_paths = normalize_path_prefixes(
+                values.get("allowed_paths"),
+                fallback=[values.get("allowed_path") or default_path],
+            )
+            excluded_paths = normalize_path_prefixes(values.get("excluded_paths"), fallback=[])
+        except ValueError as error:
+            raise MethodConfigError(str(error)) from error
+        if not allowed_paths:
+            allowed_paths = [default_path]
+        effective_allowed_paths = allowed_paths if scope is CrawlScope.PATH_PREFIX else ["/"]
+        if not crawl_path_allowed(seed_path, effective_allowed_paths, excluded_paths):
+            raise MethodConfigError("Index URL은 허용 경로 안에 있고 제외 경로 밖에 있어야 합니다.")
         return SourceCrawlConfig(
-            scope=scope, allowed_path=path, max_depth=depth, max_pages=pages,
+            scope=scope, allowed_path=allowed_paths[0], allowed_paths=allowed_paths,
+            excluded_paths=excluded_paths, max_depth=depth, max_pages=pages,
             request_delay_ms=delay, extract_contacts=contacts, extract_directory=directory,
         )
 
@@ -275,6 +285,8 @@ class SourceMethodService:
                 raise MethodConfigError("크롤링 설정이 없습니다.")
             return None, {
                 "seed_url": source.url, "scope": config.scope.value, "allowed_path": config.allowed_path,
+                "allowed_paths": config.allowed_paths or [config.allowed_path],
+                "excluded_paths": config.excluded_paths or [],
                 "max_depth": config.max_depth, "max_pages": config.max_pages,
                 "request_delay_ms": config.request_delay_ms, "robots_txt": True,
                 "extract_contacts": config.extract_contacts, "extract_directory": config.extract_directory,

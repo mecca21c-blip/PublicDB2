@@ -19,9 +19,9 @@
 {% macro method_cards(method='WEB_PAGE') %}
 <input type="hidden" name="collection_method" value="{{method}}" data-method-selector>
 <div class="method-cards" role="radiogroup" aria-label="수집 방식">
-  <label class="method-card"><input type="radio" name="collection_method_choice" value="WEB_PAGE" data-method-choice data-ui-only{% if method=='WEB_PAGE' %} checked{% endif %}><span><strong>개별 웹페이지</strong><small>지정한 한 페이지에서 연락처와 직원·업무 정보를 찾습니다.</small></span></label>
-  <label class="method-card"><input type="radio" name="collection_method_choice" value="WEB_CRAWL" data-method-choice data-ui-only{% if method=='WEB_CRAWL' %} checked{% endif %}><span><strong>웹사이트 탐색</strong><small>시작 주소에서 같은 사이트의 여러 페이지를 순서대로 확인합니다.</small></span></label>
-  <label class="method-card"><input type="radio" name="collection_method_choice" value="API" data-method-choice data-ui-only{% if method=='API' %} checked{% endif %}><span><strong>공개 API · RSS</strong><small>공개 데이터 API나 RSS·Atom 주소에서 구조화된 자료를 가져옵니다.</small></span></label>
+  <label class="method-card"><input type="radio" name="collection_method_choice" value="WEB_PAGE" data-method-choice data-ui-only{% if method=='WEB_PAGE' %} checked{% endif %}><span><strong>개별 URL · 스크래핑</strong><small>알고 있는 한 개 이상의 페이지에서 연락처와 직원·업무 정보를 찾습니다.</small></span></label>
+  <label class="method-card"><input type="radio" name="collection_method_choice" value="WEB_CRAWL" data-method-choice data-ui-only{% if method=='WEB_CRAWL' %} checked{% endif %}><span><strong>Index URL · 크롤링</strong><small>시작 주소에서 연결된 여러 페이지를 안전한 범위 안에서 탐색합니다.</small></span></label>
+  <label class="method-card"><input type="radio" name="collection_method_choice" value="API" data-method-choice data-ui-only{% if method=='API' %} checked{% endif %}><span><strong>공개 API / RSS</strong><small>공개 데이터 API나 RSS·Atom 주소에서 구조화된 자료를 가져옵니다.</small></span></label>
 </div>
 {% endmacro %}
 
@@ -33,18 +33,20 @@
 </fieldset>
 {% endmacro %}
 
-{% macro method_panels(method='WEB_PAGE', config={}, scheduled=true) %}
+{% macro method_panels(method='WEB_PAGE', config={}, create=false) %}
 <div class="method-panel" data-method-panel="WEB_PAGE"{% if method!='WEB_PAGE' %} hidden{% endif %}>
-  <label>웹페이지 주소<input class="control" name="url" type="url" required placeholder="https://example.go.kr/directory"></label>
+  {% if create %}<label>대상 URL <strong aria-hidden="true">*</strong><textarea class="control control--textarea url-batch-input" name="urls" rows="7" required data-scrape-urls placeholder="https://example.go.kr/directory&#10;https://example.go.kr/contacts"></textarea><small>URL을 한 줄에 하나씩 입력하세요. 최대 200개이며 더 큰 목록은 엑셀 업로드를 사용하세요.</small></label>{% else %}<label>대상 URL<input class="control" name="url" type="url" required placeholder="https://example.go.kr/directory"></label>{% endif %}
   {{extraction_options(config)}}
 </div>
 <div class="method-panel" data-method-panel="WEB_CRAWL"{% if method!='WEB_CRAWL' %} hidden{% endif %}>
-  <label>시작 주소<input class="control" name="url" type="url" required placeholder="https://example.go.kr/departments/"></label>
+  <label>Index URL <strong aria-hidden="true">*</strong><input class="control" name="url" type="url" required data-single-url placeholder="https://example.go.kr/departments/"></label>
   {{extraction_options(config)}}
   <p class="detail-note">기본 설정: 시작 경로 안에서 최대 깊이 2, 최대 50페이지, 1초 간격으로 확인합니다. robots.txt는 항상 준수합니다.</p>
   <details class="advanced-settings"><summary>고급 탐색 설정</summary><div class="method-panel-fields">
     <label>탐색 범위<select class="control" name="method_config.scope"><option value="PATH_PREFIX">시작 주소의 경로 안</option><option value="SAME_DOMAIN"{% if config.get('scope')=='SAME_DOMAIN' %} selected{% endif %}>같은 도메인 전체</option></select></label>
-    <label>허용 경로<input class="control" name="method_config.allowed_path" value="{{config.get('allowed_path','/')}}"></label>
+    {% set allowed = config.get('allowed_paths') or [config.get('allowed_path','/')] %}
+    <label>허용 경로 prefix<textarea class="control control--textarea" name="method_config.allowed_paths" rows="3" data-lines-field>{{allowed|join('\n')}}</textarea><small>한 줄에 하나씩 입력합니다.</small></label>
+    <label>제외 경로 prefix<textarea class="control control--textarea" name="method_config.excluded_paths" rows="3" data-lines-field>{{config.get('excluded_paths',[])|join('\n')}}</textarea><small>한 줄에 하나씩 입력하며 제외 규칙이 우선합니다.</small></label>
     <label>최대 깊이<input class="control" type="number" min="0" max="5" name="method_config.max_depth" value="{{config.get('max_depth',2)}}"></label>
     <label>최대 페이지<input class="control" type="number" min="1" max="200" name="method_config.max_pages" value="{{config.get('max_pages',50)}}"></label>
     <label>요청 간격(ms)<input class="control" type="number" min="500" name="method_config.request_delay_ms" value="{{config.get('request_delay_ms',1000)}}"></label>
@@ -58,7 +60,8 @@
   </fieldset>
   <div data-api-mode-panel="CATALOG" hidden>
     <h3>기본 공개 소스</h3>
-    {% for entry in catalog %}<p class="catalog-entry"><span><strong>{{entry.display_name}}</strong><small>{{entry.provider}} · {{entry.kind}} · 인증 {{'필요' if entry.auth_required else '없음'}}</small></span><button class="button button--secondary" type="button" data-catalog-use="{{entry.catalog_id}}">선택</button></p>{% else %}<p class="detail-note">현재 바로 선택할 수 있는 기본 공개 소스가 없습니다. 직접 입력을 선택해 주세요.</p>{% endfor %}
+    <input type="hidden" data-selected-catalog data-ui-only>
+    {% for entry in catalog %}<p class="catalog-entry"><span><strong>{{entry.display_name}}</strong><small>{{entry.provider}} · {{entry.kind}} · 인증 {{'필요' if entry.auth_required else '없음'}}</small></span><button class="button button--secondary" type="button" {% if create %}data-catalog-select{% else %}data-catalog-use{% endif %}="{{entry.catalog_id}}">선택</button></p>{% else %}<p class="detail-note">현재 바로 선택할 수 있는 기본 공개 소스가 없습니다. 직접 입력을 선택해 주세요.</p>{% endfor %}
   </div>
   <div data-api-mode-panel="DIRECT">
     <fieldset class="choice-group"><legend>자료 형식</legend>
@@ -80,33 +83,54 @@
         {% if current_user.role.value=='ADMIN' %}<label>API 비밀 값<input class="control" type="password" data-credential-secret autocomplete="new-password"></label><div class="inline-actions"><button class="button button--secondary" type="button" data-credential-save>자격증명 저장·교체</button><button class="button button--danger-quiet" type="button" data-credential-remove>제거</button></div><p class="detail-note" data-credential-result hidden></p>{% else %}<p class="detail-note">자격증명은 관리자만 저장하거나 교체할 수 있습니다. 비밀 값은 화면에 다시 표시되지 않습니다.</p>{% endif %}
       </div>
       <button class="button button--secondary" type="button" data-config-preview>연결 미리보기</button><p data-preview-result class="detail-note" hidden></p>
-      <details class="advanced-settings"><summary>고급 응답·매핑 설정</summary><div class="method-panel-fields">
+      <details class="advanced-settings"><summary>고급 API 설정</summary><div class="method-panel-fields">
         <label>목록 경로<input class="control" name="method_config.record_path" value="{{config.get('record_path','')}}"></label>
         <label class="check-row"><input type="checkbox" name="method_config.discovery_only"{% if config.get('discovery_only',true) %} checked{% endif %}> 필드 매핑 없이 구조만 확인</label>
-        {% for field,label in [('org_unit','부서'),('duty','업무'),('position','직위'),('person_name','성명'),('phone','전화'),('email','이메일'),('fax','팩스'),('record_url','원문 주소')] %}<label>{{label}} 필드<input class="control" name="method_config.field_mapping.{{field}}" value="{{config.get('field_mapping',{}).get(field,'')}}"></label>{% endfor %}
-        <label>페이지 처리<select class="control" name="method_config.pagination_mode"><option value="NONE">사용 안 함</option><option value="PAGE_NUMBER">페이지 번호</option></select></label>
-        <label>최대 API 페이지<input class="control" type="number" min="1" max="100" name="method_config.max_pages" value="{{config.get('max_pages',1)}}"></label>
-        <label>고정 매개변수(JSON)<textarea class="control" name="method_config.static_params" data-json-field>{{config.get('static_params',{})|tojson}}</textarea></label>
-        <label>페이지 번호 매개변수<input class="control" name="method_config.page_parameter" value="{{config.get('page_parameter','')}}"></label>
-        <label>페이지 크기 매개변수<input class="control" name="method_config.page_size_parameter" value="{{config.get('page_size_parameter','')}}"></label>
-        <label>페이지 크기<input class="control" type="number" min="1" max="1000" name="method_config.page_size" value="{{config.get('page_size',100)}}"></label>
-        <label>시작 페이지<input class="control" type="number" min="1" name="method_config.start_page" value="{{config.get('start_page',1)}}"></label>
-        <label>요청 간격(ms)<input class="control" type="number" min="500" name="method_config.request_delay_ms" value="{{config.get('request_delay_ms',1000)}}"></label>
+        <div class="mapping-table"><strong>PublicDB 필드</strong><strong>API 필드 또는 경로</strong>{% for field,label in [('org_unit','부서'),('duty','업무'),('position','직위'),('person_name','담당자명'),('phone','전화'),('email','이메일'),('fax','팩스'),('record_url','원문 URL')] %}<span>{{label}}</span><input aria-label="{{label}} API 필드 또는 경로" class="control" name="method_config.field_mapping.{{field}}" value="{{config.get('field_mapping',{}).get(field,'')}}">{% endfor %}</div>
+        <div class="parameter-editor"><h4>고정 파라미터</h4><input type="hidden" name="method_config.static_params" value="{{config.get('static_params',{})|tojson|forceescape}}" data-json-field data-static-params-json><div data-param-rows>{% for key,value in config.get('static_params',{}).items() %}<div class="parameter-row"><input class="control" value="{{key}}" placeholder="파라미터명" data-param-name data-ui-only><input class="control" value="{{value}}" placeholder="값" data-param-value data-ui-only><button class="button button--ghost" type="button" data-param-remove>삭제</button></div>{% endfor %}</div><button class="button button--secondary" type="button" data-param-add>+ 파라미터 추가</button></div>
+        <label>페이지 처리<select class="control" name="method_config.pagination_mode" data-pagination-mode><option value="NONE">없음</option><option value="PAGE_NUMBER"{% if config.get('pagination_mode')=='PAGE_NUMBER' %} selected{% endif %}>페이지 번호</option></select></label>
+        <div class="method-panel-fields" data-pagination-fields{% if config.get('pagination_mode')!='PAGE_NUMBER' %} hidden{% endif %}>
+          <label>페이지 번호 파라미터<input class="control" name="method_config.page_parameter" value="{{config.get('page_parameter','')}}"></label>
+          <label>페이지 크기 파라미터<input class="control" name="method_config.page_size_parameter" value="{{config.get('page_size_parameter','')}}"></label>
+          <label>페이지 크기<input class="control" type="number" min="1" max="1000" name="method_config.page_size" value="{{config.get('page_size',100)}}"></label>
+          <label>시작 페이지<input class="control" type="number" min="1" name="method_config.start_page" value="{{config.get('start_page',1)}}"></label>
+          <label>최대 API 페이지<input class="control" type="number" min="1" max="100" name="method_config.max_pages" value="{{config.get('max_pages',1)}}"></label>
+          <label>요청 간격(ms)<input class="control" type="number" min="500" name="method_config.request_delay_ms" value="{{config.get('request_delay_ms',1000)}}"></label>
+        </div>
         <label>자격증명 만료일(선택)<input class="control" type="date" name="method_config.credential_expires_on" value="{{config.get('credential_expires_on','')}}"></label>
       </div></details>
     </div>
   </div>
 </div>
-<section class="auto-refresh-section"><h3>자동 전체 수집</h3><label class="check-row"><input type="checkbox" name="scheduled_refresh_enabled"{% if scheduled %} checked{% endif %}> 정기 전체 수집 대상에 포함</label><p>설정에 등록된 전체 수집 일정에 이 소스를 포함합니다.</p></section>
 <input type="hidden" data-initial-method-config value="{{config|tojson|forceescape}}">
 {% endmacro %}
 
-{% macro source_wizard(action, http_method, submit_label, method='WEB_PAGE', config={}, agency_id='', agency_name='', org_id='', org_name='', description='', scheduled=true) %}
-<form class="modal-body source-create-form" data-api-form data-source-wizard action="{{action}}" data-method="{{http_method}}">
-  <ol class="wizard-steps" aria-label="등록 단계"><li data-wizard-indicator="1">1 연결 대상</li><li data-wizard-indicator="2">2 수집 방식</li><li data-wizard-indicator="3">3 세부 설정</li></ol>
-  <section class="source-wizard-step" data-wizard-step="1"><h3>연결 대상</h3><p>수집 자료를 연결할 기관과 부서를 선택합니다.</p>{{lookup_selector('agency_id','기관','agency',agency_id,agency_name,true)}}{{lookup_selector('org_unit_id','부서(선택)','org',org_id,org_name)}}<label>설명(선택)<input class="control" name="description" value="{{description}}" placeholder="이 소스를 구분할 메모"></label></section>
-  <section class="source-wizard-step" data-wizard-step="2" hidden><h3>수집 방식</h3><p>자료가 제공되는 형태를 하나 선택합니다.</p>{{method_cards(method)}}</section>
-  <section class="source-wizard-step" data-wizard-step="3" hidden><h3>세부 설정</h3><p>선택한 방식에 필요한 항목만 입력합니다.</p>{{method_panels(method,config,scheduled)}}</section>
+{% macro connection_fields(method='WEB_PAGE', agency_id='', agency_name='', org_id='', org_name='', description='', scheduled=true, create=false) %}
+<div data-connection-fields>
+  {{lookup_selector('agency_id','기관','agency',agency_id,agency_name,true)}}
+  <fieldset class="choice-group"><legend>연결 범위</legend><label class="check-row"><input type="radio" name="binding_scope" value="AGENCY_WIDE" data-binding-scope data-ui-only{% if not org_id %} checked{% endif %}> 기관 전체</label><label class="check-row"><input type="radio" name="binding_scope" value="SPECIFIC_ORG_UNIT" data-binding-scope data-ui-only{% if org_id %} checked{% endif %}> 특정 부서</label></fieldset>
+  <div data-org-scope-field{% if not org_id %} hidden{% endif %}>{{lookup_selector('org_unit_id','부서','org',org_id,org_name,true)}}</div>
+  <p class="detail-note" data-method-guidance></p>
+  <label>설명 (선택)<input class="control" name="description" value="{{description}}" placeholder="이 소스를 구분할 메모"></label>
+  <section class="auto-refresh-section"><h3>자동 전체 수집</h3><label class="check-row"><input type="checkbox" name="scheduled_refresh_enabled"{% if scheduled %} checked{% endif %}> 자동 전체 수집에 포함</label><p>설정에 등록된 전체 수집 일정에 이 소스를 포함합니다.</p></section>
+  {% if create %}<div data-scrape-preview-controls hidden><p class="detail-note">이 일괄 등록은 선택한 기관과 연결 범위를 모든 URL에 동일하게 적용합니다. 서로 다른 부서는 별도 등록이나 엑셀 업로드를 사용하세요.</p><button class="button button--secondary" type="button" data-scrape-preview>등록 내용 미리보기</button><section class="scrape-preview" data-scrape-preview-result hidden><div class="scrape-summary" data-scrape-summary></div><div class="table-scroll"><table class="data-table"><thead><tr><th>줄</th><th>URL</th><th>분류</th><th>연결</th><th>메시지</th></tr></thead><tbody data-scrape-preview-rows></tbody></table></div></section></div>{% endif %}
+</div>
+{% if create %}<section class="scrape-result" data-scrape-result hidden><h3>등록 결과</h3><dl class="detail-grid" data-scrape-result-summary></dl><div class="modal-actions"><button class="button button--secondary" type="button" data-scrape-list>목록으로</button><button class="button button--primary" type="button" data-scrape-collect>등록된 소스 지금 수집</button></div><p class="detail-note" data-scrape-job-status hidden></p></section>{% endif %}
+{% endmacro %}
+
+{% macro source_wizard(action, http_method, submit_label, method='WEB_PAGE', config={}, agency_id='', agency_name='', org_id='', org_name='', description='', scheduled=true, create=false) %}
+<form class="modal-body source-create-form" data-api-form data-source-wizard{% if create %} data-source-create{% endif %} action="{{action}}" data-method="{{http_method}}">
+  {% if create %}
+  <ol class="wizard-steps" aria-label="등록 단계"><li data-wizard-indicator="1">1 수집 방식</li><li data-wizard-indicator="2">2 세부 설정</li><li data-wizard-indicator="3">3 연결 대상</li></ol>
+  <section class="source-wizard-step" data-wizard-step="1" data-wizard-kind="method"><h3>수집 방식</h3><p>먼저 원격 자료가 제공되는 형태를 선택합니다.</p>{{method_cards(method)}}</section>
+  <section class="source-wizard-step" data-wizard-step="2" data-wizard-kind="config" hidden><h3>세부 설정</h3><p>선택한 방식에 필요한 항목만 입력합니다.</p>{{method_panels(method,config,true)}}</section>
+  <section class="source-wizard-step" data-wizard-step="3" data-wizard-kind="connection" hidden><h3>연결 대상</h3><p>마지막으로 Source를 연결할 기관과 범위를 선택합니다.</p>{{connection_fields(method,agency_id,agency_name,org_id,org_name,description,scheduled,true)}}</section>
+  {% else %}
+  <ol class="wizard-steps" aria-label="수정 단계"><li data-wizard-indicator="1">1 연결 대상</li><li data-wizard-indicator="2">2 수집 방식</li><li data-wizard-indicator="3">3 세부 설정</li></ol>
+  <section class="source-wizard-step" data-wizard-step="1" data-wizard-kind="connection"><h3>연결 대상</h3><p>현재 Source의 기관과 연결 범위를 수정합니다.</p>{{connection_fields(method,agency_id,agency_name,org_id,org_name,description,scheduled,false)}}</section>
+  <section class="source-wizard-step" data-wizard-step="2" data-wizard-kind="method" hidden><h3>수집 방식</h3><p>자료가 제공되는 형태를 선택합니다.</p>{{method_cards(method)}}</section>
+  <section class="source-wizard-step" data-wizard-step="3" data-wizard-kind="config" hidden><h3>세부 설정</h3><p>선택한 방식에 필요한 항목만 입력합니다.</p>{{method_panels(method,config,false)}}</section>
+  {% endif %}
   <p data-form-error role="alert" hidden></p>
   <div class="modal-actions modal-actions--sticky"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--secondary" type="button" data-wizard-prev hidden>이전</button><button class="button button--primary" type="button" data-wizard-next>다음</button><button class="button button--primary" type="submit" data-wizard-submit hidden>{{submit_label}}</button></div>
 </form>
@@ -194,7 +218,7 @@
 
 <div class="modal-backdrop" data-modal="all-job-confirm" hidden><section class="modal-shell modal-shell--compact" role="dialog" aria-modal="true" aria-labelledby="all-job-title"><header class="modal-heading"><div><h2 id="all-job-title">전체 소스 즉시 수집</h2><p>필터와 관계없이 활성 소스를 서버에서 다시 확인한 결과입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header><div class="modal-body"><dl class="detail-grid"><dt>수집 대상</dt><dd data-bulk-total>확인 중</dd><dt>방식별 대상</dt><dd data-bulk-methods>확인 중</dd></dl><p class="detail-note">확인하면 이 대상들로 수집 작업 하나를 만듭니다. 취소하면 작업은 생성되지 않습니다.</p><p data-bulk-error role="alert" hidden></p><div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="button" data-job-all-confirm disabled>수집 시작</button></div></div></section></div>
 
-<div class="modal-backdrop" data-modal="source-create" hidden><section class="modal-shell modal-shell--source-create" role="dialog" aria-modal="true" aria-labelledby="source-create-title"><header class="modal-heading"><div><h2 id="source-create-title">수집 소스 추가</h2><p>연결 대상과 수집 방식을 세 단계로 설정합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>{{source_wizard('/api/source-bindings','POST','등록')}}</section></div>
+<div class="modal-backdrop" data-modal="source-create" hidden><section class="modal-shell modal-shell--source-create" role="dialog" aria-modal="true" aria-labelledby="source-create-title"><header class="modal-heading"><div><h2 id="source-create-title">수집 소스 추가</h2><p>수집 방식과 설정을 정한 뒤 기관에 연결합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>{{source_wizard('/api/source-bindings','POST','등록',create=true)}}</section></div>
 
 <div class="modal-backdrop" data-modal="excel-import" hidden>
   <section class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="excel-import-title">

@@ -30,7 +30,8 @@ PublicDB2는 정부·공공기관이 공식 공개한 기관, 조직, 업무, �
 공식 출처와 이력에 연결해 관리하는 로컬 운영 도구다.
 
 FastAPI/Jinja2 application shell과 SQLAlchemy 2/Alembic 기반 독립 DB를 사용한다.
-기관/부서/업무, 수집 소스, import, 명시적 3-Way 수집(WEB_PAGE/WEB_CRAWL/API),
+기관/부서/업무, method-first 수집 소스 등록, 다중 WEB_PAGE URL/Excel import,
+명시적 3-Way 수집(WEB_PAGE/WEB_CRAWL/API),
 RAW/추출, 확정 연락처,
 검토, Dashboard, Settings와 XLSX export가 실 DB에 연결됐다. application user의
 서명 세션과 ADMIN/OPERATOR/VIEWER 권한, CSRF 보호를 사용한다.

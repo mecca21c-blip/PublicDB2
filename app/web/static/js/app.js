@@ -74,7 +74,23 @@
     control.addEventListener("click", (event) => event.preventDefault());
   });
 
+  const syncStaticParams = (form) => {
+    const hidden = form.querySelector("[data-static-params-json]");
+    if (!hidden || hidden.disabled) return;
+    const values = {};
+    form.querySelectorAll("[data-param-rows] .parameter-row").forEach((row) => {
+      const name = row.querySelector("[data-param-name]")?.value.trim() || "";
+      const value = row.querySelector("[data-param-value]")?.value || "";
+      if (!name && !value) return;
+      if (!name) throw new Error("파라미터명을 입력하세요.");
+      if (Object.hasOwn(values, name)) throw new Error("같은 파라미터명이 두 번 입력되었습니다: " + name);
+      values[name] = value;
+    });
+    hidden.value = JSON.stringify(values);
+  };
+
   const jsonFromForm = (form) => {
+    syncStaticParams(form);
     const payload = {};
     const assign = (path, value) => {
       const parts = path.split(".");
@@ -85,6 +101,9 @@
     form.querySelectorAll("[name]:not(:disabled):not([data-ui-only])").forEach((control) => {
       if (control.type === "file") return;
       let value = control.type === "checkbox" ? control.checked : control.value.trim();
+      if (control.dataset.linesField !== undefined) {
+        value = control.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+      }
       if (control.dataset.jsonField !== undefined) {
         try { value = JSON.parse(value || "{}"); }
         catch (_error) { throw new Error("JSON 설정 형식을 확인하세요."); }
@@ -117,6 +136,7 @@
         const control = selectedPanel()?.querySelector('[name="' + name + '"]');
         if (!control || value === null) return;
         if (control.type === "checkbox") control.checked = Boolean(value);
+        else if (control.dataset.linesField !== undefined && Array.isArray(value)) control.value = value.join("\n");
         else control.value = control.dataset.jsonField !== undefined ? JSON.stringify(value) : String(value);
       });
       applyInitial("method_config", initial);
@@ -135,7 +155,16 @@
         panel.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
       });
       const wizardSubmit = form.querySelector("[data-wizard-submit]");
-      if (wizardSubmit) wizardSubmit.disabled = apiActive && apiMode === "CATALOG";
+      const selectedCatalog = form.querySelector("[data-selected-catalog]")?.value;
+      if (wizardSubmit && apiActive && apiMode === "CATALOG") {
+        wizardSubmit.disabled = form.dataset.sourceCreate === undefined || !selectedCatalog;
+      } else if (wizardSubmit && form.dataset.sourceCreate === undefined) {
+        wizardSubmit.disabled = false;
+      } else if (wizardSubmit && selector.value === "WEB_PAGE") {
+        wizardSubmit.disabled = form.dataset.scrapePreviewReady !== "true";
+      } else if (wizardSubmit) {
+        wizardSubmit.disabled = false;
+      }
       const kind = form.querySelector("[data-api-kind]");
       const kindChoice = form.querySelector("[data-api-kind-choice]:checked")?.value || "OPEN_API";
       const feedKind = form.querySelector("[data-feed-kind]");
@@ -154,36 +183,105 @@
           credential.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
         });
       }
+      const pagination = form.querySelector("[data-pagination-mode]");
+      const paginationFields = form.querySelector("[data-pagination-fields]");
+      if (pagination && paginationFields) {
+        const active = apiActive && apiMode === "DIRECT" && kindChoice === "OPEN_API" && pagination.value === "PAGE_NUMBER";
+        paginationFields.hidden = !active;
+        paginationFields.querySelectorAll("input,select,textarea,button").forEach((control) => { control.disabled = !active; });
+      }
+      form.dispatchEvent(new CustomEvent("methodrefresh"));
     };
     selector.addEventListener("change", refresh);
     form.querySelectorAll("[data-api-add-mode], [data-api-kind-choice]").forEach((control) => control.addEventListener("change", refresh));
     form.querySelector("[data-feed-kind]")?.addEventListener("change", refresh);
     form.querySelector("[data-api-auth]")?.addEventListener("change", refresh);
+    form.querySelector("[data-pagination-mode]")?.addEventListener("change", refresh);
     refresh();
   });
 
   document.querySelectorAll("[data-source-wizard]").forEach((form) => {
     let step = 1;
+    const selector = form.querySelector("[data-method-selector]");
+    const scopeControls = [...form.querySelectorAll("[data-binding-scope]")];
+    const orgField = form.querySelector("[data-org-scope-field]");
+    const submit = form.querySelector("[data-wizard-submit]");
+    const previewControls = form.querySelector("[data-scrape-preview-controls]");
+    const previewResult = form.querySelector("[data-scrape-preview-result]");
+    const syncConnection = () => {
+      const scope = form.querySelector("[data-binding-scope]:checked")?.value || "AGENCY_WIDE";
+      const specific = scope === "SPECIFIC_ORG_UNIT";
+      if (orgField) {
+        orgField.hidden = !specific;
+        orgField.querySelectorAll("input,button").forEach((control) => {
+          control.disabled = !specific || (control.matches("[data-lookup-input]") && !form.querySelector('[name="agency_id"]')?.value);
+        });
+        if (!specific) {
+          const orgValue = orgField.querySelector('[name="org_unit_id"]');
+          const orgInput = orgField.querySelector("[data-lookup-input]");
+          if (orgValue) orgValue.value = "";
+          if (orgInput) orgInput.value = "";
+        }
+      }
+      const guidance = form.querySelector("[data-method-guidance]");
+      if (guidance) guidance.textContent = selector.value === "WEB_CRAWL"
+        ? "여러 부서 정보를 탐색하는 크롤링 소스라면 기관 전체 연결을 권장합니다."
+        : selector.value === "WEB_PAGE"
+          ? "특정 부서 전용 페이지라면 특정 부서를 선택할 수 있습니다."
+          : "기관 전체 또는 실제 endpoint가 대표하는 특정 부서에 연결하세요.";
+      if (previewControls) previewControls.hidden = selector.value !== "WEB_PAGE";
+      if (form.dataset.sourceCreate !== undefined && selector.value !== "WEB_PAGE") {
+        const catalogPending = selector.value === "API"
+          && form.querySelector("[data-api-add-mode]:checked")?.value === "CATALOG"
+          && !form.querySelector("[data-selected-catalog]")?.value;
+        submit.disabled = catalogPending;
+      }
+    };
+    const invalidateScrapePreview = () => {
+      if (form.dataset.sourceCreate === undefined || selector.value !== "WEB_PAGE") return;
+      form.dataset.scrapePreviewReady = "";
+      if (previewResult) previewResult.hidden = true;
+      if (submit) submit.disabled = true;
+    };
     const showStep = (nextStep) => {
       step = nextStep;
       form.querySelectorAll("[data-wizard-step]").forEach((section) => { section.hidden = Number(section.dataset.wizardStep) !== step; });
       form.querySelectorAll("[data-wizard-indicator]").forEach((item) => item.classList.toggle("is-active", Number(item.dataset.wizardIndicator) === step));
       form.querySelector("[data-wizard-prev]").hidden = step === 1;
       form.querySelector("[data-wizard-next]").hidden = step === 3;
-      form.querySelector("[data-wizard-submit]").hidden = step !== 3;
+      submit.hidden = step !== 3;
+      syncConnection();
+      if (step === 3 && form.dataset.sourceCreate !== undefined && selector.value === "WEB_PAGE") {
+        submit.disabled = form.dataset.scrapePreviewReady !== "true";
+      }
     };
     const validateStep = () => {
-      if (step === 1) {
+      const active = form.querySelector('[data-wizard-step="' + step + '"]');
+      const kind = active?.dataset.wizardKind;
+      if (kind === "connection") {
         const agencyValue = form.querySelector('[name="agency_id"]');
         const agencyInput = agencyValue?.closest("[data-lookup-combobox]")?.querySelector("[data-lookup-input]");
         agencyInput?.setCustomValidity(agencyValue?.value ? "" : "기관을 목록에서 선택하세요.");
+        const specific = form.querySelector("[data-binding-scope]:checked")?.value === "SPECIFIC_ORG_UNIT";
+        const orgValue = form.querySelector('[name="org_unit_id"]');
+        const orgInput = orgValue?.closest("[data-lookup-combobox]")?.querySelector("[data-lookup-input]");
+        orgInput?.setCustomValidity(!specific || orgValue?.value ? "" : "부서를 목록에서 선택하세요.");
       }
-      if (step === 3 && ["WEB_PAGE", "WEB_CRAWL"].includes(form.querySelector("[data-method-selector]")?.value)) {
-        const panel = form.querySelector('[data-method-panel="' + form.querySelector("[data-method-selector]").value + '"]');
+      if (kind === "config" && ["WEB_PAGE", "WEB_CRAWL"].includes(selector.value)) {
+        const panel = form.querySelector('[data-method-panel="' + selector.value + '"]');
         const checks = [...panel.querySelectorAll('[name^="method_config.extract_"]')];
         checks[0]?.setCustomValidity(checks.some((control) => control.checked) ? "" : "가져올 정보를 하나 이상 선택하세요.");
+        const urls = panel.querySelector("[data-scrape-urls]");
+        if (urls) {
+          const count = urls.value.split(/\r?\n/).filter((value) => value.trim()).length;
+          urls.setCustomValidity(count === 0 ? "대상 URL을 입력하세요." : count > 200 ? "한 번에 최대 200개까지 입력할 수 있습니다. 더 큰 목록은 엑셀 업로드를 사용하세요." : "");
+        }
       }
-      const active = form.querySelector('[data-wizard-step="' + step + '"]');
+      if (kind === "config" && selector.value === "API" && form.querySelector("[data-api-add-mode]:checked")?.value === "CATALOG") {
+        const selected = form.querySelector("[data-selected-catalog]");
+        const catalogChoice = form.querySelector('[data-api-add-mode][value="CATALOG"]');
+        catalogChoice?.setCustomValidity(selected?.value ? "" : "기본 공개 소스를 선택하세요.");
+      }
       const invalid = active?.querySelector(":invalid");
       if (invalid) { invalid.reportValidity(); return false; }
       return true;
@@ -191,7 +289,48 @@
     form.querySelector("[data-wizard-next]").addEventListener("click", () => { if (validateStep()) showStep(step + 1); });
     form.querySelector("[data-wizard-prev]").addEventListener("click", () => showStep(step - 1));
     form.addEventListener("submit", (event) => { if (!validateStep()) event.preventDefault(); }, {capture: true});
+    scopeControls.forEach((control) => control.addEventListener("change", () => { syncConnection(); invalidateScrapePreview(); }));
+    form.addEventListener("methodrefresh", () => { syncConnection(); invalidateScrapePreview(); });
+    form.addEventListener("input", (event) => {
+      if (!event.target.closest("[data-scrape-preview-result]")) invalidateScrapePreview();
+    });
+    form.addEventListener("change", (event) => {
+      if (event.target.matches("[data-lookup-value]")) invalidateScrapePreview();
+    });
     showStep(1);
+  });
+
+  const addParameterRow = (container, name = "", value = "") => {
+    const row = document.createElement("div");
+    row.className = "parameter-row";
+    const nameInput = document.createElement("input");
+    nameInput.className = "control"; nameInput.placeholder = "파라미터명";
+    nameInput.dataset.paramName = ""; nameInput.dataset.uiOnly = ""; nameInput.value = name;
+    const valueInput = document.createElement("input");
+    valueInput.className = "control"; valueInput.placeholder = "값";
+    valueInput.dataset.paramValue = ""; valueInput.dataset.uiOnly = ""; valueInput.value = value;
+    const remove = document.createElement("button");
+    remove.className = "button button--ghost"; remove.type = "button";
+    remove.dataset.paramRemove = ""; remove.textContent = "삭제";
+    remove.addEventListener("click", () => row.remove());
+    row.append(nameInput, valueInput, remove);
+    container.append(row);
+  };
+  document.querySelectorAll("[data-param-rows]").forEach((container) => {
+    container.querySelectorAll("[data-param-remove]").forEach((button) => button.addEventListener("click", () => button.closest(".parameter-row")?.remove()));
+    if (!container.children.length) addParameterRow(container);
+    container.closest(".parameter-editor")?.querySelector("[data-param-add]")?.addEventListener("click", () => addParameterRow(container));
+  });
+
+  document.querySelectorAll("[data-catalog-select]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const form = button.form;
+      const selected = form.querySelector("[data-selected-catalog]");
+      selected.value = button.dataset.catalogSelect;
+      form.querySelectorAll("[data-catalog-select]").forEach((candidate) => candidate.classList.toggle("is-selected", candidate === button));
+      form.querySelector('[data-api-add-mode][value="CATALOG"]')?.setCustomValidity("");
+      form.querySelector("[data-wizard-submit]").disabled = false;
+    });
   });
 
   document.querySelectorAll("[data-config-preview]").forEach((button) => {
@@ -269,12 +408,114 @@
     });
   });
 
+  const scrapeBatchPayload = (form) => {
+    const values = jsonFromForm(form);
+    return {
+      urls: values.urls,
+      agency_id: values.agency_id,
+      org_unit_id: values.org_unit_id,
+      binding_scope: form.querySelector("[data-binding-scope]:checked")?.value || "AGENCY_WIDE",
+      description: values.description,
+      method_config: values.method_config || {},
+      scheduled_refresh_enabled: values.scheduled_refresh_enabled,
+    };
+  };
+  const scrapeLabels = {
+    NEW_SOURCE: "신규 소스", EXISTING_SOURCE: "기존 소스",
+    DUPLICATE_INPUT: "입력 중복", INVALID_URL: "오류",
+    NEW_BINDING: "새 연결", EXACT_BINDING_DUPLICATE: "연결 중복", CONFLICT: "충돌",
+  };
+  document.querySelectorAll("[data-scrape-preview]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = button.form;
+      const output = form.querySelector("[data-scrape-preview-result]");
+      const errorBox = form.querySelector("[data-form-error]");
+      button.disabled = true;
+      try {
+        const payload = scrapeBatchPayload(form);
+        if (!payload.agency_id) throw new Error("기관을 검색 결과에서 선택하세요.");
+        if (payload.binding_scope === "SPECIFIC_ORG_UNIT" && !payload.org_unit_id) throw new Error("특정 부서를 선택하세요.");
+        const response = await fetch("/api/source-bindings/scrape-batch/preview", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "등록 대상을 미리 보지 못했습니다.");
+        const summary = result.summary;
+        form.querySelector("[data-scrape-summary]").innerHTML = [
+          ["입력 URL", summary.input_urls], ["신규 소스", summary.new_sources],
+          ["기존 소스", summary.existing_sources], ["중복 입력", summary.duplicate_input],
+          ["오류", summary.invalid_urls + summary.conflicts], ["새 연결", summary.new_bindings],
+        ].map(([label, value]) => "<span><strong>" + value + "</strong><small>" + label + "</small></span>").join("");
+        const rows = form.querySelector("[data-scrape-preview-rows]");
+        rows.replaceChildren();
+        result.rows.forEach((item) => {
+          const tr = document.createElement("tr");
+          [item.line_number, item.raw_url, scrapeLabels[item.classification] || item.classification,
+            scrapeLabels[item.binding_classification] || item.binding_classification || "-", item.message]
+            .forEach((value) => { const td = document.createElement("td"); td.textContent = value; tr.append(td); });
+          rows.append(tr);
+        });
+        output.hidden = false;
+        form.dataset.scrapePreviewReady = "true";
+        form.querySelector("[data-wizard-submit]").disabled = summary.importable === 0;
+        errorBox.hidden = true;
+      } catch (error) {
+        form.dataset.scrapePreviewReady = "";
+        form.querySelector("[data-wizard-submit]").disabled = true;
+        errorBox.textContent = error.message; errorBox.hidden = false;
+      } finally { button.disabled = false; }
+    });
+  });
+
   document.querySelectorAll("[data-api-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       if (event.defaultPrevented) return;
       event.preventDefault();
       const errorBox = form.querySelector("[data-form-error]");
       try {
+        const method = form.querySelector("[data-method-selector]")?.value;
+        if (form.dataset.sourceCreate !== undefined && method === "WEB_PAGE") {
+          if (form.dataset.scrapePreviewReady !== "true") throw new Error("등록 전에 서버 미리보기를 확인하세요.");
+          const response = await fetch("/api/source-bindings/scrape-batch/confirm", {
+            method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+            body: JSON.stringify(scrapeBatchPayload(form)),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "URL 일괄 등록을 완료하지 못했습니다.");
+          const labels = [
+            ["입력", result.summary.input], ["신규 Source", result.summary.created_sources],
+            ["기존 Source 재사용", result.summary.existing_sources_reused],
+            ["새 연결", result.summary.created_bindings], ["중복 건너뜀", result.summary.duplicates_skipped],
+            ["오류", result.summary.errors],
+          ];
+          const summary = form.querySelector("[data-scrape-result-summary]");
+          summary.replaceChildren();
+          labels.forEach(([label, value]) => {
+            const dt = document.createElement("dt"); dt.textContent = label;
+            const dd = document.createElement("dd"); dd.textContent = value + "개";
+            summary.append(dt, dd);
+          });
+          form.dataset.createdSourceIds = JSON.stringify(result.source_ids || []);
+          form.querySelector("[data-connection-fields]").hidden = true;
+          form.querySelector("[data-scrape-result]").hidden = false;
+          form.querySelector(".modal-actions--sticky").hidden = true;
+          form.querySelector("[data-form-error]").hidden = true;
+          return;
+        }
+        if (form.dataset.sourceCreate !== undefined && method === "API" && form.querySelector("[data-api-add-mode]:checked")?.value === "CATALOG") {
+          const catalogId = form.querySelector("[data-selected-catalog]")?.value;
+          const values = jsonFromForm(form);
+          if (!catalogId) throw new Error("기본 공개 소스를 선택하세요.");
+          const response = await fetch("/api/public-source-catalog/" + encodeURIComponent(catalogId) + "/activate", {
+            method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+            body: JSON.stringify({agency_id: values.agency_id, org_unit_id: values.org_unit_id}),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "기본 공개 소스를 등록하지 못했습니다.");
+          window.location.reload();
+          return;
+        }
         const response = await fetch(form.action, {
           method: form.dataset.method || "POST",
           headers: csrfHeaders({"Content-Type": "application/json"}),
@@ -341,6 +582,26 @@
     pollCollectionJob(result.job, output, () => window.location.reload());
     return result.job;
   };
+
+  document.querySelectorAll("[data-scrape-list]").forEach((button) => {
+    button.addEventListener("click", () => window.location.reload());
+  });
+  document.querySelectorAll("[data-scrape-collect]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const form = button.form;
+      const output = form.querySelector("[data-scrape-job-status]");
+      let sourceIds = [];
+      try { sourceIds = JSON.parse(form.dataset.createdSourceIds || "[]"); }
+      catch (_error) { /* handled by the empty check */ }
+      if (!sourceIds.length) { output.textContent = "수집할 신규 연결이 없습니다."; output.hidden = false; return; }
+      button.disabled = true;
+      try {
+        await createCollectionJob({trigger_type: "MANUAL_SELECTION", source_ids: sourceIds}, output);
+      } catch (error) {
+        output.textContent = error.message; output.hidden = false; button.disabled = false;
+      }
+    });
+  });
 
   document.querySelectorAll("[data-collect-source]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -607,7 +868,7 @@
       const orgInput = orgRoot.querySelector("[data-lookup-input]");
       const orgValue = orgRoot.querySelector("[data-lookup-value]");
       if (orgValue.value && orgValue.dataset.agencyId && orgValue.dataset.agencyId !== agencyValue.value) clearLookup(orgRoot, false);
-      orgInput.disabled = !agencyValue.value;
+      orgInput.disabled = !agencyValue.value || Boolean(orgRoot.closest("[data-org-scope-field]")?.hidden);
       if (!agencyValue.value && orgValue.value) clearLookup(orgRoot, false);
     };
     agencyValue.addEventListener("change", () => {

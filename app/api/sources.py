@@ -7,13 +7,14 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session, require_operator, require_viewer
-from app.api.schemas import ExclusionRequest, SourceBindingCreate, SourceBindingUpdate
+from app.api.schemas import ExclusionRequest, ScrapeBatchRequest, SourceBindingCreate, SourceBindingUpdate
 from app.models import ApiAuthMode, CollectionMethod, User, UserRole
 from app.services.normalization import SourceURLValidationError
 from app.services.source_service import SourceBindingConflict, SourceService, SourceServiceError
 from app.services.source_method_service import MethodConfigError
 from app.services.source_import_service import MAX_IMPORT_BYTES, SourceImportError, SourceImportService
 from app.services.source_query_service import FILTER_METHODS, SourceFilterError, SourceFilterSpec, SourceQueryService
+from app.services.scrape_batch_service import ScrapeBatchError, ScrapeBatchService
 
 
 router = APIRouter(prefix="/api/source-bindings", tags=["sources"], dependencies=[Depends(require_viewer)])
@@ -68,6 +69,25 @@ def create_binding(
         item, created = SourceService(session).register_binding(**payload.model_dump())
         return {"item": item, "created": created}
     except (SourceServiceError, SourceURLValidationError, MethodConfigError, ValueError) as error:
+        raise _failure(error) from error
+
+
+@router.post("/scrape-batch/preview", dependencies=[Depends(require_operator)])
+def preview_scrape_batch(payload: ScrapeBatchRequest, session: Session = Depends(get_session)) -> dict:
+    try:
+        return ScrapeBatchService(session).preview(
+            urls=payload.urls, agency_id=payload.agency_id,
+            org_unit_id=payload.org_unit_id, binding_scope=payload.binding_scope,
+        )
+    except (ScrapeBatchError, SourceServiceError, SourceURLValidationError, ValueError) as error:
+        raise _failure(error) from error
+
+
+@router.post("/scrape-batch/confirm", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_operator)])
+def confirm_scrape_batch(payload: ScrapeBatchRequest, session: Session = Depends(get_session)) -> dict:
+    try:
+        return ScrapeBatchService(session).confirm(**payload.model_dump())
+    except (ScrapeBatchError, SourceServiceError, SourceURLValidationError, MethodConfigError, ValueError) as error:
         raise _failure(error) from error
 
 

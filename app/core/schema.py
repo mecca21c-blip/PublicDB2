@@ -1,3 +1,3 @@
 """Current database schema contract."""
 
-MIGRATION_HEAD = 'a0c406c40001'
+MIGRATION_HEAD = 'b1d507c06c4b'

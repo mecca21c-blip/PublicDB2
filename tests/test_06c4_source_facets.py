@@ -334,10 +334,10 @@ def test_source_page_filter_state_ui_actions_and_server_preview(facet_db):
     assert "현재 페이지 수집 가능한 소스 전체 선택" in page.text
     assert "필터 결과 전체 지금 수집" in page.text
     assert "data-job-region-run" not in page.text
-    assert "정기 전체 수집 대상에 포함" in page.text
-    assert "개별 웹페이지" in page.text
-    assert "웹사이트 탐색" in page.text
-    assert "공개 API · RSS" in page.text
+    assert "자동 전체 수집" in page.text
+    assert "개별 URL · 스크래핑" in page.text
+    assert "Index URL · 크롤링" in page.text
+    assert "공개 API / RSS" in page.text
     preview = client.get("/api/source-index/preview", params=params)
     assert preview.status_code == 200
     assert preview.json()["eligible_total"] == 1
@@ -402,7 +402,7 @@ def test_06c4_migration_clean_prior_downgrade_reupgrade_and_metadata(tmp_path, m
     command.upgrade(config, "head")
     clean_engine = create_db_engine(clean_url)
     with clean_engine.connect() as connection:
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "a0c406c40001"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "b1d507c06c4b"
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
     clean_engine.dispose()
 

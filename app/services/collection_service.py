@@ -26,6 +26,7 @@ from app.models.common import utc_now
 from app.services.api_credential_store import ApiCredentialStore, CredentialStoreError
 from app.services.collection_recovery_service import reconcile_stale_collections, source_claim_key
 from app.services.contact_extraction_service import ContactExtractionService
+from app.services.crawl_scope import crawl_path_allowed
 from app.services.directory_extraction_service import DirectoryExtractionService
 from app.services.raw_artifact_store import RawArtifactStore, StoredArtifact
 from app.services.operation_claim_service import OperationClaimService
@@ -249,8 +250,17 @@ class CollectionService:
                 self.sleeper(config.request_delay_ms / 1000)
             attempts += 1
             try:
-                fetched = self.fetcher.fetch(target, target_validator=lambda value: self._validate_scope(source.url, value, config.scope.value, config.allowed_path))
-                self._validate_scope(source.url, fetched.final_url, config.scope.value, config.allowed_path)
+                fetched = self.fetcher.fetch(
+                    target,
+                    target_validator=lambda value: self._validate_scope(
+                        source.url, value, config.scope.value,
+                        config.allowed_paths or [config.allowed_path], config.excluded_paths or [],
+                    ),
+                )
+                self._validate_scope(
+                    source.url, fetched.final_url, config.scope.value,
+                    config.allowed_paths or [config.allowed_path], config.excluded_paths or [],
+                )
             except HTTPFetchError:
                 failures += 1
                 continue
@@ -278,7 +288,10 @@ class CollectionService:
                         if canonical in seen:
                             continue
                         try:
-                            self._validate_scope(source.url, canonical, config.scope.value, config.allowed_path)
+                            self._validate_scope(
+                                source.url, canonical, config.scope.value,
+                                config.allowed_paths or [config.allowed_path], config.excluded_paths or [],
+                            )
                         except UnsafeRequestTarget:
                             continue
                         seen.add(canonical)
@@ -459,16 +472,17 @@ class CollectionService:
         return contacts, directories, successes > 0, failures, directory_runs
 
     @staticmethod
-    def _validate_scope(seed_url: str, target_url: str, scope: str, allowed_path: str) -> None:
+    def _validate_scope(
+        seed_url: str, target_url: str, scope: str,
+        allowed_paths: list[str] | tuple[str, ...], excluded_paths: list[str] | tuple[str, ...] = (),
+    ) -> None:
         seed = urlsplit(seed_url)
         target = urlsplit(target_url)
         if target.scheme not in {"http", "https"} or target.hostname != seed.hostname or target.port != seed.port:
             raise UnsafeRequestTarget("크롤링 범위를 벗어난 호스트입니다.", final_url=target_url)
-        if scope == "PATH_PREFIX":
-            prefix = allowed_path.rstrip("/") or "/"
-            path = target.path or "/"
-            if path != prefix and not path.startswith(prefix.rstrip("/") + "/"):
-                raise UnsafeRequestTarget("허용 경로를 벗어난 URL입니다.", final_url=target_url)
+        effective_allowed_paths = allowed_paths if scope == "PATH_PREFIX" else ["/"]
+        if not crawl_path_allowed(target.path or "/", effective_allowed_paths, excluded_paths):
+            raise UnsafeRequestTarget("허용 경로를 벗어나거나 제외 경로에 해당하는 URL입니다.", final_url=target_url)
 
     def _robots_allowed(self, target: str, cache: dict[str, RobotFileParser | None]) -> bool:
         parts = urlsplit(target)
@@ -480,7 +494,7 @@ class CollectionService:
                 fetched = self.fetcher.fetch(
                     parser.url,
                     target_validator=lambda value: self._validate_scope(
-                        origin + "/", value, "SAME_DOMAIN", "/"
+                        origin + "/", value, "SAME_DOMAIN", ["/"], []
                     ),
                 )
                 parser.parse(fetched.content.decode(fetched.declared_charset or "utf-8", errors="replace").splitlines())

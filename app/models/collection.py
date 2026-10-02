@@ -31,6 +31,8 @@ class SourceCrawlConfig(UUIDPrimaryKeyMixin, Base):
     source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), unique=True, index=True)
     scope: Mapped[CrawlScope] = mapped_column(enum_type(CrawlScope), default=CrawlScope.PATH_PREFIX, nullable=False)
     allowed_path: Mapped[str] = mapped_column(String(2048), default="/", nullable=False)
+    allowed_paths: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    excluded_paths: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     max_depth: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     max_pages: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
     request_delay_ms: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)

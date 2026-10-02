@@ -206,6 +206,22 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   scheduler는 방법을 재구현하지 않고 실제 실행을 `CollectionService.collect(source_id)`에
   위임한다.
 
+### 06C-4B Source creation contract
+
+- Create의 사용자 흐름은 METHOD → CONFIG → CONNECTION이다. 수집 방식을 먼저 정하고
+  방식별 설정을 마친 뒤 Agency와 기관 전체/특정 OrgUnit 연결을 선택한다.
+- WEB_PAGE 대화형 등록은 최대 200개의 줄 단위 URL을 받지만 URL 목록을 Source 한 행에
+  저장하지 않는다. 기존 URL 정규화와 `Source.normalized_url` unique identity를 사용해
+  각 canonical URL을 별도 Source, typed config, run/evidence/provenance로 유지한다.
+- 한 WEB_PAGE batch는 extractor 선택, 자동 전체 수집 여부, Agency, 선택 OrgUnit과 설명을
+  공유한다. 더 큰 목록 또는 혼합 연결 context는 10,000행 Excel import가 소유한다.
+- WEB_CRAWL은 Index URL 하나이며 include path prefix 목록과 exclude-wins 목록, bounded
+  depth/pages/delay를 소유한다. 기존 단일 `allowed_path`는 호환 projection으로 유지한다.
+- RSS/Atom은 feed URL 하나, OpenAPI는 endpoint 하나다. OpenAPI parameter 반복 행은 기존
+  `static_params` dict로, 읽기 쉬운 mapping 표는 기존 `field_mapping` dict로 직렬화한다.
+- 등록과 preview는 원격 HTTP를 실행하지 않는다. 등록 결과에서 명시적으로 지금 수집을
+  선택할 때만 기존 background CollectionJob을 생성한다.
+
 ## 06C-3 Scoped Refresh and Scheduler Contract
 
 - CollectionJob은 사용자가 왜(수동/정기), 무엇을(소스·선택·부서·기관·지역·전체),

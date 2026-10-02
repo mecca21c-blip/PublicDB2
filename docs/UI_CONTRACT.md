@@ -34,10 +34,14 @@ Settings 메뉴는 ADMIN에게만 표시한다.
 오류, 제외를 사용한다. 선택 상세에서 설명, 최근 확인·수집 결과, 발견 수, 오류
 사유를 확인한다. Excel 진입 화면은 파일 선택부터 등록까지의 단계와 정상·중복·
 충돌·오류 미리보기를 제공하며 preview/confirm과 실제 등록에 연결된다.
-목록과 상세는 수집 방식을 텍스트로 표시한다. 기존 create/edit modal 상단에서
-개별 URL · 스크래핑, Index URL · 크롤링, 공개 API / RSS 중 하나를 선택하며
-선택 방식의 필드만 표시한다. built-in catalog와 직접 API/RSS 추가도 이 modal 안에
-있고 별도 sidebar route는 만들지 않는다.
+목록과 상세는 수집 방식을 텍스트로 표시한다. Source create의 V1 순서는
+수집 방식 → 방식별 설정 → 연결 대상이며, 개별 URL · 스크래핑, Index URL · 크롤링,
+공개 API / RSS 중 하나를 먼저 선택한다. 스크래핑 create는 줄마다 한 URL을 받아
+각 canonical URL을 별도 Source로 등록하고, 한 batch에는 기관 전체 또는 특정 부서
+하나의 연결 context를 공통 적용한다. 크롤링은 Index URL 하나, RSS/Atom은 feed URL
+하나, OpenAPI는 endpoint 하나가 Source 하나다. 큰 목록이나 서로 다른 연결 context가
+섞인 작업은 기존 Excel import가 소유한다. built-in catalog와 직접 API/RSS 추가도
+같은 modal 안에 있고 별도 sidebar route는 만들지 않는다.
 
 ### /runs 수집 이력
 

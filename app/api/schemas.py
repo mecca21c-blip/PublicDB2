@@ -58,6 +58,16 @@ class SourceBindingUpdate(BaseModel):
     scheduled_refresh_enabled: bool | None = None
 
 
+class ScrapeBatchRequest(BaseModel):
+    urls: str = Field(min_length=1, max_length=500_000)
+    agency_id: uuid.UUID
+    org_unit_id: uuid.UUID | None = None
+    binding_scope: str = "AGENCY_WIDE"
+    description: str | None = None
+    method_config: dict = Field(default_factory=dict)
+    scheduled_refresh_enabled: bool = True
+
+
 class CredentialCreate(BaseModel):
     secret_value: str = Field(min_length=1, max_length=10_000)
     credential_ref: str | None = Field(default=None, max_length=200)

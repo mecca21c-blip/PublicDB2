@@ -36,7 +36,7 @@ class SourceService:
         self.session = session
         self.repository = SourceRepository(session)
 
-    def _validate_scope(self, agency_id: uuid.UUID, org_unit_id: uuid.UUID | None) -> tuple[Agency, OrgUnit | None]:
+    def validate_scope(self, agency_id: uuid.UUID, org_unit_id: uuid.UUID | None) -> tuple[Agency, OrgUnit | None]:
         agency = self.session.get(Agency, agency_id)
         if agency is None or not agency.active:
             raise SourceServiceError("기관을 찾을 수 없습니다.")
@@ -58,7 +58,7 @@ class SourceService:
         commit: bool = True,
     ) -> tuple[dict, bool]:
         try:
-            agency, unit = self._validate_scope(agency_id, org_unit_id)
+            agency, unit = self.validate_scope(agency_id, org_unit_id)
             normalized = normalize_source_url(url)
             source = self.repository.get_source_by_normalized_url(normalized)
             if source is None:
@@ -120,7 +120,7 @@ class SourceService:
                 raise SourceServiceError("수집 소스 연결을 찾을 수 없습니다.")
             target_agency_id = agency_id or binding.agency_id
             target_org_unit_id = binding.org_unit_id if org_unit_id is ... else org_unit_id
-            agency, unit = self._validate_scope(target_agency_id, target_org_unit_id)
+            agency, unit = self.validate_scope(target_agency_id, target_org_unit_id)
             source = binding.source
             if url is not None:
                 normalized = normalize_source_url(url)
@@ -332,6 +332,8 @@ class SourceService:
             config = source.crawl_config
             return {
                 "scope": config.scope.value, "allowed_path": config.allowed_path,
+                "allowed_paths": config.allowed_paths or [config.allowed_path],
+                "excluded_paths": config.excluded_paths or [],
                 "max_depth": config.max_depth, "max_pages": config.max_pages,
                 "request_delay_ms": config.request_delay_ms,
                 "extract_contacts": config.extract_contacts,

@@ -49,6 +49,8 @@ def normalize_source_url(url: str) -> str:
     raw_url = url.strip()
     if not raw_url:
         raise SourceURLValidationError("source URL is required")
+    if any(character in raw_url for character in ("\r", "\n", "\t")):
+        raise SourceURLValidationError("source URL must contain exactly one URL")
     try:
         parts = urlsplit(raw_url)
     except ValueError as error:
