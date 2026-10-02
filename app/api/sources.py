@@ -7,7 +7,10 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session, require_operator, require_viewer
-from app.api.schemas import ExclusionRequest, ScrapeBatchRequest, SourceBindingCreate, SourceBindingUpdate
+from app.api.schemas import (
+    ExclusionRequest, InteractiveSourceBatchRequest, ScrapeBatchRequest,
+    SourceBindingCreate, SourceBindingUpdate,
+)
 from app.models import ApiAuthMode, CollectionMethod, User, UserRole
 from app.services.normalization import SourceURLValidationError
 from app.services.source_service import SourceBindingConflict, SourceService, SourceServiceError
@@ -15,6 +18,7 @@ from app.services.source_method_service import MethodConfigError
 from app.services.source_import_service import MAX_IMPORT_BYTES, SourceImportError, SourceImportService
 from app.services.source_query_service import FILTER_METHODS, SourceFilterError, SourceFilterSpec, SourceQueryService
 from app.services.scrape_batch_service import ScrapeBatchError, ScrapeBatchService
+from app.services.source_interactive_batch_service import InteractiveBatchError, SourceInteractiveBatchService
 
 
 router = APIRouter(prefix="/api/source-bindings", tags=["sources"], dependencies=[Depends(require_viewer)])
@@ -88,6 +92,32 @@ def confirm_scrape_batch(payload: ScrapeBatchRequest, session: Session = Depends
     try:
         return ScrapeBatchService(session).confirm(**payload.model_dump())
     except (ScrapeBatchError, SourceServiceError, SourceURLValidationError, MethodConfigError, ValueError) as error:
+        raise _failure(error) from error
+
+
+@router.post("/interactive/preview")
+def preview_interactive_batch(
+    payload: InteractiveSourceBatchRequest,
+    user: User = Depends(require_operator),
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        _require_secret_config_admin(payload.collection_method, payload.method_config, user)
+        return SourceInteractiveBatchService(session).preview(payload)
+    except (InteractiveBatchError, SourceServiceError, SourceURLValidationError, MethodConfigError, ValueError) as error:
+        raise _failure(error) from error
+
+
+@router.post("/interactive/register", status_code=status.HTTP_201_CREATED)
+def register_interactive_batch(
+    payload: InteractiveSourceBatchRequest,
+    user: User = Depends(require_operator),
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        _require_secret_config_admin(payload.collection_method, payload.method_config, user)
+        return SourceInteractiveBatchService(session).register(payload)
+    except (InteractiveBatchError, SourceServiceError, SourceURLValidationError, MethodConfigError, ValueError) as error:
         raise _failure(error) from error
 
 

@@ -75,6 +75,38 @@ class SourceAgencyDiscoveryRequest(BaseModel):
     auth_mode: str | None = Field(default=None, max_length=30)
 
 
+class InteractiveAgencyIntent(BaseModel):
+    official_name: str = Field(min_length=1, max_length=300)
+    agency_type: AgencyType
+    region_code: str | None = Field(default=None, max_length=40)
+    external_identifier: str | None = Field(default=None, max_length=120)
+    address: str | None = Field(default=None, max_length=500)
+
+
+class InteractiveOrgUnitIntent(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    unit_type: OrgUnitType = OrgUnitType.DEPARTMENT
+
+
+class InteractiveSourceRow(BaseModel):
+    row_id: str = Field(min_length=1, max_length=80)
+    url: str = Field(min_length=1, max_length=2048)
+    agency_name: str = Field(default="", max_length=300)
+    agency_id: uuid.UUID | None = None
+    agency_intent: InteractiveAgencyIntent | None = None
+    org_unit_name: str = Field(default="", max_length=300)
+    org_unit_id: uuid.UUID | None = None
+    org_unit_intent: InteractiveOrgUnitIntent | None = None
+
+
+class InteractiveSourceBatchRequest(BaseModel):
+    collection_method: CollectionMethod
+    rows: list[InteractiveSourceRow] = Field(min_length=1, max_length=1000)
+    description: str | None = Field(default=None, max_length=2000)
+    method_config: dict = Field(default_factory=dict)
+    scheduled_refresh_enabled: bool = True
+
+
 class CredentialCreate(BaseModel):
     secret_value: str = Field(min_length=1, max_length=10_000)
     credential_ref: str | None = Field(default=None, max_length=200)

@@ -156,8 +156,10 @@
       });
       const wizardSubmit = form.querySelector("[data-wizard-submit]");
       const selectedCatalog = form.querySelector("[data-selected-catalog]")?.value;
-      if (wizardSubmit && apiActive && apiMode === "CATALOG") {
-        wizardSubmit.disabled = form.dataset.sourceCreate === undefined || !selectedCatalog;
+      if (wizardSubmit && form.dataset.sourceCreate !== undefined) {
+        wizardSubmit.disabled = apiActive && apiMode === "CATALOG" && !selectedCatalog;
+      } else if (wizardSubmit && apiActive && apiMode === "CATALOG") {
+        wizardSubmit.disabled = true;
       } else if (wizardSubmit && form.dataset.sourceCreate === undefined) {
         wizardSubmit.disabled = false;
       } else if (wizardSubmit && selector.value === "WEB_PAGE") {
@@ -201,6 +203,7 @@
   });
 
   document.querySelectorAll("[data-source-wizard]").forEach((form) => {
+    if (form.dataset.sourceCreate !== undefined) return;
     let step = 1;
     const selector = form.querySelector("[data-method-selector]");
     const scopeControls = [...form.querySelectorAll("[data-binding-scope]")];
@@ -304,6 +307,450 @@
     showStep(1);
   });
 
+  document.querySelectorAll("[data-source-create]").forEach((form) => {
+    const selector = form.querySelector("[data-method-selector]");
+    const rowsRoot = form.querySelector("[data-source-grid-rows]");
+    const rowTemplate = form.querySelector("[data-source-row-template]");
+    const addButton = form.querySelector("[data-row-add]");
+    const progress = form.querySelector("[data-row-progress]");
+    const errorBox = form.querySelector("[data-form-error]");
+    const resolution = form.querySelector("[data-row-resolution]");
+    const submit = form.querySelector("[data-wizard-submit]");
+    const queue = [];
+    let activeDiscoveries = 0;
+    let rowSequence = 0;
+    let step = 1;
+    let closed = false;
+    let lastPreview = null;
+
+    const allRows = () => [...rowsRoot.querySelectorAll("[data-source-row]")];
+    const stateOf = (row) => row._intakeState;
+    const statusLabels = {
+      WAITING: ["○", "입력 대기", "waiting"], QUEUED: ["◷", "확인 대기", "waiting"],
+      DISCOVERING: ["◌", "확인 중", "running"], RESOLVED: ["✓", "연결 확인됨", "success"],
+      PLANNED_NEW: ["+", "신규 등록 예정", "planned"], NEEDS_REVIEW: ["!", "확인 필요", "warning"],
+      DUPLICATE: ["=", "중복 입력", "warning"], ERROR: ["×", "자동 확인 실패", "error"],
+    };
+    const setStatus = (row, code, detail = "") => {
+      const output = row.querySelector("[data-row-status]");
+      const [icon, label, tone] = statusLabels[code] || statusLabels.NEEDS_REVIEW;
+      output.className = "row-status row-status--" + tone;
+      output.replaceChildren();
+      const mark = document.createElement("span"); mark.setAttribute("aria-hidden", "true"); mark.textContent = icon;
+      output.append(mark, document.createTextNode(" " + label));
+      output.title = detail || label;
+      stateOf(row).status = code;
+    };
+    const updateProgress = () => {
+      const rows = allRows().filter((row) => stateOf(row).url.trim());
+      const done = rows.filter((row) => !["QUEUED", "DISCOVERING"].includes(stateOf(row).status)).length;
+      const pending = rows.length - done;
+      progress.textContent = pending ? "기관/부서 확인 중 " + done + " / " + rows.length : rows.length ? "확인 완료 " + done + " / " + rows.length : "입력 대기";
+    };
+    const normalizedClientUrl = (value) => {
+      try {
+        const parsed = new URL(value.trim());
+        if (!["http:", "https:"].includes(parsed.protocol)) return null;
+        parsed.hash = "";
+        return parsed.href;
+      } catch (_error) { return null; }
+    };
+    const updateDuplicates = () => {
+      const seen = new Map();
+      allRows().forEach((row) => {
+        const state = stateOf(row);
+        const normalized = normalizedClientUrl(state.url);
+        if (!normalized) return;
+        if (seen.has(normalized)) {
+          state.duplicateOf = stateOf(seen.get(normalized)).id;
+          setStatus(row, "DUPLICATE", "같은 URL이 위 행에 이미 있습니다.");
+        } else {
+          state.duplicateOf = null;
+          seen.set(normalized, row);
+        }
+      });
+      updateProgress();
+    };
+    const clearIdentity = (row) => {
+      const state = stateOf(row);
+      state.agencyName = ""; state.agencyId = null; state.agencyIntent = null;
+      state.orgName = ""; state.orgId = null; state.orgIntent = null;
+      row.querySelector("[data-row-agency]").value = "";
+      row.querySelector("[data-row-agency-id]").value = "";
+      row.querySelector("[data-row-org]").value = "";
+      row.querySelector("[data-row-org-id]").value = "";
+    };
+    const discoveryContext = () => ({
+      collection_method: selector.value,
+      api_kind: form.querySelector("[data-api-kind]")?.value || null,
+      auth_mode: form.querySelector("[data-api-auth]")?.value || null,
+    });
+    const runDiscoveryQueue = () => {
+      while (!closed && activeDiscoveries < 2 && queue.length) {
+        const job = queue.shift();
+        const state = stateOf(job.row);
+        if (job.generation !== state.generation || state.duplicateOf) continue;
+        activeDiscoveries += 1;
+        setStatus(job.row, "DISCOVERING"); updateProgress();
+        fetch("/api/source-agency-discovery", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          signal: job.controller.signal,
+          body: JSON.stringify({...discoveryContext(), representative_url: job.url}),
+        }).then(async (response) => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.detail || "기관을 자동 확인하지 못했습니다.");
+          if (closed || job.generation !== state.generation || job.identityGeneration !== state.identityGeneration) return;
+          state.discovery = payload;
+          const agencyInput = job.row.querySelector("[data-row-agency]");
+          const orgInput = job.row.querySelector("[data-row-org]");
+          if (payload.existing_agency) {
+            state.agencyName = payload.existing_agency.name;
+            state.agencyId = payload.existing_agency.id;
+            agencyInput.value = state.agencyName;
+            job.row.querySelector("[data-row-agency-id]").value = state.agencyId;
+          } else if (payload.candidate_name) {
+            state.agencyName = payload.candidate_name;
+            agencyInput.value = state.agencyName;
+          }
+          if (payload.existing_org_unit) {
+            state.orgName = payload.existing_org_unit.name;
+            state.orgId = payload.existing_org_unit.id;
+            orgInput.value = state.orgName;
+            job.row.querySelector("[data-row-org-id]").value = state.orgId;
+          } else if (payload.org_unit_candidate) {
+            state.orgName = payload.org_unit_candidate;
+            orgInput.value = state.orgName;
+          }
+          const exact = Boolean(state.agencyId) && (!state.orgName || Boolean(state.orgId));
+          setStatus(job.row, exact ? "RESOLVED" : "NEEDS_REVIEW", payload.message || "자동 확인 결과를 검토하세요.");
+        }).catch((error) => {
+          if (error.name === "AbortError" || closed || job.generation !== state.generation) return;
+          setStatus(job.row, "ERROR", error.message);
+        }).finally(() => {
+          activeDiscoveries -= 1;
+          state.controller = null;
+          updateProgress();
+          runDiscoveryQueue();
+        });
+      }
+    };
+    const enqueueDiscovery = (row) => {
+      const state = stateOf(row);
+      state.controller?.abort();
+      state.generation += 1;
+      const url = normalizedClientUrl(state.url);
+      if (!url) {
+        if (state.url.trim()) setStatus(row, "ERROR", "http 또는 https URL을 확인하세요.");
+        else setStatus(row, "WAITING");
+        updateProgress(); return;
+      }
+      updateDuplicates();
+      if (state.duplicateOf) return;
+      const controller = new AbortController();
+      state.controller = controller;
+      queue.push({row, url, generation: state.generation, identityGeneration: state.identityGeneration, controller});
+      setStatus(row, "QUEUED"); updateProgress(); runDiscoveryQueue();
+    };
+    const lookup = (row, kind, input, results) => {
+      const state = stateOf(row);
+      window.clearTimeout(input._lookupTimer);
+      const lookupGeneration = (input._lookupGeneration || 0) + 1;
+      input._lookupGeneration = lookupGeneration;
+      input._lookupTimer = window.setTimeout(async () => {
+        const query = input.value.trim();
+        if (!query || (kind === "org" && !state.agencyId)) { results.hidden = true; return; }
+        const url = kind === "agency"
+          ? "/api/lookups/agencies?q=" + encodeURIComponent(query) + "&limit=8"
+          : "/api/lookups/agencies/" + encodeURIComponent(state.agencyId) + "/org-units?q=" + encodeURIComponent(query) + "&limit=8";
+        const response = await fetch(url);
+        if (!response.ok) { results.hidden = true; return; }
+        const payload = await response.json();
+        if (input._lookupGeneration !== lookupGeneration || input.value.trim() !== query) return;
+        results.replaceChildren();
+        payload.items.forEach((item) => {
+          const button = document.createElement("button"); button.type = "button"; button.textContent = item.label;
+          button.addEventListener("mousedown", (event) => {
+            event.preventDefault(); input.value = item.name;
+            if (kind === "agency") {
+              state.agencyName = item.name; state.agencyId = item.id; state.agencyIntent = null;
+              row.querySelector("[data-row-agency-id]").value = item.id;
+              state.orgId = null; state.orgIntent = null; row.querySelector("[data-row-org-id]").value = "";
+            } else {
+              state.orgName = item.name; state.orgId = item.id; state.orgIntent = null;
+              row.querySelector("[data-row-org-id]").value = item.id;
+            }
+            results.hidden = true; setStatus(row, "WAITING", "다음에서 서버 확인이 필요합니다.");
+          });
+          results.append(button);
+        });
+        results.hidden = !payload.items.length;
+      }, 180);
+    };
+    const createRow = (url = "") => {
+      const row = rowTemplate.content.firstElementChild.cloneNode(true);
+      const state = {
+        id: "row-" + (++rowSequence), url, agencyName: "", agencyId: null, agencyIntent: null,
+        orgName: "", orgId: null, orgIntent: null, status: "WAITING", generation: 0,
+        identityGeneration: 0, duplicateOf: null, controller: null, discovery: null,
+      };
+      row._intakeState = state;
+      const urlInput = row.querySelector("[data-row-url]");
+      const agencyInput = row.querySelector("[data-row-agency]");
+      const orgInput = row.querySelector("[data-row-org]");
+      urlInput.value = url;
+      let urlTimer;
+      urlInput.addEventListener("input", () => {
+        const changed = state.url !== urlInput.value;
+        state.url = urlInput.value;
+        if (changed) {
+          state.generation += 1; state.controller?.abort();
+          clearIdentity(row); state.discovery = null;
+        }
+        window.clearTimeout(urlTimer);
+        urlTimer = window.setTimeout(() => enqueueDiscovery(row), 450);
+      });
+      urlInput.addEventListener("paste", (event) => {
+        if (selector.value !== "WEB_PAGE") return;
+        const text = event.clipboardData?.getData("text") || "";
+        const values = text.split(/\r?\n/).map((line) => line.split("\t")[0].trim()).filter(Boolean);
+        if (values.length <= 1) return;
+        event.preventDefault();
+        const available = 200 - allRows().length + 1;
+        if (values.length > available) {
+          errorBox.textContent = "대화형 등록은 최대 200개입니다. 더 큰 목록은 엑셀 업로드를 사용하세요.";
+          errorBox.hidden = false; return;
+        }
+        state.generation += 1; state.controller?.abort();
+        state.url = values[0]; urlInput.value = values[0]; clearIdentity(row); enqueueDiscovery(row);
+        values.slice(1).forEach((value) => { const added = createRow(value); enqueueDiscovery(added); });
+      });
+      agencyInput.addEventListener("input", () => {
+        state.identityGeneration += 1; state.agencyName = agencyInput.value; state.agencyId = null; state.agencyIntent = null;
+        row.querySelector("[data-row-agency-id]").value = "";
+        state.orgId = null; state.orgIntent = null; row.querySelector("[data-row-org-id]").value = "";
+        setStatus(row, "WAITING", "기관 입력을 서버에서 다시 확인합니다.");
+        lookup(row, "agency", agencyInput, row.querySelector("[data-row-agency-results]"));
+      });
+      orgInput.addEventListener("input", () => {
+        state.identityGeneration += 1; state.orgName = orgInput.value; state.orgId = null; state.orgIntent = null;
+        row.querySelector("[data-row-org-id]").value = "";
+        setStatus(row, "WAITING", "부서 입력을 서버에서 다시 확인합니다.");
+        lookup(row, "org", orgInput, row.querySelector("[data-row-org-results]"));
+      });
+      row.querySelector("[data-row-remove]").addEventListener("click", () => {
+        const duplicateRows = allRows().filter((candidate) => stateOf(candidate).status === "DUPLICATE");
+        state.controller?.abort(); row.remove();
+        if (!allRows().length) createRow();
+        updateDuplicates();
+        duplicateRows.filter((candidate) => candidate.isConnected && !stateOf(candidate).duplicateOf)
+          .forEach((candidate) => enqueueDiscovery(candidate));
+      });
+      rowsRoot.append(row); setStatus(row, "WAITING"); updateProgress();
+      return row;
+    };
+    const rowPayload = () => allRows().filter((row) => stateOf(row).url.trim()).map((row) => {
+      const state = stateOf(row);
+      return {
+        row_id: state.id, url: state.url.trim(), agency_name: state.agencyName.trim(), agency_id: state.agencyId,
+        agency_intent: state.agencyIntent, org_unit_name: state.orgName.trim(), org_unit_id: state.orgId,
+        org_unit_intent: state.orgIntent,
+      };
+    });
+    const batchPayload = () => {
+      const values = jsonFromForm(form);
+      let methodConfig = values.method_config || {};
+      if (form.dataset.catalogConfig) {
+        try { methodConfig = {...methodConfig, ...JSON.parse(form.dataset.catalogConfig)}; }
+        catch (_error) { /* catalog remains server-validated */ }
+      }
+      return {
+        collection_method: selector.value, rows: rowPayload(), description: values.description || null,
+        method_config: methodConfig, scheduled_refresh_enabled: values.scheduled_refresh_enabled !== false,
+      };
+    };
+    const applyPreview = (preview) => {
+      const byId = new Map(allRows().map((row) => [stateOf(row).id, row]));
+      preview.rows.forEach((item) => {
+        const row = byId.get(item.row_id); if (!row) return;
+        const state = stateOf(row);
+        if (item.agency_id) { state.agencyId = item.agency_id; state.agencyName = item.agency_name; row.querySelector("[data-row-agency]").value = item.agency_name; }
+        if (item.org_unit_id) { state.orgId = item.org_unit_id; state.orgName = item.org_unit_name; row.querySelector("[data-row-org]").value = item.org_unit_name; }
+        setStatus(row, item.status, item.message);
+      });
+    };
+    const summaryMarkup = (summary) => [
+      ["수집 방식", {WEB_PAGE: "개별 URL · 스크래핑", WEB_CRAWL: "Index URL · 크롤링", API: "공개 API / RSS"}[selector.value]],
+      ["입력 Source", summary.input], ["기관", summary.agency_count], ["부서 연결", summary.org_connections],
+      ["기관 전체", summary.agency_wide_connections], ["신규 Source", summary.new_sources],
+      ["기존 Source", summary.existing_sources], ["중복", summary.duplicates],
+      ["새 연결", summary.new_bindings], ["기존 연결", summary.existing_bindings],
+      ["신규 기관 예정", summary.new_agencies_planned], ["신규 부서 예정", summary.new_org_units_planned],
+      ["확인 필요", summary.unresolved], ["오류", summary.errors],
+    ].map(([label, value]) => "<span><strong>" + value + "</strong><small>" + label + "</small></span>").join("");
+    const showStep = (next) => {
+      step = next;
+      form.querySelectorAll("[data-wizard-step]").forEach((section) => { section.hidden = Number(section.dataset.wizardStep) !== step; });
+      form.querySelectorAll("[data-wizard-indicator]").forEach((item) => item.classList.toggle("is-active", Number(item.dataset.wizardIndicator) === step));
+      form.querySelector("[data-wizard-prev]").hidden = step === 1;
+      form.querySelector("[data-wizard-next]").hidden = step === 3;
+      submit.hidden = step !== 3;
+    };
+    const renderFinal = (preview) => {
+      form.querySelector("[data-final-summary]").innerHTML = summaryMarkup(preview.summary);
+      const body = form.querySelector("[data-final-rows]"); body.replaceChildren();
+      preview.rows.slice(0, 100).forEach((item) => {
+        const tr = document.createElement("tr");
+        [item.url, item.agency_name || "-", item.org_unit_name || "기관 전체", statusLabels[item.status]?.[1] || item.status].forEach((value) => {
+          const td = document.createElement("td"); td.textContent = value; tr.append(td);
+        });
+        body.append(tr);
+      });
+      if (preview.rows.length > 100) {
+        const tr = document.createElement("tr"); const td = document.createElement("td"); td.colSpan = 4;
+        td.textContent = "나머지 " + (preview.rows.length - 100) + "개 행은 요약에 포함되어 있습니다."; tr.append(td); body.append(tr);
+      }
+    };
+    const currentResolutionRows = (item) => item.row_ids.map((id) => allRows().find((row) => stateOf(row).id === id)).filter(Boolean);
+    const resolveAgain = async (advanceToStepTwo = false) => {
+      const response = await fetch("/api/source-bindings/interactive/preview", {
+        method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}), body: JSON.stringify(batchPayload()),
+      });
+      const preview = await response.json();
+      if (!response.ok) throw new Error(preview.detail || "등록 행을 확인하지 못했습니다.");
+      lastPreview = preview; applyPreview(preview);
+      if (preview.summary.errors) throw new Error("URL 오류가 있는 행을 수정하거나 삭제하세요.");
+      const pending = [...preview.agency_resolutions, ...preview.org_resolutions];
+      if (pending.length) { openResolution(pending[0], advanceToStepTwo); return false; }
+      if (preview.summary.unresolved) throw new Error("기관 또는 부서를 확인해야 하는 행을 수정하세요.");
+      if (!preview.summary.importable) throw new Error("등록할 수 있는 Source 행이 없습니다.");
+      if (advanceToStepTwo) {
+        form.querySelector("[data-step-two-summary]").innerHTML = summaryMarkup(preview.summary);
+        showStep(2);
+      }
+      return true;
+    };
+    const openResolution = (item, advanceToStepTwo) => {
+      resolution.hidden = false;
+      resolution._item = item; resolution._advance = advanceToStepTwo;
+      resolution.querySelector("[data-resolution-title]").textContent = item.kind === "AGENCY" ? "기관 확인" : "부서 확인";
+      resolution.querySelector("[data-resolution-message]").textContent = item.kind === "AGENCY"
+        ? '"' + item.name + '"은 등록되지 않은 기관입니다. ' + item.row_ids.length + "개 행에 한 번 적용합니다."
+        : '"' + item.name + '"은 ' + item.agency_name + "에 등록되지 않은 부서입니다. " + item.row_ids.length + "개 행에 한 번 적용합니다.";
+      const similar = resolution.querySelector("[data-resolution-similar]"); similar.replaceChildren();
+      if (item.similar.length) {
+        const label = document.createElement("p"); label.textContent = "비슷한 기존 항목"; similar.append(label);
+        item.similar.forEach((candidate) => {
+          const button = document.createElement("button"); button.type = "button"; button.className = "button button--secondary";
+          button.textContent = candidate.name + " 사용";
+          button.addEventListener("click", async () => {
+            currentResolutionRows(item).forEach((row) => {
+              const state = stateOf(row);
+              if (item.kind === "AGENCY") {
+                state.agencyName = candidate.name; state.agencyId = candidate.id; state.agencyIntent = null;
+                row.querySelector("[data-row-agency]").value = candidate.name;
+                state.orgId = null; state.orgIntent = null;
+              } else {
+                state.orgName = candidate.name; state.orgId = candidate.id; state.orgIntent = null;
+                row.querySelector("[data-row-org]").value = candidate.name;
+              }
+            });
+            resolution.hidden = true;
+            try { await resolveAgain(advanceToStepTwo); } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+          });
+          similar.append(button);
+        });
+      }
+      const agencyFields = resolution.querySelector("[data-resolution-agency-fields]");
+      agencyFields.hidden = item.kind !== "AGENCY";
+      resolution.querySelector("[data-resolution-clear-org]").hidden = item.kind !== "ORG_UNIT";
+      if (item.kind === "AGENCY") {
+        resolution.querySelector("[data-resolution-agency-name]").value = item.name;
+        const firstRow = currentResolutionRows(item)[0];
+        const firstDiscovery = firstRow ? stateOf(firstRow).discovery : null;
+        resolution.querySelector("[data-resolution-agency-type]").value = firstDiscovery?.suggested_agency_type || "";
+        resolution.querySelector("[data-resolution-agency-region]").value = firstDiscovery?.suggested_region_code || "";
+      }
+      resolution.querySelector("[data-resolution-error]").hidden = true;
+    };
+    resolution.querySelector("[data-resolution-new]").addEventListener("click", async () => {
+      const item = resolution._item; const rows = currentResolutionRows(item);
+      const resolutionError = resolution.querySelector("[data-resolution-error]");
+      if (item.kind === "AGENCY") {
+        const name = resolution.querySelector("[data-resolution-agency-name]").value.trim();
+        const agencyType = resolution.querySelector("[data-resolution-agency-type]").value;
+        if (!name || !agencyType) { resolutionError.textContent = "기관명과 기관 유형을 입력하세요."; resolutionError.hidden = false; return; }
+        const intent = {
+          official_name: name, agency_type: agencyType,
+          region_code: resolution.querySelector("[data-resolution-agency-region]").value || null,
+          external_identifier: resolution.querySelector("[data-resolution-agency-identifier]").value.trim() || null,
+          address: resolution.querySelector("[data-resolution-agency-address]").value.trim() || null,
+        };
+        rows.forEach((row) => { const state = stateOf(row); state.agencyName = name; state.agencyId = null; state.agencyIntent = intent; row.querySelector("[data-row-agency]").value = name; });
+      } else {
+        rows.forEach((row) => { const state = stateOf(row); state.orgName = item.name; state.orgId = null; state.orgIntent = {name: item.name, unit_type: "DEPARTMENT"}; });
+      }
+      resolution.hidden = true;
+      try { await resolveAgain(resolution._advance); } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+    });
+    resolution.querySelector("[data-resolution-clear-org]").addEventListener("click", async () => {
+      const item = resolution._item;
+      currentResolutionRows(item).forEach((row) => { const state = stateOf(row); state.orgName = ""; state.orgId = null; state.orgIntent = null; row.querySelector("[data-row-org]").value = ""; });
+      resolution.hidden = true;
+      try { await resolveAgain(resolution._advance); } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+    });
+    resolution.querySelector("[data-resolution-edit]").addEventListener("click", () => { resolution.hidden = true; showStep(1); });
+    form.querySelector("[data-wizard-next]").addEventListener("click", async () => {
+      errorBox.hidden = true;
+      try {
+        if (step === 1) { await resolveAgain(true); return; }
+        const panel = form.querySelector('[data-method-panel="' + selector.value + '"]');
+        const invalid = panel?.querySelector(":invalid"); if (invalid) { invalid.reportValidity(); return; }
+        const checks = [...(panel?.querySelectorAll('[name^="method_config.extract_"]') || [])];
+        if (checks.length && !checks.some((control) => control.checked)) throw new Error("가져올 정보를 하나 이상 선택하세요.");
+        const okay = await resolveAgain(false); if (!okay) return;
+        renderFinal(lastPreview); showStep(3);
+      } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+    });
+    form.querySelector("[data-wizard-prev]").addEventListener("click", () => showStep(step - 1));
+    addButton.addEventListener("click", () => { if (allRows().length < 200 && selector.value === "WEB_PAGE") createRow().querySelector("[data-row-url]").focus(); });
+    selector.addEventListener("change", () => {
+      if (selector.value !== "WEB_PAGE") allRows().slice(1).forEach((row) => { stateOf(row).controller?.abort(); row.remove(); });
+      addButton.hidden = selector.value !== "WEB_PAGE";
+      form.querySelector("[data-crawl-row-help]").hidden = selector.value !== "WEB_CRAWL";
+      const input = allRows()[0]?.querySelector("[data-row-url]");
+      if (input) input.placeholder = selector.value === "WEB_CRAWL" ? "https://example.go.kr/departments/" : selector.value === "API" ? "https://api.example.go.kr/records" : "https://example.go.kr/page";
+      allRows().forEach((row) => { stateOf(row).generation += 1; stateOf(row).controller?.abort(); if (stateOf(row).url.trim()) enqueueDiscovery(row); });
+    });
+    form.querySelectorAll("[data-api-kind-choice], [data-feed-kind], [data-api-auth]").forEach((control) => control.addEventListener("change", () => {
+      allRows().forEach((row) => { if (stateOf(row).url.trim()) enqueueDiscovery(row); });
+    }));
+    form.addEventListener("catalogrow", (event) => {
+      const row = allRows()[0]; if (!row || !event.detail?.endpoint) return;
+      const state = stateOf(row); state.url = event.detail.endpoint;
+      row.querySelector("[data-row-url]").value = state.url;
+      clearIdentity(row); enqueueDiscovery(row);
+    });
+    form.querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", () => {
+      closed = true; queue.splice(0); allRows().forEach((row) => { stateOf(row).generation += 1; stateOf(row).controller?.abort(); });
+    }));
+    document.querySelector('[data-modal-open="source-create"]')?.addEventListener("click", () => { closed = false; });
+    form._interactiveBatchPayload = batchPayload;
+    form._interactiveShowResult = (result) => {
+      const labels = [
+        ["입력", result.summary.input], ["등록 처리", result.summary.registered], ["신규 Source", result.summary.created_sources],
+        ["기존 Source 재사용", result.summary.existing_sources_reused], ["새 연결", result.summary.created_bindings],
+        ["신규 기관", result.summary.created_agencies], ["신규 부서", result.summary.created_org_units],
+        ["중복", result.summary.duplicates_skipped], ["오류", result.summary.errors],
+      ];
+      const output = form.querySelector("[data-interactive-result-summary]"); output.replaceChildren();
+      labels.forEach(([label, value]) => { const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value + "개"; output.append(dt, dd); });
+      form.querySelector("[data-interactive-result]").hidden = false;
+      form.querySelector(".source-review-table").hidden = true;
+      form.querySelector(".modal-actions--sticky").hidden = true;
+    };
+    createRow(); showStep(1);
+  });
+
   const addParameterRow = (container, name = "", value = "") => {
     const row = document.createElement("div");
     row.className = "parameter-row";
@@ -331,6 +778,10 @@
       const form = button.form;
       const selected = form.querySelector("[data-selected-catalog]");
       selected.value = button.dataset.catalogSelect;
+      if (form.dataset.sourceCreate !== undefined) {
+        form.dataset.catalogConfig = button.dataset.catalogConfig || "{}";
+        form.dispatchEvent(new CustomEvent("catalogrow", {detail: {endpoint: button.dataset.catalogEndpoint || ""}}));
+      }
       form.querySelectorAll("[data-catalog-select]").forEach((candidate) => candidate.classList.toggle("is-selected", candidate === button));
       form.querySelector('[data-api-add-mode][value="CATALOG"]')?.setCustomValidity("");
       form.querySelector("[data-wizard-submit]").disabled = false;
@@ -479,6 +930,16 @@
       const errorBox = form.querySelector("[data-form-error]");
       try {
         const method = form.querySelector("[data-method-selector]")?.value;
+        if (form.dataset.sourceCreate !== undefined && form._interactiveBatchPayload) {
+          const response = await fetch("/api/source-bindings/interactive/register", {
+            method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+            body: JSON.stringify(form._interactiveBatchPayload()),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "행 기반 Source 등록을 완료하지 못했습니다.");
+          form._interactiveShowResult(result);
+          return;
+        }
         if (form.dataset.sourceCreate !== undefined && method === "WEB_PAGE") {
           if (form.dataset.scrapePreviewReady !== "true") throw new Error("등록 전에 서버 미리보기를 확인하세요.");
           const response = await fetch("/api/source-bindings/scrape-batch/confirm", {

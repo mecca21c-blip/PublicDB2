@@ -248,15 +248,16 @@ def test_method_first_wizard_dom_and_api_editors(method_first_db):
     assert response.status_code == 200
     form = BeautifulSoup(response.text, "html.parser").select_one('[data-modal="source-create"] [data-source-wizard]')
     steps = form.select("[data-wizard-step]")
-    assert [step["data-wizard-kind"] for step in steps] == ["method", "config", "connection"]
+    assert [step["data-wizard-kind"] for step in steps] == ["row-basic", "config", "review"]
     assert not steps[0].has_attr("hidden") and steps[1].has_attr("hidden") and steps[2].has_attr("hidden")
     assert [card.strong.get_text(strip=True) for card in form.select(".method-card")] == [
         "개별 URL · 스크래핑", "Index URL · 크롤링", "공개 API / RSS",
     ]
     assert steps[0].select_one('[name="agency_id"]') is None
-    assert form.select_one('[data-method-panel="WEB_PAGE"] textarea[name="urls"]')
+    assert form.select_one("[data-source-intake]")
+    assert form.select_one('[data-wizard-step="2"] textarea[name="urls"]') is None
     assert form.select_one('[data-method-panel="WEB_PAGE"] input[name="url"]') is None
-    assert len(form.select('[data-method-panel="WEB_CRAWL"] [data-single-url]')) == 1
+    assert len(form.select('[data-method-panel="WEB_CRAWL"] [data-single-url]')) == 0
     assert form.select_one('[name="method_config.allowed_paths"][data-lines-field]')
     assert form.select_one('[name="method_config.excluded_paths"][data-lines-field]')
     assert form.select_one("[data-static-params-json]")["type"] == "hidden"
@@ -267,7 +268,7 @@ def test_method_first_wizard_dom_and_api_editors(method_first_db):
     assert form.select_one("[data-wizard-prev]").has_attr("hidden")
     assert not form.select_one("[data-wizard-next]").has_attr("hidden")
     assert form.select_one("[data-wizard-submit]").has_attr("hidden")
-    assert form.select_one('[data-binding-scope][value="AGENCY_WIDE"]').has_attr("checked")
+    assert form.select_one("[data-row-org]")
 
     js = Path("app/web/static/js/app.js").read_text(encoding="utf-8")
     assert "syncStaticParams" in js and "dataset.linesField" in js

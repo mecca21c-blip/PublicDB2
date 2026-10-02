@@ -34,13 +34,16 @@ Settings 메뉴는 ADMIN에게만 표시한다.
 오류, 제외를 사용한다. 선택 상세에서 설명, 최근 확인·수집 결과, 발견 수, 오류
 사유를 확인한다. Excel 진입 화면은 파일 선택부터 등록까지의 단계와 정상·중복·
 충돌·오류 미리보기를 제공하며 preview/confirm과 실제 등록에 연결된다.
-목록과 상세는 수집 방식을 텍스트로 표시한다. Source create의 V1 순서는
-수집 방식 → 방식별 설정 → 연결 대상이며, 개별 URL · 스크래핑, Index URL · 크롤링,
-공개 API / RSS 중 하나를 먼저 선택한다. 스크래핑 create는 줄마다 한 URL을 받아
-각 canonical URL을 별도 Source로 등록하고, 한 batch에는 기관 전체 또는 특정 부서
-하나의 연결 context를 공통 적용한다. 크롤링은 Index URL 하나, RSS/Atom은 feed URL
-하나, OpenAPI는 endpoint 하나가 Source 하나다. 큰 목록이나 서로 다른 연결 context가
-섞인 작업은 기존 Excel import가 소유한다. built-in catalog와 직접 API/RSS 추가도
+목록과 상세는 수집 방식을 텍스트로 표시한다. Source create의 현재 순서는
+기본 정보 → 수집 설정 → 등록 확인이다. 기본 정보에서 개별 URL · 스크래핑,
+Index URL · 크롤링, 공개 API / RSS 중 하나를 먼저 선택하고 URL별 기관·부서를 행으로
+확인한다. WEB_PAGE는 최대 200개 URL을 줄바꿈으로 붙여넣을 수 있으며 각 행은 서로
+다른 Agency와 OrgUnit을 가질 수 있다. 부서가 빈 행은 기관 전체 연결이다. URL 입력 후
+동시 2개의 bounded metadata 확인을 수행하지만 발견값은 편집 가능한 제안이며 정확
+일치 ID 또는 사용자가 확인한 신규 생성 의도만 다음 단계로 전달한다. 미등록 기관과
+부서는 Step 3 최종 등록 전까지 DB에 쓰지 않는다. 크롤링은 Index URL 하나,
+RSS/Atom은 feed URL 하나, OpenAPI는 endpoint 하나만 사용한다. 200개를 넘는 구조화된
+목록은 기존 10,000행 Excel import가 소유한다. built-in catalog와 직접 API/RSS 추가도
 같은 modal 안에 있고 별도 sidebar route는 만들지 않는다.
 
 Source wizard의 하단 action bar는 modal 내부의 유일한 세로 scroll owner에 속하며,

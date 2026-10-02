@@ -15,8 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.collectors.http_fetcher import HTTPFetchError, HTTPFetcher
-from app.models import Agency, AgencyType, CollectionMethod
-from app.services.normalization import collapse_whitespace, normalize_agency_name, normalize_source_url
+from app.models import Agency, AgencyType, CollectionMethod, OrgUnit
+from app.services.normalization import (
+    collapse_whitespace, normalize_agency_name, normalize_org_unit_name, normalize_source_url,
+)
 
 
 logger = logging.getLogger("publicdb2")
@@ -34,6 +36,9 @@ _COPYRIGHT = re.compile(r"(?i)(?:copyright|all rights reserved|©|ⓒ)|\b(?:19|2
 _AGENCY_PATTERN = re.compile(
     r"[가-힣A-Za-z0-9·]{2,40}(?:특별자치시|특별자치도|특별시|광역시|"
     r"교육청|소방본부|구청|군청|시청|도청|위원회|공단|공사|재단|연구원|대학교|부|처|청)"
+)
+_ORG_PATTERN = re.compile(
+    r"[가-힣A-Za-z0-9·]{2,30}(?:담당관|사업소|지원단|본부|센터|과|팀|실|국|단|부)"
 )
 _GENERIC_NAMES = {"직원", "직원 안내", "부서", "부서 안내", "조직", "조직도", "홈", "메인"}
 
@@ -259,9 +264,12 @@ class SourceAgencyDiscoveryService:
             grouped[key].append(item)
             display.setdefault(key, item.candidate)
         ranked = sorted(grouped, key=lambda key: (-len(grouped[key]), len(display[key]), display[key]))
-        winner = ranked[0] if ranked else None
+        ambiguous = len(ranked) > 1 and len(grouped[ranked[0]]) == len(grouped[ranked[1]])
+        winner = ranked[0] if ranked and not ambiguous else None
         candidate = display[winner] if winner else None
-        selected_evidence = grouped[winner][:MAX_DISCOVERY_EVIDENCE] if winner else []
+        selected_evidence = grouped[winner][:MAX_DISCOVERY_EVIDENCE] if winner else [
+            item for key in ranked[:3] for item in grouped[key]
+        ][:MAX_DISCOVERY_EVIDENCE]
         existing, match_type = self._exact_match(candidate, final_url)
         if existing and not candidate:
             candidate = existing.official_name
@@ -275,8 +283,11 @@ class SourceAgencyDiscoveryService:
                 "snippet": urlsplit(final_url).hostname or "",
             })
         combined = " ".join([candidate or "", *(item.snippet for item in evidence)])
+        org_candidate, org_evidence = self._org_candidate(evidence, candidate)
+        existing_org = self._exact_org(existing, org_candidate)
         return {
             "candidate_name": candidate,
+            "candidate_suggestions": [display[key] for key in ranked[:3]],
             "existing_agency": self._agency_projection(existing) if existing else None,
             "match_type": match_type,
             "evidence": evidence_payload[:MAX_DISCOVERY_EVIDENCE],
@@ -286,6 +297,9 @@ class SourceAgencyDiscoveryService:
             },
             "suggested_agency_type": self._suggest_agency_type(candidate),
             "suggested_region_code": self._suggest_region(combined),
+            "org_unit_candidate": org_candidate,
+            "existing_org_unit": self._org_projection(existing_org),
+            "org_evidence": org_evidence,
             "message": message or (None if candidate or existing else (
                 "페이지에서 기관을 확실히 확인하지 못했습니다. "
                 "기존 기관을 검색하거나 새 기관을 등록하세요."
@@ -313,6 +327,49 @@ class SourceAgencyDiscoveryService:
         return None, None
 
     @staticmethod
+    def _org_candidate(evidence: list[_Evidence], agency_name: str | None) -> tuple[str | None, list[dict]]:
+        grouped: dict[str, list[_Evidence]] = defaultdict(list)
+        display: dict[str, str] = {}
+        agency_normalized = normalize_agency_name(agency_name or "")
+        for item in evidence:
+            if item.kind not in {"title", "heading", "breadcrumb", "description", "site_name"}:
+                continue
+            pieces = [piece.strip(" -_:;,.()[]{}") for piece in _SEPARATORS.split(item.snippet) if piece.strip()]
+            for piece in pieces:
+                cleaned = collapse_whitespace(_NOISE.sub(" ", piece)).replace(" ", "")
+                matches = _ORG_PATTERN.findall(cleaned)
+                if not matches:
+                    continue
+                candidate = matches[-1][:300]
+                if normalize_agency_name(candidate) == agency_normalized or _AGENCY_PATTERN.fullmatch(candidate):
+                    continue
+                key = normalize_org_unit_name(candidate).casefold()
+                if not key or any(existing.kind == item.kind for existing in grouped[key]):
+                    continue
+                grouped[key].append(item)
+                display.setdefault(key, candidate)
+        ranked = sorted(grouped, key=lambda key: (-len(grouped[key]), len(display[key]), display[key]))
+        if not ranked or len(grouped[ranked[0]]) < 2:
+            return None, []
+        if len(ranked) > 1 and len(grouped[ranked[0]]) == len(grouped[ranked[1]]):
+            return None, []
+        winner = ranked[0]
+        return display[winner], [
+            {"type": item.kind, "label": item.label, "snippet": item.snippet}
+            for item in grouped[winner][:3]
+        ]
+
+    def _exact_org(self, agency: Agency | None, candidate: str | None) -> OrgUnit | None:
+        if agency is None or not candidate:
+            return None
+        matches = list(self.session.scalars(select(OrgUnit).where(
+            OrgUnit.agency_id == agency.id,
+            OrgUnit.normalized_name == normalize_org_unit_name(candidate),
+            OrgUnit.active.is_(True),
+        ).limit(2)))
+        return matches[0] if len(matches) == 1 else None
+
+    @staticmethod
     def _agency_projection(agency: Agency | None) -> dict | None:
         if agency is None:
             return None
@@ -320,6 +377,12 @@ class SourceAgencyDiscoveryService:
             "id": str(agency.id), "name": agency.official_name,
             "agency_type": agency.agency_type.value, "region_code": agency.region_code,
         }
+
+    @staticmethod
+    def _org_projection(org: OrgUnit | None) -> dict | None:
+        if org is None:
+            return None
+        return {"id": str(org.id), "name": org.name, "agency_id": str(org.agency_id)}
 
     @staticmethod
     def _suggest_agency_type(candidate: str | None) -> str | None:

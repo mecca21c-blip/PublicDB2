@@ -216,21 +216,17 @@ def test_discovery_api_auth_csrf_and_inline_agency_org_writers(discovery_db):
         assert session.scalar(select(func.count()).select_from(Source)) == 0
 
 
-def test_step_three_discovery_and_inline_ui_contract(discovery_db):
+def test_discovery_service_is_reused_by_row_intake_ui(discovery_db):
     database_url, _factory, root = discovery_db
     page = TestClient(regression_app(database_url, project_root=root)).get("/sources")
     assert page.status_code == 200
     form = BeautifulSoup(page.text, "html.parser").select_one('[data-modal="source-create"] [data-source-wizard]')
-    connection = form.select_one('[data-wizard-kind="connection"]')
-    assert connection.select_one("[data-agency-discover]").get_text(strip=True) == "페이지에서 기관 찾기"
-    assert connection.select_one("[data-discovery-representative]").has_attr("hidden")
-    assert connection.select_one("[data-inline-agency-form]").has_attr("hidden")
-    assert connection.select_one("[data-inline-org-form]").has_attr("hidden")
-    assert connection.select_one('[data-inline-agency-type] option[value="BASIC_LOCAL_GOVERNMENT"]')
-    assert connection.select_one("[data-lookup-kind=agency]") and connection.select_one("[data-lookup-kind=org]")
+    basic = form.select_one('[data-wizard-kind="row-basic"]')
+    assert basic.select_one("[data-source-intake]")
+    assert basic.select_one("[data-row-agency]") and basic.select_one("[data-row-org]")
+    assert form.select_one("[data-discovery-representative]") is None
+    assert form.select_one("[data-agency-discover]") is None
     js = Path("app/web/static/js/app.js").read_text(encoding="utf-8")
-    assert 'new Set(urls.map((item) => item.host))' in js
     assert 'fetch("/api/source-agency-discovery"' in js
-    assert 'form.dataset.discoveryFingerprint' in js
-    assert 'addEventListener("click", async () =>' in js
-    assert 'addEventListener("input"' in js
+    assert "activeDiscoveries < 2" in js
+    assert "job.generation !== state.generation" in js

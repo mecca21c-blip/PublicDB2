@@ -206,15 +206,25 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   scheduler는 방법을 재구현하지 않고 실제 실행을 `CollectionService.collect(source_id)`에
   위임한다.
 
-### 06C-4B Source creation contract
+### 06C-4E Row-based Source creation contract
 
-- Create의 사용자 흐름은 METHOD → CONFIG → CONNECTION이다. 수집 방식을 먼저 정하고
-  방식별 설정을 마친 뒤 Agency와 기관 전체/특정 OrgUnit 연결을 선택한다.
-- WEB_PAGE 대화형 등록은 최대 200개의 줄 단위 URL을 받지만 URL 목록을 Source 한 행에
-  저장하지 않는다. 기존 URL 정규화와 `Source.normalized_url` unique identity를 사용해
-  각 canonical URL을 별도 Source, typed config, run/evidence/provenance로 유지한다.
-- 한 WEB_PAGE batch는 extractor 선택, 자동 전체 수집 여부, Agency, 선택 OrgUnit과 설명을
-  공유한다. 더 큰 목록 또는 혼합 연결 context는 10,000행 Excel import가 소유한다.
+- 06C-4E는 06C-4B의 batch 공통 연결 context를 명시적으로 대체한다. Create 사용자 흐름은
+  BASIC INFO → CONFIG → FINAL REVIEW다. 수집 방법을 먼저 선택하되 URL, Agency, 선택
+  OrgUnit과 행별 확인 상태는 Step 1의 같은 표에서 관리한다.
+- WEB_PAGE 대화형 등록은 최대 200개의 URL 행을 받는다. 각 행은 서로 다른 Agency와
+  OrgUnit을 가질 수 있고 빈 OrgUnit은 기관 전체 연결이다. canonical URL identity와
+  `Source.normalized_url` unique 계약은 바꾸지 않는다. 동일 입력 URL은 한 batch에서
+  중복으로 분류하고 발견·등록을 반복하지 않는다.
+- URL 입력은 bounded `SourceAgencyDiscoveryService`를 자동 호출하되 동시 외부 요청은
+  최대 2개다. SSRF, DNS, redirect, timeout과 response-size 제한을 그대로 사용하고
+  Source, Agency, OrgUnit, CrawlRun, Observation, RAW 또는 extraction을 쓰지 않는다.
+  발견 기관·부서는 편집 가능한 제안이며 fuzzy 유사도는 선택 제안일 뿐 ID 권한이 아니다.
+- 다음 단계와 최종 등록에서 서버가 URL, exact Agency/OrgUnit, 소속 관계, 신규 entity
+  intent, canonical Source와 binding 중복을 다시 검증한다. 같은 미등록 기관/부서는 이름별
+  한 번만 확인한다. 신규 Agency/OrgUnit intent는 최종 등록 전까지 DB에 쓰지 않으며,
+  최종 시점에는 기존 AgencyService/SourceService를 통해 race를 다시 확인한다.
+- extractor 설정, 설명과 자동 전체 수집 포함 여부는 batch 공통이지만 Agency/OrgUnit
+  context는 행별이다. 더 큰 목록은 기존 10,000행 Excel import가 소유한다.
 - WEB_CRAWL은 Index URL 하나이며 include path prefix 목록과 exclude-wins 목록, bounded
   depth/pages/delay를 소유한다. 기존 단일 `allowed_path`는 호환 projection으로 유지한다.
 - RSS/Atom은 feed URL 하나, OpenAPI는 endpoint 하나다. OpenAPI parameter 반복 행은 기존
