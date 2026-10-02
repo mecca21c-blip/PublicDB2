@@ -68,6 +68,13 @@ class ScrapeBatchRequest(BaseModel):
     scheduled_refresh_enabled: bool = True
 
 
+class SourceAgencyDiscoveryRequest(BaseModel):
+    collection_method: CollectionMethod
+    representative_url: str = Field(min_length=1, max_length=2048)
+    api_kind: str | None = Field(default=None, max_length=30)
+    auth_mode: str | None = Field(default=None, max_length=30)
+
+
 class CredentialCreate(BaseModel):
     secret_value: str = Field(min_length=1, max_length=10_000)
     credential_ref: str | None = Field(default=None, max_length=200)

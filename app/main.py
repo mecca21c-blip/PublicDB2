@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.agencies import router as agencies_api
+from app.api.agency_discovery import router as agency_discovery_api
 from app.api.collection import router as collection_api
 from app.api.collection_jobs import router as collection_jobs_api
 from app.api.lookups import router as lookups_api
@@ -188,7 +189,19 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             user_agent=settings.user_agent,
         )
     application.state.preview_fetcher_factory = preview_fetcher_factory
+
+    def agency_discovery_fetcher_factory():
+        with application.state.session_factory() as discovery_session:
+            settings = SettingsService(discovery_session).snapshot()
+        return HTTPFetcher(
+            timeout_seconds=min(settings.http_timeout_seconds, 8.0),
+            max_response_bytes=min(settings.max_response_bytes, 2 * 1024 * 1024),
+            user_agent=settings.user_agent,
+        )
+    application.state.agency_discovery_fetcher_factory = agency_discovery_fetcher_factory
+
     application.include_router(agencies_api)
+    application.include_router(agency_discovery_api)
     application.include_router(sources_api)
     application.include_router(collection_api)
     application.include_router(collection_jobs_api)

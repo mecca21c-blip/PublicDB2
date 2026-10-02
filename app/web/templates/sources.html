@@ -110,13 +110,46 @@
 
 {% macro connection_fields(method='WEB_PAGE', agency_id='', agency_name='', org_id='', org_name='', description='', scheduled=true, create=false) %}
 <div data-connection-fields>
-  {{lookup_selector('agency_id','기관','agency',agency_id,agency_name,true)}}
-  <fieldset class="choice-group"><legend>연결 범위</legend><label class="check-row"><input type="radio" name="binding_scope" value="AGENCY_WIDE" data-binding-scope data-ui-only{% if not org_id %} checked{% endif %}> 기관 전체</label><label class="check-row"><input type="radio" name="binding_scope" value="SPECIFIC_ORG_UNIT" data-binding-scope data-ui-only{% if org_id %} checked{% endif %}> 특정 부서</label></fieldset>
-  <div data-org-scope-field{% if not org_id %} hidden{% endif %}>{{lookup_selector('org_unit_id','부서','org',org_id,org_name,true)}}</div>
-  <p class="detail-note" data-method-guidance></p>
-  <label>설명 (선택)<input class="control" name="description" value="{{description}}" placeholder="이 소스를 구분할 메모"></label>
-  <section class="auto-refresh-section"><h3>자동 전체 수집</h3><label class="check-row"><input type="checkbox" name="scheduled_refresh_enabled"{% if scheduled %} checked{% endif %}> 자동 전체 수집에 포함</label><p>설정에 등록된 전체 수집 일정에 이 소스를 포함합니다.</p></section>
-  {% if create %}<div data-scrape-preview-controls hidden><p class="detail-note">이 일괄 등록은 선택한 기관과 연결 범위를 모든 URL에 동일하게 적용합니다. 서로 다른 부서는 별도 등록이나 엑셀 업로드를 사용하세요.</p><button class="button button--secondary" type="button" data-scrape-preview>등록 내용 미리보기</button><section class="scrape-preview" data-scrape-preview-result hidden><div class="scrape-summary" data-scrape-summary></div><div class="table-scroll"><table class="data-table"><thead><tr><th>줄</th><th>URL</th><th>분류</th><th>연결</th><th>메시지</th></tr></thead><tbody data-scrape-preview-rows></tbody></table></div></section></div>{% endif %}
+  <section class="agency-resolution" data-agency-resolution>
+    <div class="agency-discovery-action">
+      <label data-discovery-representative hidden>기관 자동 확인에 사용할 대표 URL<select class="control" data-discovery-url data-ui-only><option value="">대표 URL 선택</option></select></label>
+      <button class="button button--secondary" type="button" data-agency-discover>페이지에서 기관 찾기</button>
+      <p class="detail-note">입력한 원격 주소 한 곳만 안전하게 확인하며 기관을 자동 등록하지 않습니다.</p>
+      <section class="discovery-result" data-agency-discovery-result aria-live="polite" hidden></section>
+    </div>
+    <div class="connection-divider"><span>또는 기존 기관 찾기</span></div>
+    {{lookup_selector('agency_id','기관','agency',agency_id,agency_name,true)}}
+    <button class="button button--ghost inline-create-open" type="button" data-inline-agency-open>+ 새 기관 등록</button>
+    <section class="inline-create-card" data-inline-agency-form hidden>
+      <h4>새 기관 등록</h4>
+      <div class="inline-create-grid">
+        <label>기관명 <strong aria-hidden="true">*</strong><input class="control" data-inline-agency-name maxlength="300"></label>
+        <label>기관 유형 <strong aria-hidden="true">*</strong><select class="control" data-inline-agency-type><option value="">기관 유형 선택</option><option value="CENTRAL_GOVERNMENT">중앙행정기관</option><option value="AGENCY">청/처</option><option value="COMMISSION">위원회</option><option value="METROPOLITAN_GOVERNMENT">광역지방자치단체</option><option value="BASIC_LOCAL_GOVERNMENT">기초지방자치단체</option><option value="PUBLIC_INSTITUTION">공공기관</option><option value="OTHER">기타</option></select></label>
+        <label>지역 (선택)<select class="control" data-inline-agency-region><option value="">미지정</option>{% for code,label in regions %}<option value="{{code}}">{{label}}</option>{% endfor %}</select></label>
+        <label>기관 식별값 (선택)<input class="control" data-inline-agency-identifier maxlength="120"></label>
+        <label class="inline-create-grid--wide">주소 (선택)<input class="control" data-inline-agency-address maxlength="500"></label>
+      </div>
+      <p data-inline-agency-error role="alert" hidden></p>
+      <div class="inline-actions"><button class="button button--ghost" type="button" data-inline-agency-cancel>취소</button><button class="button button--primary" type="button" data-inline-agency-save>기관 등록</button></div>
+    </section>
+  </section>
+  <div class="connection-after-agency" data-connection-after-agency{% if not agency_id %} hidden{% endif %}>
+    <fieldset class="choice-group"><legend>연결 범위</legend><label class="check-row"><input type="radio" name="binding_scope" value="AGENCY_WIDE" data-binding-scope data-ui-only{% if not org_id %} checked{% endif %}> 기관 전체</label><label class="check-row"><input type="radio" name="binding_scope" value="SPECIFIC_ORG_UNIT" data-binding-scope data-ui-only{% if org_id %} checked{% endif %}> 특정 부서</label></fieldset>
+    <div data-org-scope-field{% if not org_id %} hidden{% endif %}>
+      {{lookup_selector('org_unit_id','부서','org',org_id,org_name,true)}}
+      <button class="button button--ghost inline-create-open" type="button" data-inline-org-open>+ 새 부서 등록</button>
+      <section class="inline-create-card" data-inline-org-form hidden>
+        <h4>새 부서 등록</h4>
+        <label>부서명 <strong aria-hidden="true">*</strong><input class="control" data-inline-org-name maxlength="300"></label>
+        <p data-inline-org-error role="alert" hidden></p>
+        <div class="inline-actions"><button class="button button--ghost" type="button" data-inline-org-cancel>취소</button><button class="button button--primary" type="button" data-inline-org-save>부서 등록</button></div>
+      </section>
+    </div>
+    <p class="detail-note" data-method-guidance></p>
+    <label>설명 (선택)<input class="control" name="description" value="{{description}}" placeholder="이 소스를 구분할 메모"></label>
+    <section class="auto-refresh-section"><h3>자동 전체 수집</h3><label class="check-row"><input type="checkbox" name="scheduled_refresh_enabled"{% if scheduled %} checked{% endif %}> 자동 전체 수집에 포함</label><p>설정에 등록된 전체 수집 일정에 이 소스를 포함합니다.</p></section>
+    {% if create %}<div data-scrape-preview-controls hidden><p class="detail-note">이 등록 묶음의 모든 URL에는 같은 기관과 부서 연결이 적용됩니다. 서로 다른 기관은 별도 묶음이나 엑셀 업로드를 사용하세요.</p><button class="button button--secondary" type="button" data-scrape-preview>등록 내용 미리보기</button><section class="scrape-preview" data-scrape-preview-result hidden><div class="scrape-summary" data-scrape-summary></div><div class="table-scroll"><table class="data-table"><thead><tr><th>줄</th><th>URL</th><th>분류</th><th>연결</th><th>메시지</th></tr></thead><tbody data-scrape-preview-rows></tbody></table></div></section></div>{% endif %}
+  </div>
 </div>
 {% if create %}<section class="scrape-result" data-scrape-result hidden><h3>등록 결과</h3><dl class="detail-grid" data-scrape-result-summary></dl><div class="modal-actions"><button class="button button--secondary" type="button" data-scrape-list>목록으로</button><button class="button button--primary" type="button" data-scrape-collect>등록된 소스 지금 수집</button></div><p class="detail-note" data-scrape-job-status hidden></p></section>{% endif %}
 {% endmacro %}

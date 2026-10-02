@@ -209,6 +209,9 @@
     const previewControls = form.querySelector("[data-scrape-preview-controls]");
     const previewResult = form.querySelector("[data-scrape-preview-result]");
     const syncConnection = () => {
+      const agencySelected = Boolean(form.querySelector('[name="agency_id"]')?.value);
+      const afterAgency = form.querySelector("[data-connection-after-agency]");
+      if (afterAgency) afterAgency.hidden = !agencySelected;
       const scope = form.querySelector("[data-binding-scope]:checked")?.value || "AGENCY_WIDE";
       const specific = scope === "SPECIFIC_ORG_UNIT";
       if (orgField) {
@@ -225,7 +228,7 @@
       }
       const guidance = form.querySelector("[data-method-guidance]");
       if (guidance) guidance.textContent = selector.value === "WEB_CRAWL"
-        ? "여러 부서 정보를 탐색하는 크롤링 소스라면 기관 전체 연결을 권장합니다."
+        ? "여러 부서 페이지를 탐색하는 소스라면 기관 전체 연결을 권장합니다."
         : selector.value === "WEB_PAGE"
           ? "특정 부서 전용 페이지라면 특정 부서를 선택할 수 있습니다."
           : "기관 전체 또는 실제 endpoint가 대표하는 특정 부서에 연결하세요.";
@@ -290,6 +293,7 @@
     form.querySelector("[data-wizard-prev]").addEventListener("click", () => showStep(step - 1));
     form.addEventListener("submit", (event) => { if (!validateStep()) event.preventDefault(); }, {capture: true});
     scopeControls.forEach((control) => control.addEventListener("change", () => { syncConnection(); invalidateScrapePreview(); }));
+    form.querySelector('[name="agency_id"]')?.addEventListener("change", syncConnection);
     form.addEventListener("methodrefresh", () => { syncConnection(); invalidateScrapePreview(); });
     form.addEventListener("input", (event) => {
       if (!event.target.closest("[data-scrape-preview-result]")) invalidateScrapePreview();
@@ -878,6 +882,250 @@
       sync();
     });
     sync();
+  });
+
+  const lookupSelect = (form, kind, item) => {
+    const root = form.querySelector('[data-lookup-kind="' + kind + '"]');
+    if (!root || !item?.id) return;
+    const input = root.querySelector("[data-lookup-input]");
+    const value = root.querySelector("[data-lookup-value]");
+    input.value = item.label || item.name;
+    value.value = item.id;
+    if (kind === "org") value.dataset.agencyId = item.agency_id || form.querySelector('[name="agency_id"]')?.value || "";
+    root.querySelector("[data-lookup-clear]").hidden = false;
+    root.querySelector("[data-lookup-results]").hidden = true;
+    input.setCustomValidity("");
+    value.dispatchEvent(new Event("change", {bubbles: true}));
+  };
+
+  document.querySelectorAll("[data-agency-discover]").forEach((discoverButton) => {
+    const form = discoverButton.closest("form");
+    const method = form?.querySelector("[data-method-selector]");
+    const result = form?.querySelector("[data-agency-discovery-result]");
+    const representativeLabel = form?.querySelector("[data-discovery-representative]");
+    const representativeSelect = form?.querySelector("[data-discovery-url]");
+    const inlineAgency = form?.querySelector("[data-inline-agency-form]");
+    const inlineOrg = form?.querySelector("[data-inline-org-form]");
+    if (!form || !method || !result || !representativeLabel || !representativeSelect) return;
+    let lastDiscovery = null;
+
+    const validUrls = () => {
+      const rawValues = method.value === "WEB_PAGE"
+        ? (form.querySelector('[data-method-panel="WEB_PAGE"] textarea[name="urls"]')?.value || "").split(/\r?\n/)
+        : [form.querySelector('[data-method-panel="' + method.value + '"] input[name="url"]')?.value || ""];
+      const unique = new Map();
+      rawValues.forEach((raw) => {
+        try {
+          const parsed = new URL(raw.trim());
+          if (!["http:", "https:"].includes(parsed.protocol)) return;
+          parsed.hash = "";
+          unique.set(parsed.href, {url: parsed.href, host: parsed.hostname.toLowerCase()});
+        } catch (_error) { /* incomplete input is handled by the wizard validation */ }
+      });
+      return [...unique.values()];
+    };
+    const representativeUrl = () => {
+      const urls = validUrls();
+      representativeLabel.hidden = true;
+      if (!urls.length) return "";
+      if (method.value !== "WEB_PAGE") return urls[0].url;
+      const hosts = new Set(urls.map((item) => item.host));
+      if (hosts.size <= 1) return urls[0].url;
+      const previous = representativeSelect.value;
+      representativeSelect.replaceChildren(new Option("대표 URL 선택", ""));
+      urls.forEach((item) => representativeSelect.add(new Option(item.url, item.url)));
+      if (urls.some((item) => item.url === previous)) representativeSelect.value = previous;
+      representativeLabel.hidden = false;
+      return representativeSelect.value;
+    };
+    const fingerprint = () => [
+      method.value,
+      form.querySelector("[data-api-kind]")?.value || "",
+      form.querySelector("[data-api-auth]")?.value || "",
+      representativeUrl(),
+    ].join("|");
+    const clearDiscovery = () => {
+      if (!lastDiscovery && result.hidden) return;
+      lastDiscovery = null;
+      delete form.dataset.discoveryFingerprint;
+      result.replaceChildren();
+      result.hidden = true;
+    };
+    const message = (text, isError = false) => {
+      result.replaceChildren();
+      const paragraph = document.createElement("p");
+      paragraph.textContent = text;
+      if (isError) paragraph.setAttribute("role", "alert");
+      result.append(paragraph);
+      result.hidden = false;
+    };
+    const actionButton = (label, handler, primary = false) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button " + (primary ? "button--primary" : "button--ghost");
+      button.textContent = label;
+      button.addEventListener("click", handler);
+      return button;
+    };
+    const focusManualSearch = () => {
+      form.querySelector('[data-lookup-kind="agency"] [data-lookup-input]')?.focus();
+    };
+    const openAgencyForm = (discovery = lastDiscovery) => {
+      if (!inlineAgency) return;
+      inlineAgency.hidden = false;
+      const name = inlineAgency.querySelector("[data-inline-agency-name]");
+      const type = inlineAgency.querySelector("[data-inline-agency-type]");
+      const region = inlineAgency.querySelector("[data-inline-agency-region]");
+      if (discovery?.candidate_name && !name.value) name.value = discovery.candidate_name;
+      if (discovery?.suggested_agency_type && !type.value) type.value = discovery.suggested_agency_type;
+      if (discovery?.suggested_region_code && !region.value) region.value = discovery.suggested_region_code;
+      name.focus();
+    };
+    const renderDiscovery = (data) => {
+      result.replaceChildren();
+      const title = document.createElement("p");
+      const evidenceCount = data.evidence_summary?.count || 0;
+      title.textContent = data.existing_agency
+        ? "등록된 기관과 정확히 일치합니다: " + data.existing_agency.name + " (근거 " + evidenceCount + "종)"
+        : data.candidate_name
+          ? "기관 후보: " + data.candidate_name + " (근거 " + evidenceCount + "종)"
+          : (data.message || "기관 후보를 확인하지 못했습니다.");
+      result.append(title);
+      if (data.evidence?.length) {
+        const evidence = document.createElement("ul");
+        data.evidence.forEach((item) => {
+          const row = document.createElement("li");
+          row.textContent = item.label + ": " + item.snippet;
+          evidence.append(row);
+        });
+        result.append(evidence);
+      }
+      const actions = document.createElement("div");
+      actions.className = "inline-actions";
+      if (data.existing_agency) {
+        actions.append(actionButton("이 기관 사용", () => lookupSelect(form, "agency", data.existing_agency), true));
+      } else {
+        actions.append(actionButton("새 기관으로 등록", () => openAgencyForm(data), Boolean(data.candidate_name)));
+      }
+      actions.append(actionButton("직접 다른 기관 찾기", focusManualSearch));
+      result.append(actions);
+      result.hidden = false;
+    };
+
+    discoverButton.addEventListener("click", async () => {
+      const url = representativeUrl();
+      if (!url) {
+        message(validUrls().length ? "서로 다른 호스트가 포함되어 있습니다. 확인할 대표 URL을 선택하세요." : "먼저 유효한 URL을 입력하세요.", true);
+        return;
+      }
+      discoverButton.disabled = true;
+      message("기관 정보를 확인하고 있습니다.");
+      try {
+        const response = await fetch("/api/source-agency-discovery", {
+          method: "POST",
+          headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({
+            collection_method: method.value,
+            representative_url: url,
+            api_kind: form.querySelector("[data-api-kind]")?.value || null,
+            auth_mode: form.querySelector("[data-api-auth]")?.value || null,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "기관 확인에 실패했습니다.");
+        lastDiscovery = payload;
+        form.dataset.discoveryFingerprint = fingerprint();
+        renderDiscovery(payload);
+      } catch (error) {
+        lastDiscovery = null;
+        message(error.message || "기관 확인에 실패했습니다.", true);
+      } finally {
+        discoverButton.disabled = false;
+      }
+    });
+
+    representativeSelect.addEventListener("change", clearDiscovery);
+    form.addEventListener("input", (event) => {
+      if (!event.target.matches('textarea[name="urls"], input[name="url"]')) return;
+      if (form.dataset.discoveryFingerprint && fingerprint() !== form.dataset.discoveryFingerprint) clearDiscovery();
+    });
+    form.addEventListener("change", (event) => {
+      if (!event.target.matches("[data-method-selector], [data-api-kind-choice], [data-feed-kind], [data-api-auth], [data-discovery-url]")) return;
+      if (form.dataset.discoveryFingerprint && fingerprint() !== form.dataset.discoveryFingerprint) clearDiscovery();
+    });
+
+    form.querySelector("[data-inline-agency-open]")?.addEventListener("click", () => openAgencyForm());
+    form.querySelector("[data-inline-agency-cancel]")?.addEventListener("click", () => { inlineAgency.hidden = true; });
+    form.querySelector("[data-inline-agency-save]")?.addEventListener("click", async (event) => {
+      const errorBox = inlineAgency.querySelector("[data-inline-agency-error]");
+      const name = inlineAgency.querySelector("[data-inline-agency-name]").value.trim();
+      const agencyType = inlineAgency.querySelector("[data-inline-agency-type]").value;
+      errorBox.hidden = true;
+      if (!name || !agencyType) {
+        errorBox.textContent = "기관명과 기관 유형을 입력하세요.";
+        errorBox.hidden = false;
+        return;
+      }
+      event.currentTarget.disabled = true;
+      try {
+        const response = await fetch("/api/agencies", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({
+            official_name: name,
+            agency_type: agencyType,
+            region_code: inlineAgency.querySelector("[data-inline-agency-region]").value || null,
+            external_identifier: inlineAgency.querySelector("[data-inline-agency-identifier]").value.trim() || null,
+            address: inlineAgency.querySelector("[data-inline-agency-address]").value.trim() || null,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "기관 등록에 실패했습니다.");
+        lookupSelect(form, "agency", payload.item);
+        inlineAgency.hidden = true;
+      } catch (error) {
+        errorBox.textContent = error.message || "기관 등록에 실패했습니다.";
+        errorBox.hidden = false;
+      } finally {
+        event.currentTarget.disabled = false;
+      }
+    });
+
+    form.querySelector("[data-inline-org-open]")?.addEventListener("click", () => {
+      if (!form.querySelector('[name="agency_id"]')?.value) { focusManualSearch(); return; }
+      inlineOrg.hidden = false;
+      inlineOrg.querySelector("[data-inline-org-name]").focus();
+    });
+    form.querySelector("[data-inline-org-cancel]")?.addEventListener("click", () => { inlineOrg.hidden = true; });
+    form.querySelector("[data-inline-org-save]")?.addEventListener("click", async (event) => {
+      const agencyId = form.querySelector('[name="agency_id"]')?.value;
+      const errorBox = inlineOrg.querySelector("[data-inline-org-error]");
+      const name = inlineOrg.querySelector("[data-inline-org-name]").value.trim();
+      errorBox.hidden = true;
+      if (!agencyId || !name) {
+        errorBox.textContent = agencyId ? "부서명을 입력하세요." : "기관을 먼저 선택하세요.";
+        errorBox.hidden = false;
+        return;
+      }
+      event.currentTarget.disabled = true;
+      try {
+        const response = await fetch("/api/agencies/" + encodeURIComponent(agencyId) + "/org-units", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({name, unit_type: "DEPARTMENT", parent_org_unit_id: null}),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "부서 등록에 실패했습니다.");
+        lookupSelect(form, "org", payload.item);
+        inlineOrg.hidden = true;
+      } catch (error) {
+        errorBox.textContent = error.message || "부서 등록에 실패했습니다.";
+        errorBox.hidden = false;
+      } finally {
+        event.currentTarget.disabled = false;
+      }
+    });
+    form.querySelector('[name="agency_id"]')?.addEventListener("change", () => {
+      if (inlineOrg) inlineOrg.hidden = true;
+    });
   });
 
   const importWorkflow = document.querySelector("[data-import-workflow]");

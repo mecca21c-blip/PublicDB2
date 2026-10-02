@@ -186,6 +186,26 @@ select.control { appearance: auto; }
 .lookup-results { position: absolute; z-index: 60; top: calc(100% + 4px); right: 0; left: 0; max-height: 240px; padding: 5px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #fff; box-shadow: 0 12px 30px rgba(13,27,45,.16); overflow: auto; }
 .lookup-results button { width: 100%; display: block; border: 0; border-radius: 6px; padding: 9px 10px; color: var(--color-text); background: transparent; text-align: left; }
 .lookup-results button:hover, .lookup-results button[aria-selected="true"] { background: var(--color-blue-100); }
+.agency-resolution { display: grid; gap: 10px; }
+.agency-discovery-action { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #f8fafc; }
+.agency-discovery-action > label { display: grid; gap: 6px; }
+.agency-discovery-action .button { justify-self: start; }
+.connection-divider { display: flex; align-items: center; gap: 10px; color: var(--color-text-muted); font-size: 12px; }
+.connection-divider::before, .connection-divider::after { height: 1px; flex: 1; content: ""; background: var(--color-border); }
+.discovery-result { display: grid; gap: 8px; padding: 11px; border: 1px solid #b9d4ef; border-radius: var(--radius-sm); background: #edf6ff; }
+.discovery-result p { margin: 0; }
+.discovery-result ul { margin: 0; padding-left: 19px; color: var(--color-text-subtle); font-size: 12px; }
+.discovery-result .inline-actions { justify-content: flex-start; }
+.inline-create-open { justify-self: start; }
+.inline-create-card { display: grid; gap: 10px; padding: 13px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #fff; box-shadow: 0 2px 7px rgba(26,48,76,.05); }
+.inline-create-card h4 { margin: 0; font-size: 14px; }
+.inline-create-card > label, .inline-create-grid > label { display: grid; gap: 6px; }
+.inline-create-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.inline-create-grid--wide { grid-column: 1 / -1; }
+.inline-create-card [role="alert"] { margin: 0; color: #a52f36; font-size: 12px; }
+.inline-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.connection-after-agency { display: grid; gap: 12px; }
+[data-discovery-representative][hidden], [data-agency-discovery-result][hidden], [data-inline-agency-form][hidden], [data-inline-org-form][hidden], [data-connection-after-agency][hidden] { display: none; }
 .collection-job-history { margin-bottom: 16px; }
 .agency-create-form { display: grid; gap: 17px; }
 .agency-form-field { width: 100%; display: grid; gap: 6px; }
@@ -223,7 +243,8 @@ select.control { appearance: auto; }
   .scrape-summary { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
 @media (max-width: 720px) {
-  .crawl-number-grid, .parameter-row { grid-template-columns: minmax(0,1fr); }
+  .crawl-number-grid, .parameter-row, .inline-create-grid { grid-template-columns: minmax(0,1fr); }
+  .inline-create-grid--wide { grid-column: auto; }
 }
 .workspace-pager {
   align-items: center;
