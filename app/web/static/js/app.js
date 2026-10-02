@@ -691,8 +691,10 @@
       if (!response.ok) throw new Error(preview.detail || "수집 대상을 확인하지 못했습니다.");
       const counts = preview.method_counts || {};
       modal.querySelector("[data-bulk-total]").textContent = preview.eligible_total + "개";
-      modal.querySelector("[data-bulk-methods]").textContent = "웹페이지 " + (counts.WEB_PAGE || 0) + " · 웹사이트 탐색 " + (counts.WEB_CRAWL || 0) + " · API/RSS " + (counts.API || 0);
-      confirm.textContent = preview.eligible_total + "개 수집 시작";
+      modal.querySelector("[data-bulk-web-page]").textContent = String(counts.WEB_PAGE || 0);
+      modal.querySelector("[data-bulk-web-crawl]").textContent = String(counts.WEB_CRAWL || 0);
+      modal.querySelector("[data-bulk-api]").textContent = String(counts.API || 0);
+      confirm.textContent = "수집 시작";
       confirm.disabled = preview.eligible_total === 0;
       errorBox.hidden = true;
       openModal(modal);

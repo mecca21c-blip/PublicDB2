@@ -76,13 +76,20 @@ def test_source_create_is_three_step_exclusive_wizard(wizard_db):
     assert "control.disabled = !active" in js
     assert '[name]:not(:disabled):not([data-ui-only])' in js
     assert 'data-job-all-open' in page.text and 'data-job-filtered-open' in page.text
+    actions = form.select_one(".source-wizard-actions")
+    assert not actions.select_one("[data-modal-close]").has_attr("hidden")
+    assert actions.select_one("[data-wizard-prev]").has_attr("hidden")
+    assert not actions.select_one("[data-wizard-next]").has_attr("hidden")
+    assert actions.select_one("[data-wizard-submit]").has_attr("hidden")
+    assert ".source-wizard-actions .button[hidden] { display: none; }" in css
 
 
 def test_zero_database_and_zero_filter_are_distinct_and_actions_safe(wizard_db):
     url, factory, root = wizard_db
     client = TestClient(regression_app(url, project_root=root))
     empty = client.get("/sources")
-    assert "등록된 수집 소스가 없습니다. 첫 수집 소스를 추가해 주세요." in empty.text
+    assert "등록된 수집 소스가 없습니다." in empty.text
+    assert "수집 소스 추가에서 첫 소스를 등록하세요." in empty.text
     empty_soup = BeautifulSoup(empty.text, "html.parser")
     assert empty_soup.select_one("[data-job-filtered-open]").has_attr("disabled")
     assert empty_soup.select_one("[data-job-all-open]").has_attr("disabled")
@@ -90,16 +97,25 @@ def test_zero_database_and_zero_filter_are_distinct_and_actions_safe(wizard_db):
 
     seed_source(factory)
     filtered = client.get("/sources", params={"methods": "API"})
-    assert "현재 필터 조건에 맞는 수집 소스가 없습니다." in filtered.text
+    assert "현재 조건에 맞는 수집 소스가 없습니다." in filtered.text
+    assert "필터 조건을 변경하거나 초기화해 보세요." in filtered.text
     filtered_soup = BeautifulSoup(filtered.text, "html.parser")
     assert filtered_soup.select_one("[data-job-filtered-open]").has_attr("disabled")
     assert not filtered_soup.select_one("[data-job-all-open]").has_attr("disabled")
 
 
-def test_server_preview_and_confirm_create_exactly_one_job(wizard_db):
+def test_server_preview_cancel_and_each_confirmation_create_one_job(wizard_db):
     url, factory, root = wizard_db
     seed_source(factory)
     client = TestClient(regression_app(url, project_root=root))
+    page = BeautifulSoup(client.get("/sources").text, "html.parser")
+    for name in ("filtered-job-confirm", "all-job-confirm"):
+        modal = page.select_one(f'[data-modal="{name}"]')
+        assert modal.select_one("[data-bulk-total]")
+        assert modal.select_one("[data-bulk-web-page]")
+        assert modal.select_one("[data-bulk-web-crawl]")
+        assert modal.select_one("[data-bulk-api]")
+        assert modal.select_one("[data-job-filter-confirm], [data-job-all-confirm]").get_text(strip=True) == "수집 시작"
     filtered = client.get("/api/source-index/preview", params={"methods": "WEB_PAGE"})
     all_sources = client.get("/api/source-index/preview", params={"scope": "all"})
     assert filtered.status_code == 200 and filtered.json()["eligible_total"] == 1
@@ -108,13 +124,49 @@ def test_server_preview_and_confirm_create_exactly_one_job(wizard_db):
     assert all_sources.json()["scope"] == "all"
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(CollectionJob)) == 0
-    created = client.post(
+    filtered_created = client.post(
+        "/api/collection-jobs", headers={"X-CSRF-Token": "test-csrf"},
+        json={"trigger_type": "MANUAL_FILTER", "filter": {"methods": ["WEB_PAGE"]}},
+    )
+    assert filtered_created.status_code == 202
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(CollectionJob)) == 1
+    all_created = client.post(
         "/api/collection-jobs", headers={"X-CSRF-Token": "test-csrf"},
         json={"trigger_type": "MANUAL_ALL"},
     )
-    assert created.status_code == 202
+    assert all_created.status_code == 202
     with factory() as session:
-        assert session.scalar(select(func.count()).select_from(CollectionJob)) == 1
+        assert session.scalar(select(func.count()).select_from(CollectionJob)) == 2
+
+
+def test_source_wizard_layout_and_copy_contracts(wizard_db):
+    url, _factory, root = wizard_db
+    page = TestClient(regression_app(url, project_root=root)).get("/sources")
+    soup = BeautifulSoup(page.text, "html.parser")
+    form = soup.select_one('[data-modal="source-create"] [data-source-wizard]')
+    assert "허용 경로 prefix" not in page.text
+    assert "제외 경로 prefix" not in page.text
+    assert "포함할 경로" in page.text and "제외할 경로" in page.text
+    assert "시작 URL 경로 안에서 최대 깊이 2" in page.text
+    assert form.select_one(".crawl-number-grid")
+    assert all(not item.has_attr("open") for item in form.select("details.advanced-settings"))
+    assert form.select_one('[data-api-add-mode][value="CATALOG"]').has_attr("disabled")
+    assert "현재 검증된 기본 공개 소스가 없습니다. 직접 추가를 이용하세요." in page.text
+    feed = form.select_one('[data-api-subtype="FEED"]')
+    assert feed.select_one("details.advanced-settings") is None
+    assert feed.select_one('[name="method_config.auth_mode"]') is None
+
+    css = Path("app/web/static/css/workspace.css").read_text(encoding="utf-8")
+    js = Path("app/web/static/js/app.js").read_text(encoding="utf-8")
+    assert "--source-wizard-footer-height" in css
+    assert "scroll-padding-bottom: var(--source-wizard-footer-height)" in css
+    assert ".source-wizard-step { display: grid; gap: 12px; min-height: 0;" in css
+    assert "[data-job-status][hidden] { display: none; }" in css
+    assert 'form.querySelector("[data-wizard-prev]").hidden = step === 1' in js
+    assert 'form.querySelector("[data-wizard-next]").hidden = step === 3' in js
+    assert "submit.hidden = step !== 3" in js
+    assert 'confirm.textContent = "수집 시작"' in js
 
 
 def test_edit_wizard_preloads_selected_method_and_keeps_other_panels_inactive(wizard_db):
@@ -143,6 +195,6 @@ def test_source_table_and_heading_contracts_are_scoped(wizard_db):
     assert "<th>자동수집</th>" in sources
     assert "필터 결과 0개" in sources
     css = Path("app/web/static/css/workspace.css").read_text(encoding="utf-8")
-    assert ".workspace-table--sources { width: 100%; min-width: 760px; table-layout: fixed; }" in css
+    assert ".workspace-table--sources { width: 100%; min-width: 680px; table-layout: fixed; }" in css
     for route in ("/agencies", "/contacts", "/runs", "/review"):
         assert "PublicDB2 DB" not in client.get(route).text

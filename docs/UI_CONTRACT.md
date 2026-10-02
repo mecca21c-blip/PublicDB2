@@ -43,6 +43,13 @@ Settings 메뉴는 ADMIN에게만 표시한다.
 섞인 작업은 기존 Excel import가 소유한다. built-in catalog와 직접 API/RSS 추가도
 같은 modal 안에 있고 별도 sidebar route는 만들지 않는다.
 
+Source wizard의 하단 action bar는 modal 내부의 유일한 세로 scroll owner에 속하며,
+현재 단계에 필요한 버튼만 layout과 tab order에 남긴다. 짧은 단계는 불필요한 scroll을
+만들지 않고 긴 고급 설정만 scroll한다. Sources 목록은 일반 desktop 폭에서 전용 표가
+가로 scroll을 강제하지 않으며, DB 자체가 비었을 때와 필터 결과만 비었을 때를 서로 다른
+안내로 표시한다. 필터 결과 전체 및 전체 소스 즉시 수집은 서버가 다시 계산한 방식별
+대상 수를 확인한 뒤에만 background CollectionJob을 만든다.
+
 ### /runs 수집 이력
 
 기간·기관·상태·검색 필터와 실행 목록을 제공한다. 선택 상세에서 접속, RAW 저장,

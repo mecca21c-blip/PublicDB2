@@ -35,33 +35,36 @@
 
 {% macro method_panels(method='WEB_PAGE', config={}, create=false) %}
 <div class="method-panel" data-method-panel="WEB_PAGE"{% if method!='WEB_PAGE' %} hidden{% endif %}>
-  {% if create %}<label>대상 URL <strong aria-hidden="true">*</strong><textarea class="control control--textarea url-batch-input" name="urls" rows="7" required data-scrape-urls placeholder="https://example.go.kr/directory&#10;https://example.go.kr/contacts"></textarea><small>URL을 한 줄에 하나씩 입력하세요. 최대 200개이며 더 큰 목록은 엑셀 업로드를 사용하세요.</small></label>{% else %}<label>대상 URL<input class="control" name="url" type="url" required placeholder="https://example.go.kr/directory"></label>{% endif %}
+  {% if create %}<label><span class="field-label-row">대상 URL <strong aria-hidden="true">*</strong></span><textarea class="control control--textarea url-batch-input" name="urls" rows="6" required data-scrape-urls placeholder="https://example.go.kr/directory&#10;https://example.go.kr/contacts"></textarea><small>URL을 한 줄에 하나씩 입력하세요. 최대 200개이며 더 큰 목록은 엑셀 업로드를 사용하세요.</small></label>{% else %}<label>대상 URL<input class="control" name="url" type="url" required placeholder="https://example.go.kr/directory"></label>{% endif %}
   {{extraction_options(config)}}
 </div>
 <div class="method-panel" data-method-panel="WEB_CRAWL"{% if method!='WEB_CRAWL' %} hidden{% endif %}>
-  <label>Index URL <strong aria-hidden="true">*</strong><input class="control" name="url" type="url" required data-single-url placeholder="https://example.go.kr/departments/"></label>
+  <label><span class="field-label-row">Index URL <strong aria-hidden="true">*</strong></span><input class="control" name="url" type="url" required data-single-url placeholder="https://example.go.kr/departments/"></label>
   {{extraction_options(config)}}
-  <p class="detail-note">기본 설정: 시작 경로 안에서 최대 깊이 2, 최대 50페이지, 1초 간격으로 확인합니다. robots.txt는 항상 준수합니다.</p>
+  <p class="detail-note">기본 설정: 시작 URL 경로 안에서 최대 깊이 2, 최대 50페이지, 1초 간격으로 확인합니다. robots.txt는 항상 준수합니다.</p>
   <details class="advanced-settings"><summary>고급 탐색 설정</summary><div class="method-panel-fields">
     <label>탐색 범위<select class="control" name="method_config.scope"><option value="PATH_PREFIX">시작 주소의 경로 안</option><option value="SAME_DOMAIN"{% if config.get('scope')=='SAME_DOMAIN' %} selected{% endif %}>같은 도메인 전체</option></select></label>
     {% set allowed = config.get('allowed_paths') or [config.get('allowed_path','/')] %}
-    <label>허용 경로 prefix<textarea class="control control--textarea" name="method_config.allowed_paths" rows="3" data-lines-field>{{allowed|join('\n')}}</textarea><small>한 줄에 하나씩 입력합니다.</small></label>
-    <label>제외 경로 prefix<textarea class="control control--textarea" name="method_config.excluded_paths" rows="3" data-lines-field>{{config.get('excluded_paths',[])|join('\n')}}</textarea><small>한 줄에 하나씩 입력하며 제외 규칙이 우선합니다.</small></label>
-    <label>최대 깊이<input class="control" type="number" min="0" max="5" name="method_config.max_depth" value="{{config.get('max_depth',2)}}"></label>
-    <label>최대 페이지<input class="control" type="number" min="1" max="200" name="method_config.max_pages" value="{{config.get('max_pages',50)}}"></label>
-    <label>요청 간격(ms)<input class="control" type="number" min="500" name="method_config.request_delay_ms" value="{{config.get('request_delay_ms',1000)}}"></label>
+    <label>포함할 경로<textarea class="control control--textarea" name="method_config.allowed_paths" rows="3" data-lines-field>{{allowed|join('\n')}}</textarea><small>한 줄에 하나씩 입력합니다.</small></label>
+    <label>제외할 경로<textarea class="control control--textarea" name="method_config.excluded_paths" rows="3" data-lines-field>{{config.get('excluded_paths',[])|join('\n')}}</textarea><small>입력한 경로는 탐색 대상에서 제외합니다.</small></label>
+    <div class="crawl-number-grid">
+      <label>최대 깊이<input class="control" type="number" min="0" max="5" name="method_config.max_depth" value="{{config.get('max_depth',2)}}"></label>
+      <label>최대 페이지<input class="control" type="number" min="1" max="200" name="method_config.max_pages" value="{{config.get('max_pages',50)}}"></label>
+      <label>요청 간격(ms)<input class="control" type="number" min="500" name="method_config.request_delay_ms" value="{{config.get('request_delay_ms',1000)}}"></label>
+    </div>
   </div></details>
 </div>
 <div class="method-panel" data-method-panel="API"{% if method!='API' %} hidden{% endif %}>
   <input type="hidden" name="method_config.kind" value="{{config.get('kind','OPEN_API')}}" data-api-kind>
   <fieldset class="choice-group"><legend>추가 방법</legend>
-    <label class="check-row"><input type="radio" name="api_add_mode" value="CATALOG" data-api-add-mode data-ui-only> 기본 공개 소스에서 선택</label>
+    <label class="check-row{% if not catalog %} is-disabled{% endif %}"><input type="radio" name="api_add_mode" value="CATALOG" data-api-add-mode data-ui-only{% if not catalog %} disabled{% endif %}> 기본 공개 소스에서 선택</label>
     <label class="check-row"><input type="radio" name="api_add_mode" value="DIRECT" data-api-add-mode data-ui-only checked> 주소와 설정을 직접 입력</label>
   </fieldset>
+  {% if not catalog %}<p class="detail-note detail-note--empty" data-catalog-empty>현재 검증된 기본 공개 소스가 없습니다. 직접 추가를 이용하세요.</p>{% endif %}
   <div data-api-mode-panel="CATALOG" hidden>
     <h3>기본 공개 소스</h3>
     <input type="hidden" data-selected-catalog data-ui-only>
-    {% for entry in catalog %}<p class="catalog-entry"><span><strong>{{entry.display_name}}</strong><small>{{entry.provider}} · {{entry.kind}} · 인증 {{'필요' if entry.auth_required else '없음'}}</small></span><button class="button button--secondary" type="button" {% if create %}data-catalog-select{% else %}data-catalog-use{% endif %}="{{entry.catalog_id}}">선택</button></p>{% else %}<p class="detail-note">현재 바로 선택할 수 있는 기본 공개 소스가 없습니다. 직접 입력을 선택해 주세요.</p>{% endfor %}
+    {% for entry in catalog %}<p class="catalog-entry"><span><strong>{{entry.display_name}}</strong><small>{{entry.provider}} · {{entry.kind}} · 인증 {{'필요' if entry.auth_required else '없음'}}</small></span><button class="button button--secondary" type="button" {% if create %}data-catalog-select{% else %}data-catalog-use{% endif %}="{{entry.catalog_id}}">선택</button></p>{% else %}<p class="detail-note detail-note--empty">현재 검증된 기본 공개 소스가 없습니다. 직접 추가를 이용하세요.</p>{% endfor %}
   </div>
   <div data-api-mode-panel="DIRECT">
     <fieldset class="choice-group"><legend>자료 형식</legend>
@@ -132,7 +135,7 @@
   <section class="source-wizard-step" data-wizard-step="3" data-wizard-kind="config" hidden><h3>세부 설정</h3><p>선택한 방식에 필요한 항목만 입력합니다.</p>{{method_panels(method,config,false)}}</section>
   {% endif %}
   <p data-form-error role="alert" hidden></p>
-  <div class="modal-actions modal-actions--sticky"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--secondary" type="button" data-wizard-prev hidden>이전</button><button class="button button--primary" type="button" data-wizard-next>다음</button><button class="button button--primary" type="submit" data-wizard-submit hidden>{{submit_label}}</button></div>
+  <div class="modal-actions modal-actions--sticky source-wizard-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--secondary" type="button" data-wizard-prev hidden>이전</button><button class="button button--primary" type="button" data-wizard-next>다음</button><button class="button button--primary" type="submit" data-wizard-submit hidden>{{submit_label}}</button></div>
 </form>
 {% endmacro %}
 
@@ -141,7 +144,7 @@
 {% block content %}
 <div class="workspace-page">
   <header class="page-heading">
-    <div class="page-heading-copy"><h1>수집 소스</h1><p>기관별 수집 주소와 방식을 관리하고, 필요한 범위를 선택해 수집합니다.</p></div>
+    <div class="page-heading-copy"><h1>수집 소스</h1><p>지역·기관·부서·수집 방식 등 원하는 조건으로 수집 소스를 찾고 필요한 범위만 즉시 갱신합니다.</p></div>
     <div class="page-actions"><button class="button button--secondary" data-modal-open="excel-import">엑셀 업로드</button><button class="button button--primary" data-modal-open="source-create">{{icon('plus',18)}} 수집 소스 추가</button></div>
   </header>
   {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류 또는 필터 오류</strong><p>{{db_error}}</p></section>{% endif %}
@@ -168,7 +171,7 @@
   <section class="panel collection-actions" aria-label="수집 작업">
     <div>
       <strong>필터 결과 {{workspace.eligible_total}}개</strong>
-      <p>웹페이지 {{workspace.method_counts.get('WEB_PAGE',0)}}개 · 웹사이트 탐색 {{workspace.method_counts.get('WEB_CRAWL',0)}}개 · API/RSS {{workspace.method_counts.get('API',0)}}개</p>
+      <p>스크래핑 {{workspace.method_counts.get('WEB_PAGE',0)}} · 크롤링 {{workspace.method_counts.get('WEB_CRAWL',0)}} · API/RSS {{workspace.method_counts.get('API',0)}}</p>
     </div>
     <div class="page-actions">
       <button class="button button--primary" type="button" data-job-selection disabled>선택 소스 지금 수집</button>
@@ -188,9 +191,9 @@
             <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}">
               <td><input type="checkbox" data-source-select value="{{item.source_id}}" aria-label="{{item.url}} 선택"{% if not item.collection_enabled %} disabled{% endif %}></td>
               <td><strong>{{item.agency_summary}}</strong>{% if item.binding_count > 1 %}<small class="binding-count">{{item.binding_count}}개 연결</small>{% endif %}</td>
-              <td>{{item.department}}</td><td class="url-cell">{{item.url}}</td><td>{{item.collection_method_label}}</td><td>{{item.checked}}</td><td>{{item.found}}</td><td>{{status_badge(item.status,item.tone)}}</td><td>{{'포함' if item.scheduled_refresh_enabled else '제외'}}</td>
+              <td>{{item.department}}</td><td class="url-cell" title="{{item.url}}">{{item.url}}</td><td>{{item.collection_method_label}}</td><td>{{item.checked}}</td><td>{{item.found}}</td><td>{{status_badge(item.status,item.tone)}}</td><td>{{'포함' if item.scheduled_refresh_enabled else '제외'}}</td>
             </tr>
-          {% else %}<tr><td colspan="9" class="empty-state-cell">{% if workspace.registered_total==0 %}등록된 수집 소스가 없습니다. 첫 수집 소스를 추가해 주세요.{% else %}현재 필터 조건에 맞는 수집 소스가 없습니다. 필터를 초기화하거나 조건을 바꿔 주세요.{% endif %}</td></tr>{% endfor %}</tbody>
+          {% else %}<tr><td colspan="9" class="empty-state-cell">{% if workspace.registered_total==0 %}<strong>등록된 수집 소스가 없습니다.</strong><span>수집 소스 추가에서 첫 소스를 등록하세요.</span>{% else %}<strong>현재 조건에 맞는 수집 소스가 없습니다.</strong><span>필터 조건을 변경하거나 초기화해 보세요.</span>{% endif %}</td></tr>{% endfor %}</tbody>
         </table>
       </div>
       {{ pager(workspace.pagination) }}
@@ -214,9 +217,9 @@
 </div>
 
 <script type="application/json" id="source-filter-state">{{filter_snapshot|tojson}}</script>
-<div class="modal-backdrop" data-modal="filtered-job-confirm" hidden><section class="modal-shell modal-shell--compact" role="dialog" aria-modal="true" aria-labelledby="filtered-job-title"><header class="modal-heading"><div><h2 id="filtered-job-title">검색 결과 즉시 수집</h2><p>현재 필터를 서버에서 다시 확인한 결과입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header><div class="modal-body"><dl class="detail-grid"><dt>수집 대상</dt><dd data-bulk-total>확인 중</dd><dt>방식별 대상</dt><dd data-bulk-methods>확인 중</dd></dl><p class="detail-note">확인하면 이 대상들로 수집 작업 하나를 만듭니다. 취소하면 작업은 생성되지 않습니다.</p><p data-bulk-error role="alert" hidden></p><div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="button" data-job-filter-confirm disabled>수집 시작</button></div></div></section></div>
+<div class="modal-backdrop" data-modal="filtered-job-confirm" hidden><section class="modal-shell modal-shell--compact" role="dialog" aria-modal="true" aria-labelledby="filtered-job-title"><header class="modal-heading"><div><h2 id="filtered-job-title">검색 결과 즉시 수집</h2><p>현재 필터를 서버에서 다시 확인한 결과입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header><div class="modal-body"><dl class="detail-grid bulk-preview-grid"><dt>대상</dt><dd data-bulk-total>확인 중</dd><dt>스크래핑</dt><dd data-bulk-web-page>확인 중</dd><dt>크롤링</dt><dd data-bulk-web-crawl>확인 중</dd><dt>API/RSS</dt><dd data-bulk-api>확인 중</dd></dl><p class="detail-note">백그라운드에서 한 번에 하나씩 순차 수집합니다. 일부 소스에서 오류가 발생해도 나머지 수집은 계속 진행합니다.</p><p data-bulk-error role="alert" hidden></p><div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="button" data-job-filter-confirm disabled>수집 시작</button></div></div></section></div>
 
-<div class="modal-backdrop" data-modal="all-job-confirm" hidden><section class="modal-shell modal-shell--compact" role="dialog" aria-modal="true" aria-labelledby="all-job-title"><header class="modal-heading"><div><h2 id="all-job-title">전체 소스 즉시 수집</h2><p>필터와 관계없이 활성 소스를 서버에서 다시 확인한 결과입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header><div class="modal-body"><dl class="detail-grid"><dt>수집 대상</dt><dd data-bulk-total>확인 중</dd><dt>방식별 대상</dt><dd data-bulk-methods>확인 중</dd></dl><p class="detail-note">확인하면 이 대상들로 수집 작업 하나를 만듭니다. 취소하면 작업은 생성되지 않습니다.</p><p data-bulk-error role="alert" hidden></p><div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="button" data-job-all-confirm disabled>수집 시작</button></div></div></section></div>
+<div class="modal-backdrop" data-modal="all-job-confirm" hidden><section class="modal-shell modal-shell--compact" role="dialog" aria-modal="true" aria-labelledby="all-job-title"><header class="modal-heading"><div><h2 id="all-job-title">전체 소스 즉시 수집</h2><p>필터와 관계없이 활성 소스를 서버에서 다시 확인한 결과입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header><div class="modal-body"><dl class="detail-grid bulk-preview-grid"><dt>대상</dt><dd data-bulk-total>확인 중</dd><dt>스크래핑</dt><dd data-bulk-web-page>확인 중</dd><dt>크롤링</dt><dd data-bulk-web-crawl>확인 중</dd><dt>API/RSS</dt><dd data-bulk-api>확인 중</dd></dl><p class="detail-note">백그라운드에서 한 번에 하나씩 순차 수집합니다. 일부 소스에서 오류가 발생해도 나머지 수집은 계속 진행합니다.</p><p data-bulk-error role="alert" hidden></p><div class="modal-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="button" data-job-all-confirm disabled>수집 시작</button></div></div></section></div>
 
 <div class="modal-backdrop" data-modal="source-create" hidden><section class="modal-shell modal-shell--source-create" role="dialog" aria-modal="true" aria-labelledby="source-create-title"><header class="modal-heading"><div><h2 id="source-create-title">수집 소스 추가</h2><p>수집 방식과 설정을 정한 뒤 기관에 연결합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>{{source_wizard('/api/source-bindings','POST','등록',create=true)}}</section></div>
 
