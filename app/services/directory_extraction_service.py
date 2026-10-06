@@ -16,6 +16,7 @@ from app.collectors.staff_directory_extractor import (
     StaffDirectoryExtractor,
 )
 from app.core.config import PROJECT_ROOT
+from app.core.discovery_quality import meaningful_directory_values
 from app.models import (
     ExtractedDirectoryRecord,
     ExtractionRun,
@@ -109,6 +110,19 @@ class DirectoryExtractionService:
                 artifact.body,
                 declared_charset=artifact.declared_charset,
             )
+            extracted_values = [
+                value for value in extracted_values
+                if meaningful_directory_values(
+                    row_text=value.row_text,
+                    org_unit_text=value.org_unit_text,
+                    duty_text=value.duty_text,
+                    position_text=value.position_text,
+                    person_name_text=value.person_name_text,
+                    phone_text=value.phone_text,
+                    email_text=value.email_text,
+                    fax_text=value.fax_text,
+                )
+            ]
         except Exception as error:
             failed_run = self._mark_failed(run_id, error)
             return DirectoryExtractionResult(

@@ -8,11 +8,19 @@ from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 
+from app.collectors.html_contact_extractor import (
+    is_supported_phone,
+    normalize_email,
+)
+from app.core.discovery_quality import (
+    is_no_data_placeholder,
+    meaningful_directory_values,
+)
 from app.models.enums import DirectoryRecordType
 
 
 EXTRACTOR_NAME = "staff_directory"
-EXTRACTOR_VERSION = "1"
+EXTRACTOR_VERSION = "2"
 MAX_ROW_TEXT_CHARS = 4000
 MAX_CELL_TEXT_CHARS = 4000
 MAX_LOCATOR_CHARS = 1000
@@ -190,10 +198,15 @@ def _column_map(
 
 
 def _is_directory_mapping(mapping: dict[str, int]) -> bool:
-    return (
+    established_shape = (
         {"org_unit", "duty"} <= mapping.keys()
         and bool(SECONDARY_SEMANTICS & mapping.keys())
     )
+    position_duty_contact_shape = (
+        {"position", "duty"} <= mapping.keys()
+        and bool(CONTACT_SEMANTICS & mapping.keys())
+    )
+    return established_shape or position_duty_contact_shape
 
 
 def _collapse_duplicate_display(value: str) -> str:
@@ -220,6 +233,26 @@ def _value_at(
     if semantic in CONTACT_SEMANTICS:
         value = _collapse_duplicate_display(value)
     return value or None
+
+
+def _semantic_value(value: str | None) -> str | None:
+    if not value or is_no_data_placeholder(value):
+        return None
+    return value
+
+
+def _validated_contact(value: str | None, semantic: str) -> str | None:
+    value = _semantic_value(value)
+    if value is None:
+        return None
+    if semantic in {"phone", "fax"}:
+        return value if is_supported_phone(value) else None
+    if semantic == "email":
+        try:
+            normalize_email(value)
+        except ValueError:
+            return None
+    return value
 
 
 def _row_text(row: _GridRow, mapping: dict[str, int]) -> str:
@@ -314,12 +347,25 @@ class StaffDirectoryExtractor:
                     semantic: _value_at(row, mapping, semantic)
                     for semantic in SEMANTIC_ALIASES
                 }
-                if not values["org_unit"] or not values["duty"]:
-                    continue
-                if not any(values[name] for name in SECONDARY_SEMANTICS):
-                    continue
+                for semantic in ("org_unit", "duty", "position", "person_name"):
+                    values[semantic] = _semantic_value(values[semantic])
+                for semantic in CONTACT_SEMANTICS:
+                    values[semantic] = _validated_contact(values[semantic], semantic)
                 row_text = _row_text(row, mapping)
                 if not row_text:
+                    continue
+                if not meaningful_directory_values(
+                    row_text=row_text,
+                    org_unit_text=values["org_unit"],
+                    duty_text=values["duty"],
+                    position_text=values["position"],
+                    person_name_text=values["person_name"],
+                    phone_text=values["phone"],
+                    email_text=values["email"],
+                    fax_text=values["fax"],
+                ):
+                    continue
+                if not any(values[name] for name in SECONDARY_SEMANTICS):
                     continue
 
                 raw_cells = [

@@ -82,6 +82,22 @@ select.control { appearance: auto; }
 .stage-row strong { font-size: 12px; }
 .stage-row .status-badge { min-height: 23px; padding: 2px 8px; font-size: 11px; }
 
+.discovery-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+.discovery-summary-grid > div { padding: 9px 10px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #f8fafc; }
+.discovery-summary-grid dt { color: var(--color-text-muted); font-size: 11px; }
+.discovery-summary-grid dd { margin: 2px 0 0; color: var(--color-text); font-size: 16px; font-weight: 800; }
+.discovery-summary-grid--modal { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.discovery-modal { width: min(1100px, calc(100vw - 56px)); }
+.discovery-modal-body { max-height: calc(100vh - 150px); }
+.discovery-items { display: grid; gap: 10px; margin-top: 14px; }
+.discovery-card { padding: 14px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #fff; }
+.discovery-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.discovery-card-heading strong { font-size: 14px; }
+.discovery-card .detail-grid { grid-template-columns: 130px minmax(0, 1fr); }
+.discovery-card .evidence-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.discovery-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
+.discovery-pagination span { color: var(--color-text-muted); font-size: 12px; }
+
 .comparison-box { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: 8px; }
 .comparison-card { min-width: 0; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #f8fafc; }
 .comparison-card--new { border-color: #bad1ff; background: #f2f7ff; }

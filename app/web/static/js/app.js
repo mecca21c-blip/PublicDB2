@@ -62,6 +62,129 @@
     if (modal) closeModal(modal);
   });
 
+  const discoveryModal = document.querySelector('[data-modal="run-discovery"]');
+  if (discoveryModal) {
+    const status = discoveryModal.querySelector("[data-discovery-status]");
+    const summary = discoveryModal.querySelector("[data-discovery-modal-summary]");
+    const itemsRoot = discoveryModal.querySelector("[data-discovery-items]");
+    const pagination = discoveryModal.querySelector(".discovery-pagination");
+    const pageState = discoveryModal.querySelector("[data-discovery-page-state]");
+    let activeRun = null;
+    let activePage = 1;
+
+    const addField = (grid, label, value, className = "") => {
+      if (value === null || value === undefined || value === "") return;
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const detail = document.createElement("dd");
+      detail.textContent = String(value);
+      if (className) detail.className = className;
+      grid.append(term, detail);
+    };
+
+    const renderSummary = (values) => {
+      summary.replaceChildren();
+      [
+        ["유효 연락처", values.valid_contacts],
+        ["업무/명부", values.business_directory],
+        ["사이트 공통 연락처", values.site_wide_contacts],
+        ["분류 미확인", values.unknown_contacts],
+      ].forEach(([label, value]) => {
+        const wrapper = document.createElement("div");
+        const term = document.createElement("dt");
+        const detail = document.createElement("dd");
+        term.textContent = label;
+        detail.textContent = String(value);
+        wrapper.append(term, detail);
+        summary.append(wrapper);
+      });
+      summary.hidden = false;
+    };
+
+    const renderItems = (items) => {
+      itemsRoot.replaceChildren();
+      items.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "discovery-card";
+        const heading = document.createElement("header");
+        heading.className = "discovery-card-heading";
+        const title = document.createElement("strong");
+        title.textContent = item.kind_label;
+        const scope = document.createElement("span");
+        scope.className = "status-badge status-badge--info";
+        scope.textContent = item.scope_label;
+        heading.append(title, scope);
+        const grid = document.createElement("dl");
+        grid.className = "detail-grid";
+        if (item.kind === "CONTACT") {
+          addField(grid, "구분", item.scope_label);
+          addField(grid, "종류", item.candidate_type_label);
+          addField(grid, "값", item.value);
+          addField(grid, "문맥", item.context, "evidence-text");
+        } else if (item.kind === "DIRECTORY") {
+          addField(grid, "부서", item.org_unit);
+          addField(grid, "업무", item.duty);
+          addField(grid, "직위", item.position);
+          addField(grid, "담당자", item.person_name);
+          addField(grid, "전화", item.phone);
+          addField(grid, "이메일", item.email);
+          addField(grid, "팩스", item.fax);
+          addField(grid, "원문 요약", item.row_summary, "evidence-text");
+        } else {
+          addField(grid, "제목", item.title);
+          addField(grid, "링크", item.link);
+          addField(grid, "발행", item.published_at);
+          addField(grid, "요약", item.row_summary, "evidence-text");
+        }
+        addField(grid, "Observation", item.observation_id, "url-cell");
+        addField(grid, "Source", item.source_url, "url-cell");
+        addField(grid, "출처 위치", item.source_locator, "url-cell");
+        card.append(heading, grid);
+        itemsRoot.append(card);
+      });
+      if (!items.length) {
+        const empty = document.createElement("p");
+        empty.className = "detail-note detail-note--empty";
+        empty.textContent = "현재 품질 규칙으로 표시할 유효 발견 데이터가 없습니다.";
+        itemsRoot.append(empty);
+      }
+    };
+
+    const loadDiscoveries = async (page) => {
+      status.hidden = false;
+      status.textContent = "발견 데이터를 불러오는 중입니다.";
+      itemsRoot.replaceChildren();
+      pagination.hidden = true;
+      try {
+        const response = await fetch("/api/runs/" + encodeURIComponent(activeRun) + "/discoveries?page=" + page + "&page_size=50");
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "발견 데이터를 불러오지 못했습니다.");
+        activePage = result.pagination.page;
+        renderSummary(result.summary);
+        renderItems(result.items);
+        status.hidden = true;
+        pageState.textContent = result.pagination.page + " / " + result.pagination.pages + " 페이지 · " + result.pagination.total + "건";
+        pagination.querySelector('[data-discovery-page="previous"]').disabled = !result.pagination.has_previous;
+        pagination.querySelector('[data-discovery-page="next"]').disabled = !result.pagination.has_next;
+        pagination.hidden = false;
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    };
+
+    document.querySelectorAll("[data-discovery-open]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeRun = button.dataset.runId;
+        activePage = 1;
+        openModal(discoveryModal);
+        loadDiscoveries(1);
+      });
+    });
+    pagination.querySelectorAll("[data-discovery-page]").forEach((button) => {
+      button.addEventListener("click", () => loadDiscoveries(activePage + (button.dataset.discoveryPage === "next" ? 1 : -1)));
+    });
+  }
+
   document.querySelectorAll("[data-segment]").forEach((button) => {
     button.addEventListener("click", () => {
       button.parentElement.querySelectorAll("[data-segment]").forEach((candidate) => {

@@ -13,8 +13,6 @@ from app.models import (
     Agency,
     ChangeDetection,
     CrawlRun,
-    ExtractedContactCandidate,
-    ExtractedDirectoryRecord,
     ExtractionRun,
     Observation,
     RunStatus,
@@ -28,6 +26,7 @@ from app.services.master_promotion_apply_service import MasterPromotionApplyServ
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
 from app.services.source_change_detection_service import SourceChangeDetectionService
 from app.services.pagination import page_metadata, page_values
+from app.services.discovery_read_service import DiscoveryReadService
 
 
 STATUS_LABELS = {
@@ -67,8 +66,7 @@ class RunService:
             .options(
                 selectinload(CrawlRun.source).selectinload(Source.bindings).selectinload(SourceBinding.agency),
                 selectinload(CrawlRun.source).selectinload(Source.bindings).selectinload(SourceBinding.org_unit),
-                selectinload(CrawlRun.observations).selectinload(Observation.extraction_runs).selectinload(ExtractionRun.candidates),
-                selectinload(CrawlRun.observations).selectinload(Observation.extraction_runs).selectinload(ExtractionRun.directory_records),
+                selectinload(CrawlRun.observations).selectinload(Observation.extraction_runs),
             )
             .order_by(CrawlRun.started_at.desc(), CrawlRun.id.desc())
         )
@@ -127,19 +125,15 @@ class RunService:
         observations = sorted(run.observations, key=lambda value: (value.observed_at, value.id))
         observation = observations[0] if observations else None
         extraction_runs = [extraction for observed in observations for extraction in observed.extraction_runs]
-        contact_count = sum(
-            len(extraction.candidates) for extraction in extraction_runs
-            if extraction.status.value == "SUCCESS"
-        )
-        directory_count = sum(
-            len(extraction.directory_records) for extraction in extraction_runs
-            if extraction.status.value == "SUCCESS"
-        )
+        discovery_reader = DiscoveryReadService(self.session)
+        discovery_summary = discovery_reader.summary(run.id)
+        contact_count = discovery_summary["valid_contacts"]
+        directory_count = discovery_summary["directory_records"]
         staff_extraction = next((
             extraction for extraction in extraction_runs
             if extraction.extractor_name == "staff_directory"
             and extraction.status.value == "SUCCESS"
-            and extraction.directory_records
+            and discovery_reader.has_meaningful_directory_records(extraction.id)
         ), None)
         master = {
             "available": False, "extraction_id": None, "agency_choices": (),
@@ -218,14 +212,14 @@ class RunService:
             ),
             "result": result,
             "tone": tone,
-            "found": run.records_observed,
+            "found": discovery_summary["meaningful_total"],
             "duration": f"{duration_seconds:.1f}초" if duration_seconds is not None else "진행 중",
         }
         stages = (
             ("접속", *stage(run.connection_status)),
             ("RAW 저장", *stage(run.raw_status)),
             ("추출", *stage(run.extraction_status)),
-            ("발견 결과", f"{run.records_observed}건", "info"),
+            ("발견 결과", f"{discovery_summary['meaningful_total']}건", "info"),
             ("확정 DB 반영", "미반영", "neutral"),
         )
         stages = (*stages[:-1], (stages[-1][0], master["state"], master["tone"]))
@@ -243,6 +237,8 @@ class RunService:
             "artifact_sha256": observation.artifact_sha256 or "-" if observation else "-",
             "contact_count": contact_count,
             "directory_count": directory_count,
+            "recorded_count": run.records_observed,
+            "discovery_summary": discovery_summary,
             "started_at": run.started_at.isoformat(),
             "finished_at": run.finished_at.isoformat() if run.finished_at else "-",
             "duration": item["duration"],

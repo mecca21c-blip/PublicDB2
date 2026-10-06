@@ -248,6 +248,32 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   OrgUnit과 Source/Binding/config를 함께 처리한다. 행 실패 시 같은 savepoint의 신규 entity도
   rollback하며 canonical Source와 binding unique 계약으로 반복 요청을 idempotent하게 처리한다.
 
+## 06C-5A Discovery Quality and Evidence Contract
+
+- 일반 HTML 연락처의 의미 identity는 한 Observation 안의 `candidate_type + normalized_value`다.
+  중첩 DOM이나 여러 detection method가 같은 의미 연락처를 반복 발견해도 한 후보만 저장하고,
+  업무/본문 context, 더 구체적인 DOM locator, bounded context 순으로 근거를 결정론적으로 선택한다.
+- 직원명부의 자료없음 문구는 공백·문장부호만 보수적으로 정규화해 제외한다. 알려진 자료없음
+  row, 의미 신호가 전혀 없는 row, 전화·이메일·팩스 형식에 맞지 않는 contact field는 발견
+  명부나 확정 Master 입력으로 사용하지 않는다.
+- 직원명부는 모든 필드를 요구하지 않는다. 실제 header가 직위·담당업무·전화번호인 경우처럼
+  의미 있는 업무/직위와 유효 연락처 조합은 명부 evidence이며, 공개되지 않은 사람 이름은
+  추론하지 않고 NULL로 유지한다.
+- 연락처 scope는 저장 컬럼을 추가하지 않고 `source_locator`와 `context_text`에서 파생한다.
+  DOM 구조를 우선해 업무/본문 연락처, 사이트 공통 연락처, 분류 미확인으로 표시한다.
+  footer/header 연락처도 유효 evidence로 보존하며 자동 폐기하지 않는다.
+- 미래 CrawlRun의 `records_observed`는 중복 제거된 일반 연락처, 유효 명부 행, 유효 feed/API
+  discovery 등 의미 있는 객체 수를 기록한다. 기존 CrawlRun 수치는 extractor 당시 역사로
+  변경하지 않으며, 읽기 projection에서 현재 규칙의 유효 발견 수를 별도로 계산한다.
+- `/runs`는 compact 발견 요약과 bounded 발견 상세 API를 제공한다. 상세 응답은 기본 50건,
+  최대 100건이며 모든 항목은 Observation, Source URL, source locator를 유지한다. context와
+  원문 요약은 길이를 제한하고 브라우저에서는 text로만 렌더링한다.
+- baseline/change review는 같은 품질 권한을 다시 적용한다. historical placeholder 명부는
+  OrgUnit/Duty/Position/ContactPoint 또는 review 후보가 될 수 없고, historical 일반 연락처
+  중복은 semantic dedup 후 하나의 review 효과만 만든다.
+- HTML contact extractor version 3과 staff directory extractor version 2가 이 의미 변경을
+  소유한다. 과거 ExtractionRun과 발견 row는 삭제·수정하지 않는다.
+
 ## 06C-3 Scoped Refresh and Scheduler Contract
 
 - CollectionJob은 사용자가 왜(수동/정기), 무엇을(소스·선택·부서·기관·지역·전체),

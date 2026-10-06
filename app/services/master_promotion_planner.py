@@ -12,6 +12,8 @@ from app.models import (
     ContactPoint, ContactType, Duty, ExtractionRun, ExtractionStatus, OrgUnit,
     SourceBinding,
 )
+from app.collectors.html_contact_extractor import is_supported_phone, normalize_email
+from app.core.discovery_quality import is_no_data_placeholder, meaningful_directory_values
 from app.services.master_normalization import normalize_contact, normalize_text, split_values
 from app.services.promotion_plan import PlannedContact, PlannedRow
 
@@ -119,6 +121,17 @@ class MasterPromotionPlanner:
         ))
         rows: list[PlannedRow] = []
         for record in extraction.directory_records:
+            if not meaningful_directory_values(
+                row_text=record.row_text,
+                org_unit_text=record.org_unit_text,
+                duty_text=record.duty_text,
+                position_text=record.position_text,
+                person_name_text=record.person_name_text,
+                phone_text=record.phone_text,
+                email_text=record.email_text,
+                fax_text=record.fax_text,
+            ):
+                continue
             org_name = (record.org_unit_text or "").strip()
             duty_title = (record.duty_text or "").strip()
             row = PlannedRow(record=record, org_name=org_name, duty_title=duty_title, org_id=None, duty_id=None)
@@ -146,6 +159,18 @@ class MasterPromotionPlanner:
                 (ContactType.FAX, record.fax_text),
             ):
                 for value in split_values(raw):
+                    if is_no_data_placeholder(value):
+                        row.blockers.append("CONTACT_INVALID")
+                        continue
+                    if contact_type in (ContactType.PHONE, ContactType.FAX) and not is_supported_phone(value):
+                        row.blockers.append("CONTACT_INVALID")
+                        continue
+                    if contact_type is ContactType.EMAIL:
+                        try:
+                            normalize_email(value)
+                        except ValueError:
+                            row.blockers.append("CONTACT_INVALID")
+                            continue
                     normalized = normalize_contact(contact_type, value)
                     if not normalized:
                         row.blockers.append("CONTACT_INVALID")

@@ -16,6 +16,7 @@ from app.collectors.html_contact_extractor import (
     HTMLContactExtractor,
 )
 from app.core.config import PROJECT_ROOT
+from app.core.discovery_quality import deduplicate_contacts
 from app.models import (
     ExtractedContactCandidate,
     ExtractionRun,
@@ -104,9 +105,11 @@ class ContactExtractionService:
 
         try:
             html, charset = self._verified_html(observation_id)
-            extracted_values = self._extractor.extract(
-                html,
-                declared_charset=charset,
+            extracted_values = deduplicate_contacts(
+                self._extractor.extract(
+                    html,
+                    declared_charset=charset,
+                )
             )
         except Exception as error:
             failed_run = self._mark_failed(run_id, error)

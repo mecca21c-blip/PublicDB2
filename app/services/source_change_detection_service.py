@@ -16,6 +16,7 @@ from app.models import (
     SourceOccurrence,
 )
 from app.models.common import utc_now
+from app.core.discovery_quality import deduplicate_contacts
 from app.services.master_normalization import normalize_contact, normalize_text
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
 
@@ -31,7 +32,7 @@ def _key(*parts: object) -> str:
 
 class SourceChangeDetectionService:
     NAME = "source_change"
-    VERSION = "1.0"
+    VERSION = "1.1"
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -275,27 +276,31 @@ class SourceChangeDetectionService:
             select(SourceBinding).where(SourceBinding.source_id == source_id, SourceBinding.active.is_(True))
         ))
         specs = []
-        for extraction in extraction_runs:
-            for contact in extraction.candidates:
-                contact_type = ContactType(contact.candidate_type.value)
-                if len(bindings) == 1:
-                    binding = bindings[0]
-                    specs.append(self._spec(
-                        EntityType.CONTACT_POINT, ChangeEventType.CONTACT_ADDED, None, contact.id,
-                        None, {"type": contact_type.value, "value": contact.raw_value,
-                               "normalized_value": contact.normalized_value,
-                               "org_unit_id": str(binding.org_unit_id) if binding.org_unit_id else None,
-                               "duty_id": None},
-                        "Generic page contact requires review", contact.source_locator,
-                    ))
-                else:
-                    specs.append(self._spec(
-                        EntityType.CONTACT_POINT, ChangeEventType.OTHER, None, contact.id,
-                        None, {"type": contact_type.value, "value": contact.raw_value,
-                               "normalized_value": contact.normalized_value},
-                        "CONTEXT_REQUIRED", contact.source_locator, False,
-                        "Generic contact has multiple or missing active business bindings.",
-                    ))
+        contacts = deduplicate_contacts(
+            contact
+            for extraction in extraction_runs
+            for contact in extraction.candidates
+        )
+        for contact in contacts:
+            contact_type = ContactType(contact.candidate_type.value)
+            if len(bindings) == 1:
+                binding = bindings[0]
+                specs.append(self._spec(
+                    EntityType.CONTACT_POINT, ChangeEventType.CONTACT_ADDED, None, contact.id,
+                    None, {"type": contact_type.value, "value": contact.raw_value,
+                           "normalized_value": contact.normalized_value,
+                           "org_unit_id": str(binding.org_unit_id) if binding.org_unit_id else None,
+                           "duty_id": None},
+                    "Generic page contact requires review", contact.source_locator,
+                ))
+            else:
+                specs.append(self._spec(
+                    EntityType.CONTACT_POINT, ChangeEventType.OTHER, None, contact.id,
+                    None, {"type": contact_type.value, "value": contact.raw_value,
+                           "normalized_value": contact.normalized_value},
+                    "CONTEXT_REQUIRED", contact.source_locator, False,
+                    "Generic contact has multiple or missing active business bindings.",
+                ))
         return specs
 
     @staticmethod

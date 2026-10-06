@@ -24,6 +24,7 @@ from app.api.collection_jobs import router as collection_jobs_api
 from app.api.lookups import router as lookups_api
 from app.api.master_review import router as master_review_api
 from app.api.operations import router as operations_api
+from app.api.run_evidence import router as run_evidence_api
 from app.api.sources import router as sources_api
 from app.api.source_index import router as source_index_api
 from app.api.three_way import router as three_way_api
@@ -209,6 +210,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     application.include_router(source_index_api)
     application.include_router(master_review_api)
     application.include_router(operations_api)
+    application.include_router(run_evidence_api)
     application.include_router(three_way_api)
     application.mount(
         "/static",

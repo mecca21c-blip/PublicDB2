@@ -8,11 +8,15 @@ from urllib.parse import unquote
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
+from app.core.discovery_quality import (
+    contact_semantic_key,
+    preferred_contact,
+)
 from app.models.enums import CandidateType, DetectionMethod
 
 
 EXTRACTOR_NAME = "html_contact"
-EXTRACTOR_VERSION = "2"
+EXTRACTOR_VERSION = "3"
 MAX_CONTEXT_CHARS = 1000
 MAX_LOCATOR_CHARS = 1000
 MAX_VALUE_CHARS = 500
@@ -81,7 +85,7 @@ def normalize_phone(value: str) -> str:
     return "".join(character for character in value if character.isdigit())
 
 
-def _is_supported_tel_value(value: str) -> bool:
+def is_supported_phone(value: str) -> bool:
     trimmed = value.strip()
     if PHONE_PATTERN.fullmatch(trimmed):
         return True
@@ -144,11 +148,6 @@ def _fax_label_precedes(text: str, start: int) -> bool:
     return FAX_LABEL_PATTERN.search(prefix) is not None
 
 
-def _canonical_context(context: str | None) -> str | None:
-    canonical = " ".join((context or "").split()).strip()
-    return canonical or None
-
-
 def _context_position(context: str | None, raw_value: str) -> int:
     return (context or "").find(raw_value)
 
@@ -194,45 +193,6 @@ def _is_placeholder_phone(
     return EXAMPLE_LABEL_PATTERN.search(context_prefix) is not None
 
 
-METHOD_PRIORITY = {
-    DetectionMethod.TEXT_PATTERN: 0,
-    DetectionMethod.MAILTO: 1,
-    DetectionMethod.TEL_LINK: 1,
-}
-
-
-def _semantic_key(
-    candidate: ExtractedCandidateValue,
-) -> tuple[CandidateType, str, str, str]:
-    canonical_context = _canonical_context(candidate.context_text)
-    if canonical_context is not None:
-        return (
-            candidate.candidate_type,
-            candidate.normalized_value,
-            "context",
-            canonical_context,
-        )
-    return (
-        candidate.candidate_type,
-        candidate.normalized_value,
-        "locator",
-        candidate.source_locator or "",
-    )
-
-
-def _preferred_candidate(
-    current: ExtractedCandidateValue,
-    new: ExtractedCandidateValue,
-) -> ExtractedCandidateValue:
-    current_priority = METHOD_PRIORITY[current.detection_method]
-    new_priority = METHOD_PRIORITY[new.detection_method]
-    if new_priority != current_priority:
-        return new if new_priority > current_priority else current
-    current_locator = current.source_locator or ""
-    new_locator = new.source_locator or ""
-    return new if new_locator < current_locator else current
-
-
 class HTMLContactExtractor:
     """Parse supplied HTML bytes only; no DB, network, or master-data writes."""
 
@@ -258,9 +218,7 @@ class HTMLContactExtractor:
         for tag in soup.find_all(REMOVED_TAGS):
             tag.decompose()
 
-        candidates: dict[
-            tuple[CandidateType, str, str, str], ExtractedCandidateValue
-        ] = {}
+        candidates: dict[tuple[str, str], ExtractedCandidateValue] = {}
 
         def add(candidate: ExtractedCandidateValue) -> None:
             if (
@@ -269,12 +227,12 @@ class HTMLContactExtractor:
                 or len(candidate.normalized_value) > MAX_VALUE_CHARS
             ):
                 return
-            key = _semantic_key(candidate)
+            key = contact_semantic_key(candidate)
             existing = candidates.get(key)
             candidates[key] = (
                 candidate
                 if existing is None
-                else _preferred_candidate(existing, candidate)
+                else preferred_contact(existing, candidate)
             )
 
         for anchor in soup.find_all("a", href=True):
@@ -307,7 +265,7 @@ class HTMLContactExtractor:
 
             if lowered_href.startswith("tel:"):
                 raw_value = unquote(href[4:].split("?", 1)[0]).strip()
-                if _is_supported_tel_value(raw_value):
+                if is_supported_phone(raw_value):
                     anchor_text = anchor.get_text(" ", strip=True)
                     search_text = anchor_text or raw_value
                     raw_position = search_text.find(raw_value)
