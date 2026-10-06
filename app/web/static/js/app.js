@@ -322,6 +322,8 @@
     let step = 1;
     let closed = false;
     let lastPreview = null;
+    let registrationReady = false;
+    let registering = false;
 
     const allRows = () => [...rowsRoot.querySelectorAll("[data-source-row]")];
     const stateOf = (row) => row._intakeState;
@@ -589,11 +591,13 @@
     ].map(([label, value]) => "<span><strong>" + value + "</strong><small>" + label + "</small></span>").join("");
     const showStep = (next) => {
       step = next;
+      if (step !== 3) registrationReady = false;
       form.querySelectorAll("[data-wizard-step]").forEach((section) => { section.hidden = Number(section.dataset.wizardStep) !== step; });
       form.querySelectorAll("[data-wizard-indicator]").forEach((item) => item.classList.toggle("is-active", Number(item.dataset.wizardIndicator) === step));
       form.querySelector("[data-wizard-prev]").hidden = step === 1;
       form.querySelector("[data-wizard-next]").hidden = step === 3;
       submit.hidden = step !== 3;
+      submit.disabled = step !== 3 || !registrationReady || registering;
     };
     const renderFinal = (preview) => {
       form.querySelector("[data-final-summary]").innerHTML = summaryMarkup(preview.summary);
@@ -708,10 +712,16 @@
         const checks = [...(panel?.querySelectorAll('[name^="method_config.extract_"]') || [])];
         if (checks.length && !checks.some((control) => control.checked)) throw new Error("가져올 정보를 하나 이상 선택하세요.");
         const okay = await resolveAgain(false); if (!okay) return;
+        registrationReady = lastPreview.summary.errors === 0
+          && lastPreview.summary.unresolved === 0
+          && lastPreview.summary.importable > 0;
         renderFinal(lastPreview); showStep(3);
       } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
     });
-    form.querySelector("[data-wizard-prev]").addEventListener("click", () => showStep(step - 1));
+    form.querySelector("[data-wizard-prev]").addEventListener("click", () => {
+      registrationReady = false;
+      showStep(step - 1);
+    });
     addButton.addEventListener("click", () => { if (allRows().length < 200 && selector.value === "WEB_PAGE") createRow().querySelector("[data-row-url]").focus(); });
     selector.addEventListener("change", () => {
       if (selector.value !== "WEB_PAGE") allRows().slice(1).forEach((row) => { stateOf(row).controller?.abort(); row.remove(); });
@@ -734,8 +744,7 @@
       closed = true; queue.splice(0); allRows().forEach((row) => { stateOf(row).generation += 1; stateOf(row).controller?.abort(); });
     }));
     document.querySelector('[data-modal-open="source-create"]')?.addEventListener("click", () => { closed = false; });
-    form._interactiveBatchPayload = batchPayload;
-    form._interactiveShowResult = (result) => {
+    const showRegistrationResult = (result) => {
       const labels = [
         ["입력", result.summary.input], ["등록 처리", result.summary.registered], ["신규 Source", result.summary.created_sources],
         ["기존 Source 재사용", result.summary.existing_sources_reused], ["새 연결", result.summary.created_bindings],
@@ -744,10 +753,69 @@
       ];
       const output = form.querySelector("[data-interactive-result-summary]"); output.replaceChildren();
       labels.forEach(([label, value]) => { const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value + "개"; output.append(dt, dd); });
+      const failedRows = result.rows.filter((item) => item.result === "ERROR" || (item.result === "SKIPPED" && !["DUPLICATE"].includes(item.status)));
+      form.querySelector("[data-interactive-result-title]").textContent = failedRows.length ? "등록 완료 · 일부 오류" : "등록 완료";
+      const errorSection = form.querySelector("[data-interactive-error-section]");
+      const errorRows = form.querySelector("[data-interactive-error-rows]"); errorRows.replaceChildren();
+      failedRows.forEach((item) => {
+        const tr = document.createElement("tr");
+        [item.url, statusLabels[item.status]?.[1] || item.result, item.message || "등록하지 못했습니다."]
+          .forEach((value) => { const td = document.createElement("td"); td.textContent = value; tr.append(td); });
+        errorRows.append(tr);
+      });
+      errorSection.hidden = failedRows.length === 0;
+      form.querySelector("[data-interactive-fix]").hidden = failedRows.length === 0;
+      form.dataset.createdSourceIds = JSON.stringify(result.source_ids || []);
       form.querySelector("[data-interactive-result]").hidden = false;
       form.querySelector(".source-review-table").hidden = true;
       form.querySelector(".modal-actions--sticky").hidden = true;
     };
+    form.querySelector("[data-interactive-fix]").addEventListener("click", () => {
+      form.querySelector("[data-interactive-result]").hidden = true;
+      form.querySelector(".source-review-table").hidden = false;
+      form.querySelector(".modal-actions--sticky").hidden = false;
+      showStep(1);
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      errorBox.textContent = "Source 등록은 3단계의 등록 버튼으로만 실행할 수 있습니다.";
+      errorBox.hidden = false;
+    });
+    submit.addEventListener("click", async () => {
+      if (registering) return;
+      if (step !== 3 || !registrationReady) {
+        errorBox.textContent = "등록 전 확인이 완료되지 않았습니다. 이전 단계의 오류와 확인 필요 항목을 확인하세요.";
+        errorBox.hidden = false;
+        return;
+      }
+      const originalLabel = submit.textContent;
+      let requestSucceeded = false;
+      registering = true; submit.disabled = true; submit.textContent = "등록 중...";
+      errorBox.hidden = true;
+      try {
+        const response = await fetch("/api/source-bindings/interactive/register", {
+          method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify(batchPayload()),
+        });
+        const text = await response.text();
+        let result = {};
+        try { result = text ? JSON.parse(text) : {}; }
+        catch (_error) { throw new Error("등록 응답을 해석하지 못했습니다. 수집 소스 목록에서 결과를 확인하세요."); }
+        if (!response.ok) throw new Error(result.detail || "행 기반 Source 등록을 완료하지 못했습니다.");
+        requestSucceeded = true;
+        showRegistrationResult(result);
+        registrationReady = false;
+      } catch (error) {
+        errorBox.textContent = requestSucceeded
+          ? "등록 요청은 성공했지만 결과 화면을 표시하지 못했습니다. 수집 소스 목록에서 등록 결과를 확인하세요."
+          : error.message;
+        errorBox.hidden = false;
+        errorBox.scrollIntoView({block: "nearest"});
+      } finally {
+        registering = false; submit.textContent = originalLabel;
+        submit.disabled = requestSucceeded || !registrationReady;
+      }
+    });
     createRow(); showStep(1);
   });
 
@@ -929,58 +997,6 @@
       event.preventDefault();
       const errorBox = form.querySelector("[data-form-error]");
       try {
-        const method = form.querySelector("[data-method-selector]")?.value;
-        if (form.dataset.sourceCreate !== undefined && form._interactiveBatchPayload) {
-          const response = await fetch("/api/source-bindings/interactive/register", {
-            method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
-            body: JSON.stringify(form._interactiveBatchPayload()),
-          });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.detail || "행 기반 Source 등록을 완료하지 못했습니다.");
-          form._interactiveShowResult(result);
-          return;
-        }
-        if (form.dataset.sourceCreate !== undefined && method === "WEB_PAGE") {
-          if (form.dataset.scrapePreviewReady !== "true") throw new Error("등록 전에 서버 미리보기를 확인하세요.");
-          const response = await fetch("/api/source-bindings/scrape-batch/confirm", {
-            method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
-            body: JSON.stringify(scrapeBatchPayload(form)),
-          });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.detail || "URL 일괄 등록을 완료하지 못했습니다.");
-          const labels = [
-            ["입력", result.summary.input], ["신규 Source", result.summary.created_sources],
-            ["기존 Source 재사용", result.summary.existing_sources_reused],
-            ["새 연결", result.summary.created_bindings], ["중복 건너뜀", result.summary.duplicates_skipped],
-            ["오류", result.summary.errors],
-          ];
-          const summary = form.querySelector("[data-scrape-result-summary]");
-          summary.replaceChildren();
-          labels.forEach(([label, value]) => {
-            const dt = document.createElement("dt"); dt.textContent = label;
-            const dd = document.createElement("dd"); dd.textContent = value + "개";
-            summary.append(dt, dd);
-          });
-          form.dataset.createdSourceIds = JSON.stringify(result.source_ids || []);
-          form.querySelector("[data-connection-fields]").hidden = true;
-          form.querySelector("[data-scrape-result]").hidden = false;
-          form.querySelector(".modal-actions--sticky").hidden = true;
-          form.querySelector("[data-form-error]").hidden = true;
-          return;
-        }
-        if (form.dataset.sourceCreate !== undefined && method === "API" && form.querySelector("[data-api-add-mode]:checked")?.value === "CATALOG") {
-          const catalogId = form.querySelector("[data-selected-catalog]")?.value;
-          const values = jsonFromForm(form);
-          if (!catalogId) throw new Error("기본 공개 소스를 선택하세요.");
-          const response = await fetch("/api/public-source-catalog/" + encodeURIComponent(catalogId) + "/activate", {
-            method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
-            body: JSON.stringify({agency_id: values.agency_id, org_unit_id: values.org_unit_id}),
-          });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.detail || "기본 공개 소스를 등록하지 못했습니다.");
-          window.location.reload();
-          return;
-        }
         const response = await fetch(form.action, {
           method: form.dataset.method || "POST",
           headers: csrfHeaders({"Content-Type": "application/json"}),

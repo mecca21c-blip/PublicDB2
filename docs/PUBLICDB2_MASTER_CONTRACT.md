@@ -232,6 +232,22 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 등록과 preview는 원격 HTTP를 실행하지 않는다. 등록 결과에서 명시적으로 지금 수집을
   선택할 때만 기존 background CollectionJob을 생성한다.
 
+### 06C-4F Source Wizard write boundary
+
+- Source Create Wizard에서 URL 입력·자동 발견·autocomplete·다음/이전·entity resolution·
+  final preview·취소·modal close는 모두 ephemeral/read-only다. 최종 등록 버튼을 사용자가
+  명시적으로 누르기 전에는 Agency, OrgUnit, Source, SourceBinding, typed method config,
+  CrawlRun, Observation, ExtractionRun 또는 CollectionJob을 쓰지 않는다.
+- Create Wizard는 공용 `data-api-form` submit handler에 참여하지 않는다. Enter 키에 의한
+  implicit form submit은 등록 권한이 아니며, 최종 등록은 Step 3의 명시적 button click이
+  소유하는 `/api/source-bindings/interactive/register` 요청 하나로만 실행한다.
+- 최종 버튼은 server preview가 성공하고 모든 entity가 exact match 또는 확인된 신규 intent로
+  해결됐으며 등록 가능한 행이 하나 이상일 때만 활성화한다. 클릭 즉시 중복 실행을 막고,
+  성공·부분 성공·실패 결과를 화면에 명시적으로 표시한다.
+- register service는 현재 payload를 다시 preview한 뒤 행별 savepoint 안에서 신규 Agency/
+  OrgUnit과 Source/Binding/config를 함께 처리한다. 행 실패 시 같은 savepoint의 신규 entity도
+  rollback하며 canonical Source와 binding unique 계약으로 반복 요청을 idempotent하게 처리한다.
+
 ## 06C-3 Scoped Refresh and Scheduler Contract
 
 - CollectionJob은 사용자가 왜(수동/정기), 무엇을(소스·선택·부서·기관·지역·전체),
