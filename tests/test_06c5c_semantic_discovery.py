@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 import pytest
 from alembic import command
@@ -116,6 +117,9 @@ def test_real_gangseo_51_raw_projects_to_29_semantic_discoveries(semantic_db):
         projection = projector.project(run.id)
         summary = projector.summary(run.id)
         page = projector.page(run.id)
+        second_page = projector.page(run.id, page=2)
+        directory_page = projector.page(run.id, category="DIRECTORY")
+        contact_page = projector.page(run.id, category="CONTACT")
         assert projection.raw_evidence_count == 51
         assert len(projection.generic_contacts) == 29
         assert len(projection.directories) == 22
@@ -125,8 +129,11 @@ def test_real_gangseo_51_raw_projects_to_29_semantic_discoveries(semantic_db):
         assert summary["semantic_discovery_count"] == 29
         assert summary["directory_records"] == 22
         assert summary["standalone_contacts"] == 7
-        assert page["pagination"]["page_size"] == DEFAULT_DISCOVERY_PAGE_SIZE == 30
-        assert len(page["items"]) == 29
+        assert page["pagination"]["page_size"] == DEFAULT_DISCOVERY_PAGE_SIZE == 15
+        assert len(page["items"]) == 15
+        assert len(second_page["items"]) == 14
+        assert directory_page["total"] == 22
+        assert contact_page["total"] == 7
         assert all(item["kind"] != "CONTACT" or int(item["normalized_value"][-4:]) >= 22 for item in page["items"])
         assert session.get(CrawlRun, run.id).records_observed == 51
 
@@ -147,6 +154,8 @@ def test_seoul_duplicate_and_busan_placeholder_semantics(semantic_db):
         projector = SemanticDiscoveryProjector(session)
         assert projector.summary(seoul.id)["semantic_discovery_count"] == 1
         assert projector.summary(busan.id)["semantic_discovery_count"] == 0
+        assert len(projector.page(seoul.id)["items"]) == 1
+        assert projector.page(busan.id)["items"] == []
         assert session.get(CrawlRun, seoul.id).records_observed == 3
         assert session.get(CrawlRun, busan.id).records_observed == 1
 
@@ -177,6 +186,8 @@ def test_scale_projection_paginates_after_semantic_consolidation_without_n_plus_
         assert len(result["items"]) == 30
         assert len(statements) <= 6
         assert MAX_DISCOVERY_PAGE_SIZE == 100
+        assert len(SemanticDiscoveryProjector(session).page(run.id)["items"]) == 15
+        assert len(SemanticDiscoveryProjector(session).page(run.id, page=2)["items"]) == 15
 
 
 def test_shadowed_generic_does_not_duplicate_contactpoint_review_or_occurrence(semantic_db):
@@ -231,10 +242,26 @@ def test_semantic_api_categories_and_compact_ui_contract(semantic_db):
         page = client.get("/runs")
     assert all_items.status_code == 200
     assert all_items.json()["summary"]["semantic_discovery_count"] == 2
-    assert all_items.json()["page_size"] == 30
+    assert all_items.json()["page_size"] == 15
     assert directory_items.json()["total"] == 1
     assert site_items.json()["total"] == 1
     assert too_large.status_code == 422
     assert "유효 발견" in page.text
     assert 'data-discovery-category="DIRECTORY"' in page.text
+    assert 'data-discovery-results' in page.text
+    assert 'data-discovery-range-state' in page.text
     assert "실행 당시 기록" in page.text
+
+
+def test_discovery_modal_has_bounded_scroll_owner_and_fixed_controls():
+    css = Path("app/web/static/css/workspace.css").read_text(encoding="utf-8")
+    javascript = Path("app/web/static/js/app.js").read_text(encoding="utf-8")
+    assert "height: min(820px, calc(100vh - 64px))" in css
+    assert ".discovery-modal-body {" in css and "overflow: hidden" in css
+    assert ".discovery-results-region {" in css and "overflow: auto" in css
+    assert ".discovery-pagination {" in css and "border-top" in css
+    assert "page_size=15&category=" in javascript
+    assert "이 범주의 발견 데이터가 없습니다." in javascript
+    assert "발견 데이터를 불러오지 못했습니다." in javascript
+    assert "다시 시도" in javascript
+    assert "windowSize = 5" in javascript

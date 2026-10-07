@@ -265,7 +265,7 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 미래 CrawlRun의 `records_observed`는 중복 제거된 일반 연락처, 유효 명부 행, 유효 feed/API
   discovery 등 의미 있는 객체 수를 기록한다. 기존 CrawlRun 수치는 extractor 당시 역사로
   변경하지 않으며, 읽기 projection에서 현재 규칙의 유효 발견 수를 별도로 계산한다.
-- `/runs`는 compact 발견 요약과 bounded 발견 상세 API를 제공한다. 상세 응답은 기본 30건,
+- `/runs`는 compact 발견 요약과 bounded 발견 상세 API를 제공한다. 상세 응답은 기본 15건,
   최대 100건이며 모든 항목은 Observation, Source URL, source locator를 유지한다. context와
   원문 요약은 길이를 제한하고 브라우저에서는 text로만 렌더링한다.
 - baseline/change review는 같은 품질 권한을 다시 적용한다. historical placeholder 명부는
@@ -292,8 +292,23 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 미래 CrawlRun은 의미 발견 수를 `records_observed`에 기록한다. 과거 수치와 추출 증거는
   재작성·삭제하지 않으며, Run UI가 현재 의미 기준 수와 실행 당시 기록의 차이를 설명한다.
 - Run 발견 modal은 전체·업무/명부·단독 연락처·사이트 공통 category, compact table, 고정된
-  닫기/요약, scrollable 결과, 서버 페이지네이션을 사용한다. 기본 30건, 최대 100건이며 의미
+  닫기/요약, scrollable 결과, 서버 페이지네이션을 사용한다. 기본 15건, 최대 100건이며 의미
   projection 뒤에 category filter와 페이지네이션을 적용한다.
+
+## 06C-5D Discovery Evidence Modal UX Contract
+
+- 발견 modal은 viewport 안에 고정된 bounded shell이며 header, semantic summary/filter,
+  results region, pager footer 순서다. 레코드 수가 늘어도 modal이나 document 높이는 늘지 않고
+  results region만 세로 스크롤한다. 좁은 창의 표 가로 스크롤도 같은 results region 안에 둔다.
+- API와 UI의 기본 page size는 모두 15, 최대는 100이다. footer는 현재 범위/전체 건수와 최대
+  5개의 page number window를 표시한다. category 변경은 page 1로 돌아가며 modal을 닫거나
+  전체 application page를 reload하지 않는다.
+- Directory와 standalone contact는 각각 업무/명부 및 연락처 전용 column으로 표시한다.
+  긴 업무·문맥은 row에서 줄이고 keyboard-accessible details에서 Observation, Source URL,
+  locator, 전체 bounded 문맥·원문과 supporting evidence 수를 제공한다. 값은 text node로만
+  렌더링한다.
+- 사이트 공통 수는 단독 연락처의 하위 집합임을 summary에서 명시한다. 실행 당시 저장 건수와
+  현재 semantic count가 다를 때만 muted historical comparison을 표시한다.
 
 ## 06C-3 Scoped Refresh and Scheduler Contract
 

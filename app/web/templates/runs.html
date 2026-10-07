@@ -39,7 +39,7 @@
               <div><dt>단독 연락처</dt><dd>{{detail.discovery_summary.standalone_contacts}}</dd></div>
               <div><dt>사이트 공통 연락처</dt><dd>{{detail.discovery_summary.site_wide_contacts}}</dd></div>
             </dl>
-            {% if detail.recorded_count != detail.discovery_summary.semantic_discovery_count %}<p class="detail-note">실행 당시 기록 {{detail.recorded_count}} · 현재 의미 기준 유효 발견 {{detail.discovery_summary.semantic_discovery_count}}</p>{% endif %}
+            {% if detail.recorded_count != detail.discovery_summary.semantic_discovery_count %}<div class="discovery-history-note"><span>현재 의미 기준 유효 발견 <strong>{{detail.discovery_summary.semantic_discovery_count}}건</strong></span><span>실행 당시 기록 <strong>{{detail.recorded_count}}건</strong></span></div>{% endif %}
             <button class="button button--secondary button--small" type="button" data-discovery-open data-run-id="{{detail.id}}">발견 데이터 보기</button>
           </section>
           <section class="detail-section"><h3>연결 context</h3>{% for binding in detail.bindings %}<p class="detail-note">{{binding}}</p>{% else %}<p class="detail-note">연결 없음</p>{% endfor %}</section>
@@ -63,20 +63,27 @@
   <section class="modal-shell discovery-modal" role="dialog" aria-modal="true" aria-labelledby="run-discovery-title">
     <header class="modal-heading"><div><h2 id="run-discovery-title">발견 데이터</h2><p>RAW 근거를 보존하면서 실제 의미가 같은 발견은 하나로 묶어 표시합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
     <div class="modal-body discovery-modal-body">
-      <p class="detail-note" data-discovery-status aria-live="polite">발견 데이터를 불러오세요.</p>
-      <dl class="discovery-summary-grid discovery-summary-grid--modal" data-discovery-modal-summary hidden></dl>
-      <div class="discovery-filters" data-discovery-filters aria-label="발견 데이터 분류" hidden>
-        <button class="button button--secondary button--small is-active" type="button" data-discovery-category="ALL">전체</button>
-        <button class="button button--secondary button--small" type="button" data-discovery-category="DIRECTORY">업무/명부</button>
-        <button class="button button--secondary button--small" type="button" data-discovery-category="CONTACT">단독 연락처</button>
-        <button class="button button--secondary button--small" type="button" data-discovery-category="SITE_WIDE">사이트 공통</button>
+      <div class="discovery-modal-controls">
+        <dl class="discovery-summary-grid discovery-summary-grid--modal" data-discovery-modal-summary hidden></dl>
+        <div class="discovery-filters" data-discovery-filters aria-label="발견 데이터 분류" hidden>
+          <button class="button button--secondary button--small is-active" type="button" data-discovery-category="ALL">전체</button>
+          <button class="button button--secondary button--small" type="button" data-discovery-category="DIRECTORY">업무/명부</button>
+          <button class="button button--secondary button--small" type="button" data-discovery-category="CONTACT">단독 연락처</button>
+          <button class="button button--secondary button--small" type="button" data-discovery-category="SITE_WIDE">사이트 공통</button>
+        </div>
       </div>
-      <div class="discovery-items" data-discovery-items></div>
-      <nav class="discovery-pagination" aria-label="발견 데이터 페이지" hidden>
-        <button class="button button--secondary button--small" type="button" data-discovery-page="previous">이전</button>
-        <span data-discovery-page-state></span>
-        <button class="button button--secondary button--small" type="button" data-discovery-page="next">다음</button>
-      </nav>
+      <div class="discovery-results-region" data-discovery-results tabindex="0" aria-label="발견 데이터 결과">
+        <div class="discovery-load-state" data-discovery-status aria-live="polite">발견 데이터를 불러오세요.</div>
+        <div class="discovery-items" data-discovery-items></div>
+      </div>
+      <footer class="discovery-pagination" data-discovery-pagination>
+        <span data-discovery-range-state>0–0 / 0</span>
+        <nav class="discovery-page-controls" aria-label="발견 데이터 페이지">
+          <button class="button button--secondary button--small" type="button" data-discovery-page="previous">이전</button>
+          <span class="discovery-page-numbers" data-discovery-page-numbers></span>
+          <button class="button button--secondary button--small" type="button" data-discovery-page="next">다음</button>
+        </nav>
+      </footer>
     </div>
   </section>
 </div>

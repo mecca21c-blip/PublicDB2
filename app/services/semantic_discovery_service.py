@@ -21,7 +21,7 @@ from app.models import (
 from app.services.master_normalization import normalize_contact, normalize_text, split_values
 
 
-DEFAULT_DISCOVERY_PAGE_SIZE = 30
+DEFAULT_DISCOVERY_PAGE_SIZE = 15
 MAX_DISCOVERY_PAGE_SIZE = 100
 MAX_CONTEXT_DISPLAY_CHARS = 300
 MAX_ROW_DISPLAY_CHARS = 500
