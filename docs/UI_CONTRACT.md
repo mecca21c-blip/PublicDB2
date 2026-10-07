@@ -70,6 +70,12 @@ Observation 실행은 method config와 통계, 각 RAW evidence를 run context�
 활성 CollectionJob 행은 full-page reload 없이 summary-only API로 약 3초마다 진행률,
 성공·오류 수와 상태를 갱신한다. 오류 상세는 safe HTTP reason과 가능한 HTTP 상태를
 표시하며 traceback, credential, cookie, secret query 또는 raw body를 표시하지 않는다.
+발견 수의 기본 의미는 raw evidence 객체 수가 아니라 semantic discovery 수다. 같은
+Observation의 명부 연락처와 일치하는 generic contact는 독립 행으로 중복 표시하지 않고,
+명부 상세에서 supporting evidence 수로만 설명한다. 발견 modal은 전체·업무/명부·단독
+연락처·사이트 공통 filter, compact table, 기본 30건(최대 100건) 서버 페이지네이션을
+제공하며 filter/paging 중 닫히거나 전체 페이지를 reload하지 않는다. 과거 저장 건수와
+현재 의미 projection이 다르면 유효 발견을 기본값으로, 실행 당시 기록을 보조값으로 표시한다.
 
 ### /contacts 연락처 DB
 

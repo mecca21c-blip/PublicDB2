@@ -34,11 +34,12 @@
           <section class="detail-section" data-discovery-summary>
             <h3>발견 데이터</h3>
             <dl class="discovery-summary-grid">
-              <div><dt>유효 연락처</dt><dd>{{detail.discovery_summary.valid_contacts}}</dd></div>
-              <div><dt>업무/명부</dt><dd>{{detail.discovery_summary.business_directory}}</dd></div>
+              <div><dt>유효 발견</dt><dd>{{detail.discovery_summary.semantic_discovery_count}}</dd></div>
+              <div><dt>업무/명부</dt><dd>{{detail.discovery_summary.directory_records}}</dd></div>
+              <div><dt>단독 연락처</dt><dd>{{detail.discovery_summary.standalone_contacts}}</dd></div>
               <div><dt>사이트 공통 연락처</dt><dd>{{detail.discovery_summary.site_wide_contacts}}</dd></div>
-              <div><dt>분류 미확인</dt><dd>{{detail.discovery_summary.unknown_contacts}}</dd></div>
             </dl>
+            {% if detail.recorded_count != detail.discovery_summary.semantic_discovery_count %}<p class="detail-note">실행 당시 기록 {{detail.recorded_count}} · 현재 의미 기준 유효 발견 {{detail.discovery_summary.semantic_discovery_count}}</p>{% endif %}
             <button class="button button--secondary button--small" type="button" data-discovery-open data-run-id="{{detail.id}}">발견 데이터 보기</button>
           </section>
           <section class="detail-section"><h3>연결 context</h3>{% for binding in detail.bindings %}<p class="detail-note">{{binding}}</p>{% else %}<p class="detail-note">연결 없음</p>{% endfor %}</section>
@@ -51,7 +52,7 @@
             {% if detail.master.action=='promote' %}<button class="button button--primary" type="button" data-master-action="promote">확정 DB 반영</button>{% elif detail.master.action=='detect' %}<button class="button button--primary" type="button" data-master-action="detect">변경 검토 생성</button>{% elif detail.master.context_required %}<button class="button button--primary" type="button" data-master-action="resolve">기관 선택 후 확인</button>{% endif %}
           </section>
           {% endif %}
-          <section class="detail-section"><h3>증거 정보</h3><dl class="detail-grid"><dt>HTTP 상태</dt><dd>{{detail.http_status}}</dd><dt>최종 URL</dt><dd class="url-cell">{{detail.final_url}}</dd><dt>Content-Type</dt><dd>{{detail.content_type}}</dd><dt>응답 크기</dt><dd>{{detail.response_bytes}}</dd><dt>RAW 상대 경로</dt><dd class="url-cell">{{detail.artifact_path}}</dd><dt>SHA-256</dt><dd class="url-cell">{{detail.artifact_sha256}}</dd><dt>유효 연락처</dt><dd>{{detail.contact_count}}건</dd><dt>유효 명부 행</dt><dd>{{detail.directory_count}}건</dd><dt>실행 당시 기록 수</dt><dd>{{detail.recorded_count}}건</dd><dt>시작</dt><dd>{{detail.started_at}}</dd><dt>종료</dt><dd>{{detail.finished_at}}</dd><dt>소요 시간</dt><dd>{{detail.duration}}</dd></dl></section>
+          <section class="detail-section"><h3>증거 정보</h3><dl class="detail-grid"><dt>HTTP 상태</dt><dd>{{detail.http_status}}</dd><dt>최종 URL</dt><dd class="url-cell">{{detail.final_url}}</dd><dt>Content-Type</dt><dd>{{detail.content_type}}</dd><dt>응답 크기</dt><dd>{{detail.response_bytes}}</dd><dt>RAW 상대 경로</dt><dd class="url-cell">{{detail.artifact_path}}</dd><dt>SHA-256</dt><dd class="url-cell">{{detail.artifact_sha256}}</dd><dt>단독 연락처</dt><dd>{{detail.contact_count}}건</dd><dt>업무/명부</dt><dd>{{detail.directory_count}}건</dd><dt>실행 당시 기록 수</dt><dd>{{detail.recorded_count}}건</dd><dt>시작</dt><dd>{{detail.started_at}}</dd><dt>종료</dt><dd>{{detail.finished_at}}</dd><dt>소요 시간</dt><dd>{{detail.duration}}</dd></dl></section>
           <section class="detail-section"><h3>오류 사유</h3><p class="detail-note">{{detail.reason}}</p>{% if detail.http_status != '-' %}<p class="detail-note">HTTP 상태: {{detail.http_status}}</p>{% endif %}</section>
         </div>
       </article>{% else %}<p class="detail-content">수집을 실행하면 단계별 결과가 표시됩니다.</p>{% endfor %}
@@ -60,10 +61,16 @@
 </div>
 <div class="modal-backdrop" data-modal="run-discovery" hidden>
   <section class="modal-shell discovery-modal" role="dialog" aria-modal="true" aria-labelledby="run-discovery-title">
-    <header class="modal-heading"><div><h2 id="run-discovery-title">발견 데이터</h2><p>현재 품질 규칙으로 중복과 자료없음 행을 제외한 증거입니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
+    <header class="modal-heading"><div><h2 id="run-discovery-title">발견 데이터</h2><p>RAW 근거를 보존하면서 실제 의미가 같은 발견은 하나로 묶어 표시합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
     <div class="modal-body discovery-modal-body">
       <p class="detail-note" data-discovery-status aria-live="polite">발견 데이터를 불러오세요.</p>
       <dl class="discovery-summary-grid discovery-summary-grid--modal" data-discovery-modal-summary hidden></dl>
+      <div class="discovery-filters" data-discovery-filters aria-label="발견 데이터 분류" hidden>
+        <button class="button button--secondary button--small is-active" type="button" data-discovery-category="ALL">전체</button>
+        <button class="button button--secondary button--small" type="button" data-discovery-category="DIRECTORY">업무/명부</button>
+        <button class="button button--secondary button--small" type="button" data-discovery-category="CONTACT">단독 연락처</button>
+        <button class="button button--secondary button--small" type="button" data-discovery-category="SITE_WIDE">사이트 공통</button>
+      </div>
       <div class="discovery-items" data-discovery-items></div>
       <nav class="discovery-pagination" aria-label="발견 데이터 페이지" hidden>
         <button class="button button--secondary button--small" type="button" data-discovery-page="previous">이전</button>

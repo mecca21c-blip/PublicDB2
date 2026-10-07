@@ -265,7 +265,7 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 미래 CrawlRun의 `records_observed`는 중복 제거된 일반 연락처, 유효 명부 행, 유효 feed/API
   discovery 등 의미 있는 객체 수를 기록한다. 기존 CrawlRun 수치는 extractor 당시 역사로
   변경하지 않으며, 읽기 projection에서 현재 규칙의 유효 발견 수를 별도로 계산한다.
-- `/runs`는 compact 발견 요약과 bounded 발견 상세 API를 제공한다. 상세 응답은 기본 50건,
+- `/runs`는 compact 발견 요약과 bounded 발견 상세 API를 제공한다. 상세 응답은 기본 30건,
   최대 100건이며 모든 항목은 Observation, Source URL, source locator를 유지한다. context와
   원문 요약은 길이를 제한하고 브라우저에서는 text로만 렌더링한다.
 - baseline/change review는 같은 품질 권한을 다시 적용한다. historical placeholder 명부는
@@ -273,6 +273,27 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   중복은 semantic dedup 후 하나의 review 효과만 만든다.
 - HTML contact extractor version 3과 staff directory extractor version 2가 이 의미 변경을
   소유한다. 과거 ExtractionRun과 발견 row는 삭제·수정하지 않는다.
+
+## 06C-5C Semantic Discovery Projection Contract
+
+- 원시 추출 증거 객체 수와 사용자가 이해하는 의미 발견 수는 별개다. 한 Observation의
+  유효 DirectoryRecord가 같은 `candidate_type + normalized_value` 연락처를 포함하면 명부
+  row가 풍부한 업무 맥락을 소유하고, generic contact는 증거로 보존하되 top-level 발견에서는
+  `SHADOWED_BY_DIRECTORY`로 제외한다.
+- DirectoryRecord는 같은 연락처를 공유하더라도 서로 다른 업무 row면 각각 유지한다. 완전히
+  동일한 명부 row, 중복 generic contact, placeholder만 현재 의미 projection에서 제외한다.
+  따라서 의미 발견 수는 `유효한 고유 명부 row + shadow되지 않은 generic contact + feed/API
+  등 extractor 소유 의미 타입`이다. OpenAPI discovery-only record는 mapped evidence를 만들지
+  않으므로 extractor가 확인한 raw record가 의미 record다.
+- `SemanticDiscoveryProjector`가 Run 요약, bounded 상세 API, 미래 `records_observed`, 그리고
+  generic-directory 중첩이 영향을 주는 baseline/review 계획의 단일 의미 권한이다. 중첩 generic은
+  독립 ContactPoint, SourceOccurrence 또는 review 후보를 만들지 않지만 standalone generic은
+  계속 유효하다.
+- 미래 CrawlRun은 의미 발견 수를 `records_observed`에 기록한다. 과거 수치와 추출 증거는
+  재작성·삭제하지 않으며, Run UI가 현재 의미 기준 수와 실행 당시 기록의 차이를 설명한다.
+- Run 발견 modal은 전체·업무/명부·단독 연락처·사이트 공통 category, compact table, 고정된
+  닫기/요약, scrollable 결과, 서버 페이지네이션을 사용한다. 기본 30건, 최대 100건이며 의미
+  projection 뒤에 category filter와 페이지네이션을 적용한다.
 
 ## 06C-3 Scoped Refresh and Scheduler Contract
 

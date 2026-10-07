@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session, selectinload
 from app.models import (
     ChangeDetection, ChangeEventType, ContactPoint, ContactType,
     DetectedChangeCandidate, Duty, EntityType, ExtractionRun, ExtractionStatus,
-    OrgUnit, ReviewStatus, RunStatus, Source, SourceBinding, SourceCoverageMode,
+    Observation, OrgUnit, ReviewStatus, RunStatus, Source, SourceBinding, SourceCoverageMode,
     SourceOccurrence,
 )
 from app.models.common import utc_now
-from app.core.discovery_quality import deduplicate_contacts
 from app.services.master_normalization import normalize_contact, normalize_text
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
+from app.services.semantic_discovery_service import SemanticDiscoveryProjector
 
 
 class DetectionError(ValueError):
@@ -263,24 +263,17 @@ class SourceChangeDetectionService:
         return specs
 
     def _generic_specs(self, observation_id, source_id, agency_id):
-        extraction_runs = list(self.session.scalars(
-            select(ExtractionRun)
-            .options(selectinload(ExtractionRun.candidates))
-            .where(
-                ExtractionRun.observation_id == observation_id,
-                ExtractionRun.extractor_name == "html_contact",
-                ExtractionRun.status == ExtractionStatus.SUCCESS,
+        observation = self.session.get(Observation, observation_id)
+        contacts = (
+            SemanticDiscoveryProjector(self.session).standalone_contacts_for_observation(
+                observation.crawl_run_id, observation_id,
             )
-        ))
+            if observation is not None else ()
+        )
         bindings = list(self.session.scalars(
             select(SourceBinding).where(SourceBinding.source_id == source_id, SourceBinding.active.is_(True))
         ))
         specs = []
-        contacts = deduplicate_contacts(
-            contact
-            for extraction in extraction_runs
-            for contact in extraction.candidates
-        )
         for contact in contacts:
             contact_type = ContactType(contact.candidate_type.value)
             if len(bindings) == 1:

@@ -87,9 +87,21 @@ select.control { appearance: auto; }
 .discovery-summary-grid dt { color: var(--color-text-muted); font-size: 11px; }
 .discovery-summary-grid dd { margin: 2px 0 0; color: var(--color-text); font-size: 16px; font-weight: 800; }
 .discovery-summary-grid--modal { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.discovery-modal { width: min(1100px, calc(100vw - 56px)); }
-.discovery-modal-body { max-height: calc(100vh - 150px); }
+.discovery-modal { width: min(1180px, calc(100vw - 56px)); display: flex; flex-direction: column; }
+.discovery-modal > .modal-heading { flex: 0 0 auto; }
+.discovery-modal-body { max-height: calc(100vh - 150px); overflow: auto; }
+.discovery-filters { position: sticky; top: -20px; z-index: 2; display: flex; flex-wrap: wrap; gap: 7px; margin: 0 -22px; padding: 10px 22px; border-block: 1px solid var(--color-border-soft); background: rgba(255,255,255,.97); }
+.discovery-filters .is-active { color: #fff; border-color: var(--color-blue-600); background: var(--color-blue-600); }
 .discovery-items { display: grid; gap: 10px; margin-top: 14px; }
+.discovery-table { min-width: 980px; table-layout: fixed; }
+.discovery-table th:nth-child(1) { width: 120px; }
+.discovery-table th:nth-child(2), .discovery-table th:nth-child(3), .discovery-table th:nth-child(5) { width: 120px; }
+.discovery-table th:nth-child(6) { width: 170px; }
+.discovery-table th:nth-child(7) { width: 90px; }
+.discovery-table td { vertical-align: top; }
+.discovery-text-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discovery-evidence-detail { width: min(460px, 60vw); padding: 8px 0 2px; }
+.discovery-evidence-detail p { margin: 4px 0; overflow-wrap: anywhere; color: var(--color-text-muted); font-size: 11px; }
 .discovery-card { padding: 14px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #fff; }
 .discovery-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .discovery-card-heading strong { font-size: 14px; }

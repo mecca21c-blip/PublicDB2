@@ -32,6 +32,7 @@ from app.services.contact_extraction_service import ContactExtractionService
 from app.services.crawl_scope import crawl_path_allowed
 from app.services.directory_extraction_service import DirectoryExtractionService
 from app.services.raw_artifact_store import RawArtifactStore, StoredArtifact
+from app.services.semantic_discovery_service import SemanticDiscoveryProjector
 from app.services.operation_claim_service import OperationClaimService
 from app.services.source_change_detection_service import SourceChangeDetectionService
 from app.services.source_method_service import MethodConfigError, SourceMethodService
@@ -241,12 +242,13 @@ class CollectionService:
             observation, config.extract_contacts if config else True,
             config.extract_directory if config else True,
         )
+        semantic_total = SemanticDiscoveryProjector(self.session).summary(run.id)["meaningful_total"]
         if success and not failures:
-            final = self._finalize(run.id, RunStatus.SUCCESS, StageStatus.SUCCESS, contacts + directories, None, stats)
+            final = self._finalize(run.id, RunStatus.SUCCESS, StageStatus.SUCCESS, semantic_total, None, stats)
             for extraction_id in directory_runs:
                 self._detect_changes_best_effort(extraction_id)
         elif success:
-            final = self._finalize(run.id, RunStatus.PARTIAL, StageStatus.FAILED, contacts + directories, "추출 일부 실패: " + ", ".join(failures), stats)
+            final = self._finalize(run.id, RunStatus.PARTIAL, StageStatus.FAILED, semantic_total, "추출 일부 실패: " + ", ".join(failures), stats)
         else:
             final = self._finalize(run.id, RunStatus.FAILED, StageStatus.FAILED, 0, "추출 실패", stats)
         return CollectionResult(final, observation, artifact, contacts, directories)
@@ -328,7 +330,7 @@ class CollectionService:
             "pages_succeeded": successes, "pages_failed": failures,
             "max_depth_reached": max_depth_reached,
         }
-        total = contact_count + directory_count
+        total = SemanticDiscoveryProjector(self.session).summary(run.id)["meaningful_total"]
         if successes == 0:
             final = self._finish_failure(
                 run.id, first_fetch_error or RuntimeError("수집에 성공한 eligible 페이지가 없습니다."),
@@ -424,7 +426,14 @@ class CollectionService:
             stats["error_code"] = http_error_code
         if config.kind in {ApiSourceKind.RSS, ApiSourceKind.ATOM}:
             stats["feed_items"] = raw_records
-        meaningful = raw_records if config.discovery_only or config.kind in {ApiSourceKind.RSS, ApiSourceKind.ATOM} else mapped_records
+        # Discovery-only OpenAPI sources intentionally have no mapped evidence rows;
+        # their extractor-owned raw records are the semantic records.  Structured
+        # mappings and feeds are projected from their persisted evidence instead.
+        meaningful = (
+            raw_records
+            if config.kind is ApiSourceKind.OPEN_API and config.discovery_only
+            else SemanticDiscoveryProjector(self.session).summary(run.id)["meaningful_total"]
+        )
         if requests_succeeded == 0 or (errors and mapped_records == 0 and raw_records == 0):
             final = self._finish_failure(
                 run.id, RuntimeError(errors[0] if errors else "API 요청 실패"),

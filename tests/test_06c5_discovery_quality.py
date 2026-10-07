@@ -235,7 +235,7 @@ def test_historical_read_dedups_without_rewriting_and_filters_placeholder(qualit
     assert response.json()["pagination"]["total"] == 1
     assert too_large.status_code == 422
     assert "발견 데이터 보기" in page_html.text
-    assert "유효 연락처" in page_html.text
+    assert "유효 발견" in page_html.text
     assert "02-731-2120" not in page_html.text
 
 

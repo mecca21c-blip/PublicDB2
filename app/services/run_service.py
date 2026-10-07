@@ -26,7 +26,7 @@ from app.services.master_promotion_apply_service import MasterPromotionApplyServ
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
 from app.services.source_change_detection_service import SourceChangeDetectionService
 from app.services.pagination import page_metadata, page_values
-from app.services.discovery_read_service import DiscoveryReadService
+from app.services.semantic_discovery_service import SemanticDiscoveryProjector
 
 
 STATUS_LABELS = {
@@ -125,7 +125,7 @@ class RunService:
         observations = sorted(run.observations, key=lambda value: (value.observed_at, value.id))
         observation = observations[0] if observations else None
         extraction_runs = [extraction for observed in observations for extraction in observed.extraction_runs]
-        discovery_reader = DiscoveryReadService(self.session)
+        discovery_reader = SemanticDiscoveryProjector(self.session)
         discovery_summary = discovery_reader.summary(run.id)
         contact_count = discovery_summary["valid_contacts"]
         directory_count = discovery_summary["directory_records"]

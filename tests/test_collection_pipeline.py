@@ -29,6 +29,7 @@ from app.services.collection_service import (
 )
 from app.services.contact_extraction_service import ContactExtractionService
 from app.services.raw_artifact_store import RawArtifactStore
+from app.services.semantic_discovery_service import SemanticDiscoveryProjector
 from app.services.source_service import SourceService
 
 
@@ -104,7 +105,9 @@ def test_registered_web_source_runs_complete_pipeline_and_preserves_raw(live_db)
     )
     assert result.contact_candidates >= 3
     assert result.directory_records == 1
-    assert result.crawl_run.records_observed == result.contact_candidates + result.directory_records
+    summary = SemanticDiscoveryProjector(session).summary(result.crawl_run.id)
+    assert result.crawl_run.records_observed == summary["semantic_discovery_count"]
+    assert summary["raw_evidence_count"] == result.contact_candidates + result.directory_records
     assert result.observation and result.artifact
     assert not Path(result.artifact.relative_path).is_absolute()
     artifact = root / result.artifact.relative_path

@@ -67,28 +67,20 @@
     const status = discoveryModal.querySelector("[data-discovery-status]");
     const summary = discoveryModal.querySelector("[data-discovery-modal-summary]");
     const itemsRoot = discoveryModal.querySelector("[data-discovery-items]");
+    const filters = discoveryModal.querySelector("[data-discovery-filters]");
     const pagination = discoveryModal.querySelector(".discovery-pagination");
     const pageState = discoveryModal.querySelector("[data-discovery-page-state]");
     let activeRun = null;
     let activePage = 1;
-
-    const addField = (grid, label, value, className = "") => {
-      if (value === null || value === undefined || value === "") return;
-      const term = document.createElement("dt");
-      term.textContent = label;
-      const detail = document.createElement("dd");
-      detail.textContent = String(value);
-      if (className) detail.className = className;
-      grid.append(term, detail);
-    };
+    let activeCategory = "ALL";
 
     const renderSummary = (values) => {
       summary.replaceChildren();
       [
-        ["유효 연락처", values.valid_contacts],
-        ["업무/명부", values.business_directory],
+        ["유효 발견", values.semantic_discovery_count],
+        ["업무/명부", values.directory_records],
+        ["단독 연락처", values.standalone_contacts],
         ["사이트 공통 연락처", values.site_wide_contacts],
-        ["분류 미확인", values.unknown_contacts],
       ].forEach(([label, value]) => {
         const wrapper = document.createElement("div");
         const term = document.createElement("dt");
@@ -101,53 +93,72 @@
       summary.hidden = false;
     };
 
+    const renderFilters = (counts) => {
+      filters.querySelectorAll("[data-discovery-category]").forEach((button) => {
+        const count = counts[button.dataset.discoveryCategory] || 0;
+        button.hidden = button.dataset.discoveryCategory !== "ALL" && count === 0;
+        button.classList.toggle("is-active", button.dataset.discoveryCategory === activeCategory);
+        const label = button.textContent.split(" (")[0];
+        button.textContent = label + " (" + count + ")";
+      });
+      filters.hidden = false;
+    };
+
+    const cell = (value, className = "") => {
+      const node = document.createElement("td");
+      node.textContent = value || "-";
+      if (className) node.className = className;
+      if (value) node.title = String(value);
+      return node;
+    };
+
     const renderItems = (items) => {
       itemsRoot.replaceChildren();
-      items.forEach((item) => {
-        const card = document.createElement("article");
-        card.className = "discovery-card";
-        const heading = document.createElement("header");
-        heading.className = "discovery-card-heading";
-        const title = document.createElement("strong");
-        title.textContent = item.kind_label;
-        const scope = document.createElement("span");
-        scope.className = "status-badge status-badge--info";
-        scope.textContent = item.scope_label;
-        heading.append(title, scope);
-        const grid = document.createElement("dl");
-        grid.className = "detail-grid";
-        if (item.kind === "CONTACT") {
-          addField(grid, "구분", item.scope_label);
-          addField(grid, "종류", item.candidate_type_label);
-          addField(grid, "값", item.value);
-          addField(grid, "문맥", item.context, "evidence-text");
-        } else if (item.kind === "DIRECTORY") {
-          addField(grid, "부서", item.org_unit);
-          addField(grid, "업무", item.duty);
-          addField(grid, "직위", item.position);
-          addField(grid, "담당자", item.person_name);
-          addField(grid, "전화", item.phone);
-          addField(grid, "이메일", item.email);
-          addField(grid, "팩스", item.fax);
-          addField(grid, "원문 요약", item.row_summary, "evidence-text");
-        } else {
-          addField(grid, "제목", item.title);
-          addField(grid, "링크", item.link);
-          addField(grid, "발행", item.published_at);
-          addField(grid, "요약", item.row_summary, "evidence-text");
-        }
-        addField(grid, "Observation", item.observation_id, "url-cell");
-        addField(grid, "Source", item.source_url, "url-cell");
-        addField(grid, "출처 위치", item.source_locator, "url-cell");
-        card.append(heading, grid);
-        itemsRoot.append(card);
-      });
       if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "detail-note detail-note--empty";
         empty.textContent = "현재 품질 규칙으로 표시할 유효 발견 데이터가 없습니다.";
         itemsRoot.append(empty);
+        return;
       }
+      const wrapper = document.createElement("div");
+      wrapper.className = "table-scroll discovery-table-scroll";
+      const table = document.createElement("table");
+      table.className = "data-table discovery-table";
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["분류", "부서", "직위", "업무/문맥", "담당자", "연락처", "근거"].forEach((label) => {
+        const th = document.createElement("th"); th.textContent = label; headRow.append(th);
+      });
+      head.append(headRow); table.append(head);
+      const body = document.createElement("tbody");
+      items.forEach((item) => {
+        const row = document.createElement("tr");
+        row.append(
+          cell(item.kind === "CONTACT" ? item.scope_label : item.kind_label),
+          cell(item.org_unit), cell(item.position),
+          cell(item.duty || item.context || item.title, "discovery-text-preview"),
+          cell(item.person_name), cell(item.contact_display || item.link, "url-cell"),
+        );
+        const evidenceCell = document.createElement("td");
+        const details = document.createElement("details");
+        const detailsSummary = document.createElement("summary");
+        detailsSummary.textContent = "근거 " + item.supporting_evidence_count + "개";
+        const evidence = document.createElement("div");
+        evidence.className = "discovery-evidence-detail";
+        [
+          ["Observation", item.observation_id], ["출처", item.source_url],
+          ["위치", item.source_locator], ["원문", item.row_summary || item.context],
+        ].forEach(([label, value]) => {
+          if (!value) return;
+          const line = document.createElement("p");
+          const strong = document.createElement("strong"); strong.textContent = label + ": ";
+          line.append(strong, document.createTextNode(String(value))); evidence.append(line);
+        });
+        details.append(detailsSummary, evidence); evidenceCell.append(details); row.append(evidenceCell);
+        body.append(row);
+      });
+      table.append(body); wrapper.append(table); itemsRoot.append(wrapper);
     };
 
     const loadDiscoveries = async (page) => {
@@ -156,11 +167,12 @@
       itemsRoot.replaceChildren();
       pagination.hidden = true;
       try {
-        const response = await fetch("/api/runs/" + encodeURIComponent(activeRun) + "/discoveries?page=" + page + "&page_size=50");
+        const response = await fetch("/api/runs/" + encodeURIComponent(activeRun) + "/discoveries?page=" + page + "&page_size=30&category=" + encodeURIComponent(activeCategory));
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "발견 데이터를 불러오지 못했습니다.");
         activePage = result.pagination.page;
         renderSummary(result.summary);
+        renderFilters(result.category_counts);
         renderItems(result.items);
         status.hidden = true;
         pageState.textContent = result.pagination.page + " / " + result.pagination.pages + " 페이지 · " + result.pagination.total + "건";
@@ -176,12 +188,20 @@
       button.addEventListener("click", () => {
         activeRun = button.dataset.runId;
         activePage = 1;
+        activeCategory = "ALL";
         openModal(discoveryModal);
         loadDiscoveries(1);
       });
     });
     pagination.querySelectorAll("[data-discovery-page]").forEach((button) => {
       button.addEventListener("click", () => loadDiscoveries(activePage + (button.dataset.discoveryPage === "next" ? 1 : -1)));
+    });
+    filters.querySelectorAll("[data-discovery-category]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeCategory = button.dataset.discoveryCategory;
+        activePage = 1;
+        loadDiscoveries(1);
+      });
     });
   }
 
