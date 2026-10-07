@@ -168,7 +168,9 @@ def test_cross_instance_collection_claim_accepts_exactly_one(acceptance_db):
     assert result["first"].crawl_run.status is RunStatus.SUCCESS
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(CrawlRun)) == 1
-        assert session.scalar(select(func.count()).select_from(OperationClaim)) == 0
+        assert session.scalar(select(func.count()).select_from(OperationClaim).where(
+            OperationClaim.status == "ACTIVE"
+        )) == 0
 
 
 def test_method_edit_rejected_while_run_active_and_snapshot_survives(acceptance_db):
@@ -572,8 +574,11 @@ def test_coherent_e2e_from_clean_db_through_export_and_logout(acceptance_db):
         ))
         preview = MasterPromotionApplyService(session).preview(extraction_id, agency_id)
         assert preview["directory_records"] == 1
+        assert preview["contacts_matched"] >= 1
+        assert session.scalar(select(func.count()).select_from(ContactPoint)) >= 1
         applied = MasterPromotionApplyService(session).apply(extraction_id, agency_id)
-        assert applied["contacts_created"] >= 1
+        assert applied["contacts_created"] == 0
+        assert applied["contacts_matched"] >= 1
         before_history = session.scalar(select(func.count()).select_from(ContactHistory))
         assert before_history >= 1
         assert session.scalar(select(func.count()).select_from(SourceOccurrence)) >= 1

@@ -373,12 +373,14 @@ def test_db_finalization_failure_removes_unreferenced_raw(live_db, monkeypatch):
     assert run.raw_status is StageStatus.FAILED
 
 
-def test_discovery_does_not_write_confirmed_or_change_entities(live_db):
+def test_collection_auto_syncs_safe_confirmed_entities(live_db):
     session, root = live_db
     source_id, _ = source_with_bindings(session)
     service(session, root, html_response()).collect(source_id)
-    for model in (
-        ContactPoint, Person, PersonAssignment, SourceOccurrence,
-        ChangeDetection, ChangeEvent, ContactHistory,
-    ):
-        assert session.scalar(select(func.count()).select_from(model)) == 0
+    assert session.scalar(select(func.count()).select_from(ContactPoint)) == 5
+    assert session.scalar(select(func.count()).select_from(Person)) == 0
+    assert session.scalar(select(func.count()).select_from(PersonAssignment)) == 0
+    assert session.scalar(select(func.count()).select_from(SourceOccurrence)) == 7
+    assert session.scalar(select(func.count()).select_from(ContactHistory)) == 5
+    assert session.scalar(select(func.count()).select_from(ChangeEvent)) == 7
+    assert session.scalar(select(func.count()).select_from(ChangeDetection)) == 1

@@ -31,6 +31,7 @@ from app.services.collection_recovery_service import reconcile_stale_collections
 from app.services.contact_extraction_service import ContactExtractionService
 from app.services.crawl_scope import crawl_path_allowed
 from app.services.directory_extraction_service import DirectoryExtractionService
+from app.services.master_promotion_apply_service import MasterPromotionApplyService
 from app.services.raw_artifact_store import RawArtifactStore, StoredArtifact
 from app.services.semantic_discovery_service import SemanticDiscoveryProjector
 from app.services.operation_claim_service import OperationClaimService
@@ -245,8 +246,7 @@ class CollectionService:
         semantic_total = SemanticDiscoveryProjector(self.session).summary(run.id)["meaningful_total"]
         if success and not failures:
             final = self._finalize(run.id, RunStatus.SUCCESS, StageStatus.SUCCESS, semantic_total, None, stats)
-            for extraction_id in directory_runs:
-                self._detect_changes_best_effort(extraction_id)
+            self._post_collection_master_sync_best_effort(observation.id)
         elif success:
             final = self._finalize(run.id, RunStatus.PARTIAL, StageStatus.FAILED, semantic_total, "추출 일부 실패: " + ", ".join(failures), stats)
         else:
@@ -266,6 +266,7 @@ class CollectionService:
         max_depth_reached = 0
         last_observation = None
         last_artifact = None
+        observation_ids: list[uuid.UUID] = []
         extraction_failed = False
         directory_runs: list[uuid.UUID] = []
         while queue and attempts < config.max_pages:
@@ -303,6 +304,7 @@ class CollectionService:
                 continue
             successes += 1
             last_observation, last_artifact = observation, artifact
+            observation_ids.append(observation.id)
             if fetched.content_type in HTML_CONTENT_TYPES:
                 contacts, directories, extracted, extract_failures, runs = self._extract_html(
                     observation, config.extract_contacts, config.extract_directory
@@ -342,8 +344,8 @@ class CollectionService:
             final = self._finalize(run.id, RunStatus.PARTIAL, StageStatus.FAILED, total, "일부 페이지의 접근 또는 추출에 실패했습니다.", stats)
         else:
             final = self._finalize(run.id, RunStatus.SUCCESS, StageStatus.SUCCESS, total, None, stats)
-            for extraction_id in directory_runs:
-                self._detect_changes_best_effort(extraction_id)
+            for observation_id in observation_ids:
+                self._post_collection_master_sync_best_effort(observation_id)
         return CollectionResult(final, last_observation, last_artifact, contact_count, directory_count)
 
     def _collect_api(self, source: Source, run: CrawlRun) -> CollectionResult:
@@ -369,6 +371,7 @@ class CollectionService:
         contact_count = directory_count = 0
         last_observation = None
         last_artifact = None
+        observation_ids: list[uuid.UUID] = []
         errors: list[str] = []
         http_error_code: str | None = None
         pages = config.max_pages if config.pagination_mode is ApiPaginationMode.PAGE_NUMBER else 1
@@ -400,6 +403,7 @@ class CollectionService:
                 errors.append(_summary(error))
                 continue
             last_observation, last_artifact = observation, artifact
+            observation_ids.append(observation.id)
             try:
                 if config.kind in {ApiSourceKind.RSS, ApiSourceKind.ATOM}:
                     result = StructuredExtractionService(self.session).extract_feed(observation.id, fetched.content, config.kind)
@@ -411,7 +415,6 @@ class CollectionService:
                     )
                     if result.mapped_records:
                         directory_count += result.mapped_records
-                        self._detect_changes_best_effort(result.extraction_run.id)
                 raw_records += result.raw_records
                 mapped_records += result.mapped_records
                 if result.raw_records == 0 and config.pagination_mode is ApiPaginationMode.PAGE_NUMBER:
@@ -446,6 +449,8 @@ class CollectionService:
             final = self._finalize(run.id, RunStatus.PARTIAL, StageStatus.FAILED, meaningful, "일부 API 요청 또는 추출에 실패했습니다.", stats)
         else:
             final = self._finalize(run.id, RunStatus.SUCCESS, StageStatus.SUCCESS, meaningful, None, stats)
+            for observation_id in observation_ids:
+                self._post_collection_master_sync_best_effort(observation_id)
         return CollectionResult(final, last_observation, last_artifact, contact_count, directory_count)
 
     def _connection_success(self, run_id: uuid.UUID, status_code: int) -> None:
@@ -564,17 +569,52 @@ class CollectionService:
                 links.append(absolute)
         return tuple(links)
 
-    def _detect_changes_best_effort(self, extraction_run_id: uuid.UUID) -> None:
+    def _post_collection_master_sync_best_effort(self, observation_id: uuid.UUID) -> None:
+        observation = self.session.get(Observation, observation_id)
+        if observation is None:
+            return
         try:
-            extraction = self.session.get(ExtractionRun, extraction_run_id)
+            sync = MasterPromotionApplyService(self.session)
+            agency_id = sync.planner.resolve_agency(observation.source_id)
+            result = sync.sync_observation(observation.id, agency_id)
+            logger.info(
+                "master_sync_succeeded source_id=%s observation_id=%s contacts_created=%s contacts_matched=%s",
+                observation.source_id, observation.id,
+                result.get("contacts_created", 0), result.get("contacts_matched", 0),
+            )
+        except Exception as error:
+            self.session.rollback()
+            logger.warning(
+                "master_sync_failed source_id=%s observation_id=%s error_class=%s",
+                observation.source_id, observation.id, error.__class__.__name__,
+            )
+            return
+        try:
+            extraction = self.session.scalar(select(ExtractionRun).where(
+                ExtractionRun.observation_id == observation.id,
+                ExtractionRun.status == ExtractionStatus.SUCCESS,
+                ExtractionRun.extractor_name.in_(("staff_directory", "html_contact")),
+            ).order_by(
+                (ExtractionRun.extractor_name == "staff_directory").desc(),
+                ExtractionRun.id,
+            ).limit(1))
             if extraction is None:
                 return
             detector = SourceChangeDetectionService(self.session)
-            agency_id = detector.planner.resolve_agency(extraction.observation.source_id)
-            if detector.baseline_exists(extraction.observation.source_id, agency_id):
-                detector.generate(extraction_run_id, agency_id)
-        except Exception:
+            if detector.baseline_exists(observation.source_id, agency_id):
+                detector.generate(extraction.id, agency_id)
+        except Exception as error:
             self.session.rollback()
+            logger.warning(
+                "change_detection_failed source_id=%s observation_id=%s error_class=%s",
+                observation.source_id, observation.id, error.__class__.__name__,
+            )
+
+    def _detect_changes_best_effort(self, extraction_run_id: uuid.UUID) -> None:
+        """Compatibility wrapper for stored-run callers and older tests."""
+        extraction = self.session.get(ExtractionRun, extraction_run_id)
+        if extraction is not None:
+            self._post_collection_master_sync_best_effort(extraction.observation_id)
 
     def _get_run(self, run_id: uuid.UUID) -> CrawlRun:
         run = self.session.get(CrawlRun, run_id)

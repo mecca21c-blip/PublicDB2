@@ -135,8 +135,8 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 04A가 제공한 WEB_PAGE 단일 URL 경로는 05B dispatcher의 SCRAPE 경로로 보존된다.
 - RAW는 PROJECT_ROOT/data/raw 아래 날짜/source/run 경로에 atomic 저장하고 DB에는
   project-relative POSIX 경로, SHA-256과 응답 byte 수만 기록한다.
-- 연락처 후보와 직원명부 행은 discovery data다. ContactPoint, Person,
-  PersonAssignment, SourceOccurrence, ChangeEvent와 ContactHistory를 생성하지 않는다.
+- 연락처 후보와 직원명부 행은 discovery data다. 04A 당시에는 확정 데이터를 생성하지
+  않았지만, 06C-6B부터 성공한 추출의 결정적 안전값은 아래 자동 동기화 계약을 거친다.
 - 두 extractor가 모두 성공하고 발견 수가 1건 이상이면 정상, 모두 성공하고 0건이면
   자료없음이다. 접속/RAW 실패, partial extraction, 미지원 content는 오류다.
   binding 제외 상태는 이 공통 Source 실행 상태보다 우선한다.
@@ -148,17 +148,26 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 발견 데이터(ExtractionRun, ExtractedContactCandidate, ExtractedDirectoryRecord)와
   확정 데이터(OrgUnit, Duty, Person, PersonAssignment, ContactPoint)는 분리한다.
   발견 후보는 승인 전 /contacts에 표시하지 않는다.
-- 성공한 staff-directory extraction에서 같은 canonical Source와 Agency context의
-  확정 SourceOccurrence가 없으면 baseline 경로, 있으면 change detection 경로다.
+- 성공한 extraction은 같은 canonical Source와 확정 Agency context에서 안전한 신규값과
+  exact 동일값을 자동 Master 동기화한 후, 남은 변경·모호·누락 후보를 change detection으로
+  전달한다. 일반 수집에 별도 baseline Apply 조작을 요구하지 않는다.
 - active SourceBinding이 한 Agency로만 모이면 자동 선택한다. 여러 Agency에 걸치면
   사용자가 대상 Agency를 선택해야 하며 Source에 agency_id를 다시 소유시키지 않는다.
-- baseline preview는 읽기 전용이다. apply 시 계획을 다시 계산하고 exact conservative
-  match가 안전한 OrgUnit, Duty, ContactPoint만 단일 transaction으로 반영한다.
+- baseline preview와 명시적 apply API는 호환 경로로 유지한다. 자동 및 명시적 경로는 같은
+  planner와 Master writer를 사용하고 각 Observation operation claim으로 재실행을 멱등 처리한다.
+- 명부에 명시적 OrgUnit이 있으면 이를 exact match/create하고, 없으면 단일 SourceBinding의
+  OrgUnit을 사용한다. 둘 다 없고 Agency context가 하나이면 가짜 OrgUnit을 만들지 않고
+  org_unit_id=NULL인 Duty와 ContactPoint를 허용한다.
+- standalone BUSINESS는 단일 binding OrgUnit이 있으면 연결하고 아니면 Agency-level로,
+  SITE_WIDE는 항상 Agency-level로 안전 동기화한다. UNKNOWN은 자동 동기화하지 않는다.
 - 사람 이름은 발견/검토 정보다. Person과 PersonAssignment는 자동 생성하지 않으며,
   사람 이름이 있어도 안전한 조직·업무·연락처 반영을 막지 않는다.
 - 확정되거나 exact match된 OrgUnit, Duty, ContactPoint는 Observation 기반의
   idempotent SourceOccurrence로 출처를 보존한다. 생성 entity는 APPROVED
   ChangeEvent를, 생성 ContactPoint는 최초 ContactHistory를 가진다.
+- exact 동일 연락처의 재관찰은 ContactPoint나 ContactHistory를 복제하지 않고 verified_at과
+  새 Observation의 SourceOccurrence만 갱신한다. 같은 context의 다른 값은 자동 교체하지 않고
+  기존 change/review 경로로 보낸다.
 - Source.coverage_mode는 UNKNOWN, ADDITIVE_ONLY, COMPLETE_SNAPSHOT 중 하나다.
   UNKNOWN과 ADDITIVE_ONLY에서는 부재를 삭제 신호로 사용하지 않는다.
   COMPLETE_SNAPSHOT에서만 신뢰 가능한 비모호 extraction의 부재 후보를 만든다.

@@ -13,7 +13,7 @@ from app.models import (
     SourceBinding,
 )
 from app.collectors.html_contact_extractor import is_supported_phone, normalize_email
-from app.core.discovery_quality import is_no_data_placeholder, meaningful_directory_values
+from app.core.discovery_quality import ContactScope, is_no_data_placeholder, meaningful_directory_values
 from app.services.master_normalization import normalize_contact, normalize_text, split_values
 from app.services.promotion_plan import PlannedContact, PlannedRow
 
@@ -34,15 +34,23 @@ class PromotionPlan:
     rows: list[PlannedRow]
 
     def summary(self) -> dict[str, int]:
-        create_org = {normalize_text(row.org_name) for row in self.rows if row.safe and row.org_id is None}
+        create_org = {
+            normalize_text(row.org_name)
+            for row in self.rows
+            if row.safe and row.org_name and row.org_id is None
+        }
         match_org = {row.org_id for row in self.rows if row.safe and row.org_id is not None}
         create_duty = {
-            (normalize_text(row.org_name), normalize_text(row.duty_title))
+            (str(row.org_id) if row.org_id else normalize_text(row.org_name), normalize_text(row.duty_title))
             for row in self.rows if row.safe and row.duty_id is None
         }
         match_duty = {row.duty_id for row in self.rows if row.safe and row.duty_id is not None}
         create_contacts = {
-            (normalize_text(row.org_name), normalize_text(row.duty_title), contact.contact_type.value, contact.normalized_value)
+            (
+                str(row.org_id) if row.org_id else normalize_text(row.org_name),
+                normalize_text(row.duty_title), contact.contact_type.value,
+                contact.normalized_value,
+            )
             for row in self.rows for contact in row.contacts if row.safe and contact.existing_id is None
         }
         match_contacts = {
@@ -93,6 +101,27 @@ class MasterPromotionPlanner:
             raise AgencyContextRequired("This Source has no active Agency context.")
         raise AgencyContextRequired("Multiple Agency contexts exist; select the target Agency.")
 
+    def active_bindings(self, source_id: uuid.UUID, agency_id: uuid.UUID) -> tuple[SourceBinding, ...]:
+        return tuple(self.session.scalars(
+            select(SourceBinding).where(
+                SourceBinding.source_id == source_id,
+                SourceBinding.agency_id == agency_id,
+                SourceBinding.active.is_(True),
+            ).order_by(SourceBinding.created_at, SourceBinding.id)
+        ))
+
+    def directory_fallback_org_id(self, source_id: uuid.UUID, agency_id: uuid.UUID) -> uuid.UUID | None:
+        """Use an OrgUnit only when one active binding proves that exact context."""
+        bindings = self.active_bindings(source_id, agency_id)
+        return bindings[0].org_unit_id if len(bindings) == 1 else None
+
+    def standalone_org_id(
+        self, source_id: uuid.UUID, agency_id: uuid.UUID, scope: ContactScope,
+    ) -> uuid.UUID | None:
+        if scope is ContactScope.SITE_WIDE:
+            return None
+        return self.directory_fallback_org_id(source_id, agency_id)
+
     def plan(self, extraction_run_id: uuid.UUID, agency_id: uuid.UUID | None = None) -> PromotionPlan:
         extraction = self.session.scalar(
             select(ExtractionRun)
@@ -119,6 +148,7 @@ class MasterPromotionPlanner:
         contacts = list(self.session.scalars(
             select(ContactPoint).where(ContactPoint.agency_id == resolved_agency, ContactPoint.active.is_(True))
         ))
+        fallback_org_id = self.directory_fallback_org_id(source_id, resolved_agency)
         rows: list[PlannedRow] = []
         for record in extraction.directory_records:
             if not meaningful_directory_values(
@@ -134,9 +164,10 @@ class MasterPromotionPlanner:
                 continue
             org_name = (record.org_unit_text or "").strip()
             duty_title = (record.duty_text or "").strip()
-            row = PlannedRow(record=record, org_name=org_name, duty_title=duty_title, org_id=None, duty_id=None)
-            if not org_name:
-                row.blockers.append("ORG_UNIT_REQUIRED")
+            row = PlannedRow(
+                record=record, org_name=org_name, duty_title=duty_title,
+                org_id=fallback_org_id if not org_name else None, duty_id=None,
+            )
             if not duty_title:
                 row.blockers.append("DUTY_REQUIRED")
             org_matches = [item for item in orgs if normalize_text(item.name) == normalize_text(org_name)] if org_name else []
@@ -144,7 +175,7 @@ class MasterPromotionPlanner:
                 row.blockers.append("ORG_UNIT_AMBIGUOUS")
             elif org_matches:
                 row.org_id = org_matches[0].id
-            if row.org_id:
+            if duty_title and (row.org_id is not None or not org_name):
                 duty_matches = [
                     item for item in duties
                     if item.org_unit_id == row.org_id and normalize_text(item.title) == normalize_text(duty_title)
@@ -179,9 +210,10 @@ class MasterPromotionPlanner:
                         item for item in contacts
                         if item.org_unit_id == row.org_id
                         and item.duty_id == row.duty_id
+                        and item.person_assignment_id is None
                         and item.contact_type is contact_type
                         and item.normalized_value == normalized
-                    ] if row.org_id and row.duty_id else []
+                    ] if row.duty_id else []
                     if len(matches) > 1:
                         row.blockers.append("CONTACT_AMBIGUOUS")
                     else:

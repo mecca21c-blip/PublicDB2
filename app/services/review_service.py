@@ -190,18 +190,20 @@ class ReviewService:
     def _add_duty(self, candidate):
         values = candidate.new_value or {}
         org = self._resolve_org(candidate, values)
-        if org is None:
-            raise ReviewConflict("Re-review required: duty requires an organization unit.")
         matches = [
             item for item in self.session.scalars(select(Duty).where(
                 Duty.agency_id == candidate.agency_id,
-                Duty.org_unit_id == org.id,
+                Duty.org_unit_id == (org.id if org else None),
                 Duty.active.is_(True),
             )) if normalize_text(item.title) == normalize_text(values.get("title"))
         ]
         if matches:
             raise ReviewConflict("Re-review required: duty context changed.")
-        entity = Duty(agency_id=candidate.agency_id, org_unit_id=org.id, title=values["title"])
+        entity = Duty(
+            agency_id=candidate.agency_id,
+            org_unit_id=org.id if org else None,
+            title=values["title"],
+        )
         self.session.add(entity)
         self.session.flush()
         self._audit(candidate, entity, None, values)
@@ -216,12 +218,10 @@ class ReviewService:
         title = values.get("duty_title")
         if not title:
             return None
-        if org is None:
-            raise ReviewConflict("Re-review required: duty requires an organization unit.")
         matches = [
             item for item in self.session.scalars(select(Duty).where(
                 Duty.agency_id == candidate.agency_id,
-                Duty.org_unit_id == org.id,
+                Duty.org_unit_id == (org.id if org else None),
                 Duty.active.is_(True),
             )) if normalize_text(item.title) == normalize_text(title)
         ]

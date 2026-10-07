@@ -16,6 +16,7 @@ from app.models import (
     SourceOccurrence,
 )
 from app.models.common import utc_now
+from app.core.discovery_quality import classify_contact_scope
 from app.services.master_normalization import normalize_contact, normalize_text
 from app.services.master_promotion_planner import MasterPromotionPlanner, PromotionError
 from app.services.semantic_discovery_service import SemanticDiscoveryProjector
@@ -113,9 +114,10 @@ class SourceChangeDetectionService:
                             row.record.source_locator, False, "Manual context confirmation is required.",
                         ))
                         continue
-                    current_orgs.add(org_norm)
+                    if org_norm:
+                        current_orgs.add(org_norm)
                     current_duties.add((org_norm, duty_norm))
-                    if row.org_id is None:
+                    if row.org_id is None and row.org_name:
                         specs.append(self._spec(
                             EntityType.ORG_UNIT, ChangeEventType.ENTITY_ADDED, row.record.id, None,
                             None, {"name": row.org_name, "normalized_name": org_norm},
@@ -273,26 +275,59 @@ class SourceChangeDetectionService:
         bindings = list(self.session.scalars(
             select(SourceBinding).where(SourceBinding.source_id == source_id, SourceBinding.active.is_(True))
         ))
+        agency_ids = {binding.agency_id for binding in bindings}
         specs = []
         for contact in contacts:
             contact_type = ContactType(contact.candidate_type.value)
-            if len(bindings) == 1:
-                binding = bindings[0]
-                specs.append(self._spec(
-                    EntityType.CONTACT_POINT, ChangeEventType.CONTACT_ADDED, None, contact.id,
-                    None, {"type": contact_type.value, "value": contact.raw_value,
-                           "normalized_value": contact.normalized_value,
-                           "org_unit_id": str(binding.org_unit_id) if binding.org_unit_id else None,
-                           "duty_id": None},
-                    "Generic page contact requires review", contact.source_locator,
-                ))
-            else:
+            scope = classify_contact_scope(contact.source_locator, contact.context_text)
+            normalized = normalize_contact(contact_type, contact.raw_value)
+            if len(agency_ids) != 1 or agency_id not in agency_ids:
                 specs.append(self._spec(
                     EntityType.CONTACT_POINT, ChangeEventType.OTHER, None, contact.id,
                     None, {"type": contact_type.value, "value": contact.raw_value,
-                           "normalized_value": contact.normalized_value},
+                           "normalized_value": normalized},
                     "CONTEXT_REQUIRED", contact.source_locator, False,
-                    "Generic contact has multiple or missing active business bindings.",
+                    "Generic contact has multiple or missing active Agency bindings.",
+                ))
+                continue
+            org_id = self.planner.standalone_org_id(source_id, agency_id, scope)
+            contextual = list(self.session.scalars(select(ContactPoint).where(
+                ContactPoint.agency_id == agency_id,
+                ContactPoint.org_unit_id == org_id,
+                ContactPoint.duty_id.is_(None),
+                ContactPoint.person_assignment_id.is_(None),
+                ContactPoint.contact_type == contact_type,
+                ContactPoint.active.is_(True),
+            )))
+            if any(item.normalized_value == normalized for item in contextual):
+                continue
+            new_value = {
+                "type": contact_type.value, "value": contact.raw_value,
+                "normalized_value": normalized,
+                "org_unit_id": str(org_id) if org_id else None,
+                "duty_id": None,
+            }
+            if len(contextual) == 1:
+                old = contextual[0]
+                specs.append(self._spec(
+                    EntityType.CONTACT_POINT, ChangeEventType.CONTACT_CHANGED,
+                    None, contact.id, old.id, new_value,
+                    "Safe contextual contact replacement", contact.source_locator,
+                    old_value={"type": old.contact_type.value, "value": old.value,
+                               "normalized_value": old.normalized_value},
+                ))
+            elif len(contextual) > 1:
+                specs.append(self._spec(
+                    EntityType.CONTACT_POINT, ChangeEventType.OTHER,
+                    None, contact.id, None, new_value,
+                    "AMBIGUOUS_CONTACT_REPLACEMENT", contact.source_locator,
+                    False, "More than one prior contextual contact matches.",
+                ))
+            else:
+                specs.append(self._spec(
+                    EntityType.CONTACT_POINT, ChangeEventType.CONTACT_ADDED,
+                    None, contact.id, None, new_value,
+                    "Generic page contact requires review", contact.source_locator,
                 ))
         return specs
 
