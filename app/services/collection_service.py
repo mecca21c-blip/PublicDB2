@@ -26,6 +26,7 @@ from app.models import (
     ExtractionRun, ExtractionStatus, Observation, RunStatus, Source, StageStatus,
 )
 from app.models.common import utc_now
+from app.core.time_presentation import serialize_utc_datetime
 from app.services.api_credential_store import ApiCredentialStore, CredentialStoreError
 from app.services.collection_recovery_service import reconcile_stale_collections, source_claim_key
 from app.services.contact_extraction_service import ContactExtractionService
@@ -82,8 +83,8 @@ class CollectionResult:
             "collection_method": (run.collection_method_snapshot or CollectionMethod.WEB_PAGE).value,
             "collection_kind": run.collection_kind_snapshot,
             "statistics": run.collection_statistics or {},
-            "started_at": run.started_at.isoformat(),
-            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "started_at": serialize_utc_datetime(run.started_at),
+            "finished_at": serialize_utc_datetime(run.finished_at),
         }
 
 

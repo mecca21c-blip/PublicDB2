@@ -448,3 +448,10 @@ project-relative 저장 경로, SHA-256, 확정 시각과 결과 집계를 기�
 Dashboard 실집계, typed 운영 설정, confirmed XLSX export와 인증/권한을 활성화한다.
 06C-3 영속 범위 수집 job과 app-lifespan 전역 scheduler를 활성화한다. 실제
 Apache/HTTPS/Windows service 구성은 이 계약의 범위가 아니다.
+# User-facing timestamp contract
+
+- Database and runtime timestamps remain canonical UTC; no historical rewrite is performed.
+- SQLAlchemy `UTCDateTime` returns timezone-aware UTC values. A legacy/raw naive value is explicitly interpreted as UTC at the presentation boundary.
+- Machine/API timestamp fields use offset-aware ISO 8601 UTC (`+00:00`).
+- Korean business UI and user-facing XLSX timestamps are rendered with `Asia/Seoul` as `YYYY-MM-DD HH:mm` through `app.core.time_presentation`.
+- Sorting, stale checks, worker claims, scheduler calculations, and Master history comparisons continue to use canonical datetime values rather than formatted KST strings.

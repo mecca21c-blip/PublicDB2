@@ -15,6 +15,7 @@ from app.services.normalization import collapse_whitespace, normalize_source_url
 from app.services.collection_recovery_service import source_claim_key
 from app.services.operation_claim_service import OperationClaimService
 from app.services.pagination import page_metadata, page_values
+from app.core.time_presentation import format_kst_datetime, serialize_utc_datetime
 from app.services.source_method_service import SourceMethodService, user_method_label
 from app.services.source_status import classify_source_status
 
@@ -293,7 +294,7 @@ class SourceService:
             ),
             "method_config": self._method_projection(binding.source),
             "description": binding.description or "-",
-            "checked": checked.strftime("%Y-%m-%d %H:%M") if checked else "미확인",
+            "checked": format_kst_datetime(checked, fallback="미확인"),
             "found": run.records_observed if run else "-",
             "result": status,
             "status": status,
@@ -317,7 +318,8 @@ class SourceService:
                 if not binding.source.active
                 else None
             ),
-            "excluded_at": binding.excluded_at.isoformat() if binding.excluded_at else None,
+            "excluded_at": serialize_utc_datetime(binding.excluded_at),
+            "excluded_at_display": format_kst_datetime(binding.excluded_at, fallback="") or None,
         }
 
     @staticmethod

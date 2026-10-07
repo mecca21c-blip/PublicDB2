@@ -14,6 +14,7 @@ from app.models import (
     CollectionJobStatus, CollectionTriggerType, OrgUnit, Source, SourceBinding,
 )
 from app.models.common import utc_now
+from app.core.time_presentation import format_kst_datetime, serialize_utc_datetime
 from app.services.source_query_service import SourceFilterError, SourceFilterSpec, SourceQueryService
 
 
@@ -316,9 +317,10 @@ class CollectionJobService:
             "skipped_items": job.skipped_items,
             "progress_percent": round(100 * completed / job.total_items) if job.total_items else 100,
             "error_summary": job.error_summary,
-            "created_at": job.created_at.isoformat(),
-            "started_at": job.started_at.isoformat() if job.started_at else None,
-            "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+            "created_at": serialize_utc_datetime(job.created_at),
+            "created_at_display": format_kst_datetime(job.created_at),
+            "started_at": serialize_utc_datetime(job.started_at),
+            "finished_at": serialize_utc_datetime(job.finished_at),
             "parent_job_id": str(job.parent_job_id) if job.parent_job_id else None,
             "scope_summary": CollectionJobService._scope_summary(job),
         }
@@ -331,8 +333,8 @@ class CollectionJobService:
                     "attempt_count": item.attempt_count,
                     "crawl_run_id": str(item.crawl_run_id) if item.crawl_run_id else None,
                     "error_code": item.error_code, "error_summary": item.error_summary,
-                    "started_at": item.started_at.isoformat() if item.started_at else None,
-                    "finished_at": item.finished_at.isoformat() if item.finished_at else None,
+                    "started_at": serialize_utc_datetime(item.started_at),
+                    "finished_at": serialize_utc_datetime(item.finished_at),
                 }
                 for item in job.items
             ]

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Agency, CollectionMethod, ContactPoint, ContactType, CrawlRun, Duty, EntityType, Observation, OrgUnit, Person, PersonAssignment, Source, SourceOccurrence
 from app.services.source_method_service import user_method_label
+from app.core.time_presentation import format_kst_datetime
 
 HEADERS = ('기관', '부서', '업무', '담당자', '연락처 유형', '연락처 값', '확인일', '공식 출처 URL', '수집 방식', '실제 발견 URL')
 
@@ -71,7 +72,7 @@ class ContactExportService:
                     item.duty.title if item.duty else '',
                     item.person_assignment.person.name if item.person_assignment else '',
                     item.contact_type.value, item.value,
-                    item.verified_at.isoformat() if item.verified_at else '',
+                    format_kst_datetime(item.verified_at, fallback=''),
                     ', '.join(sorted(sources.get(item.id, {}).get('official', set()))),
                     ', '.join(sorted(sources.get(item.id, {}).get('methods', set()))),
                     ', '.join(sorted(sources.get(item.id, {}).get('actual', set()))),

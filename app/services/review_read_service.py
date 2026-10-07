@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Agency, ChangeEventType, DetectedChangeCandidate, ReviewStatus
 from app.services.pagination import page_metadata, page_values
+from app.core.time_presentation import format_kst_datetime
 
 
 _STATE = {
@@ -84,7 +85,7 @@ class ReviewReadService:
             row = {
                 "id": str(candidate.id), "agency": agency.official_name if agency else "-",
                 "target": target, "field": field, "current": old, "discovered": new,
-                "detected": candidate.observation.observed_at.strftime("%Y-%m-%d %H:%M"),
+                "detected": format_kst_datetime(candidate.observation.observed_at),
                 "state": state, "tone": tone,
             }
             items.append(row)

@@ -15,6 +15,7 @@ from app.models import (
 )
 from app.services.source_method_service import user_method_label
 from app.services.pagination import page_metadata, page_values
+from app.core.time_presentation import format_kst_datetime
 
 
 class ContactService:
@@ -119,11 +120,11 @@ class ContactService:
                 **row, "fax": ", ".join(faxes) or "-",
                 "source": ", ".join(source_urls) or "-",
                 "provenance": tuple(provenance),
-                "verified": max(
+                "verified": format_kst_datetime(max(
                     (item.verified_at for item in values if item.verified_at), default=None
-                ).strftime("%Y-%m-%d %H:%M") if any(item.verified_at for item in values) else "-",
+                )),
                 "history": tuple(
-                    f"{item.valid_from:%Y-%m-%d %H:%M} / {item.value} / {'active' if item.active else 'closed'}"
+                    f"{format_kst_datetime(item.valid_from)} / {item.value} / {'active' if item.active else 'closed'}"
                     for item in history_rows[:10]
                 ) or ("-",),
             })
@@ -164,7 +165,7 @@ class ContactService:
                 "official_url": official_url,
                 "actual_url": actual_url,
                 "method": user_method_label(method or CollectionMethod.WEB_PAGE, kind),
-                "verified": observed_at.strftime("%Y-%m-%d %H:%M"),
+                "verified": format_kst_datetime(observed_at),
                 "legacy_snapshot": method is None,
             })
         return result

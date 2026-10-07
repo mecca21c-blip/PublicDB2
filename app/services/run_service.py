@@ -27,6 +27,7 @@ from app.services.master_promotion_planner import MasterPromotionPlanner, Promot
 from app.services.source_change_detection_service import SourceChangeDetectionService
 from app.services.pagination import page_metadata, page_values
 from app.services.semantic_discovery_service import SemanticDiscoveryProjector
+from app.core.time_presentation import format_kst_datetime
 
 
 STATUS_LABELS = {
@@ -203,7 +204,7 @@ class RunService:
         stage = lambda value: (*STAGE_LABELS[value.value],)
         item = {
             "id": str(run.id),
-            "time": run.started_at.strftime("%Y-%m-%d %H:%M"),
+            "time": format_kst_datetime(run.started_at),
             "agency": context,
             "source": run.source.title or run.source.url,
             "method": user_method_label(
@@ -239,8 +240,8 @@ class RunService:
             "directory_count": directory_count,
             "recorded_count": run.records_observed,
             "discovery_summary": discovery_summary,
-            "started_at": run.started_at.isoformat(),
-            "finished_at": run.finished_at.isoformat() if run.finished_at else "-",
+            "started_at": format_kst_datetime(run.started_at),
+            "finished_at": format_kst_datetime(run.finished_at),
             "duration": item["duration"],
             "master": master,
             "method": item["method"],

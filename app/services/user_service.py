@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models import User, UserRole
 from app.models.common import utc_now
+from app.core.time_presentation import serialize_utc_datetime
 
 
 MIN_PASSWORD_LENGTH = 12
@@ -126,6 +127,6 @@ class UserService:
             'id': str(user.id), 'username': user.username,
             'display_name': user.display_name, 'role': user.role.value,
             'active': user.active,
-            'last_login_at': user.last_login_at.isoformat() if user.last_login_at else None,
-            'created_at': user.created_at.isoformat(),
+            'last_login_at': serialize_utc_datetime(user.last_login_at),
+            'created_at': serialize_utc_datetime(user.created_at),
         }

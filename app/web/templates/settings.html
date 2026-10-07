@@ -19,7 +19,7 @@
         <label class="settings-field"><span class="field-label">일자 (매월)</span><input class="control" name="refresh_day_of_month" type="number" min="1" max="31" value="{{settings.refresh_day_of_month or 1}}"></label>
         <label class="settings-field"><span class="field-label">실행 시각 (Asia/Seoul)</span><input class="control" name="refresh_time_of_day" type="time" value="{{settings.refresh_time_of_day}}" required></label>
         <label class="settings-field"><span class="field-label">실패 재시도</span><span><input name="retry_failed_next_day" type="checkbox"{% if settings.retry_failed_next_day %} checked{% endif %}> 다음 날 같은 시각에 실패 소스만 1회 재시도</span></label>
-        <p class="detail-note">다음 실행: {{next_refresh.isoformat() if next_refresh else '자동 수집 사용 안 함'}}</p>
+        <p class="detail-note">다음 실행: {{next_refresh_display}}</p>
         <p data-form-error class="form-error" hidden></p><button class="button button--primary" type="submit">저장</button>
       </form>
     </section>

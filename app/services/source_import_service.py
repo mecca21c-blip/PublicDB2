@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.config import RuntimePaths, ensure_runtime_directories, runtime_paths
 from app.models import Agency, AgencyType, CollectionMethod, OrgUnit, OrgUnitType, Source, SourceBinding, SourceImportLog
 from app.models.common import utc_now
+from app.core.time_presentation import serialize_utc_datetime
 from app.services.agency_service import AgencyService
 from app.services.normalization import (
     SourceURLValidationError,
@@ -367,7 +368,7 @@ class SourceImportService:
                     "original_filename": entry.original_filename,
                     "stored_path": relative,
                     "sha256": entry.sha256,
-                    "confirmed_at": confirmed_at.isoformat(),
+                    "confirmed_at": serialize_utc_datetime(confirmed_at),
                 },
             }
             claims.complete(acquired.claim, durable_result)

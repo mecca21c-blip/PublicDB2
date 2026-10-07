@@ -34,6 +34,7 @@ from app.core.config import allowed_hosts, get_database_url, runtime_paths
 from app.core.logging import close_file_logging, configure_file_logging
 from app.core.schema import MIGRATION_HEAD
 from app.core.security import SecretStore, SecurityHeadersMiddleware, SignedSessionMiddleware
+from app.core.time_presentation import format_kst_datetime
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
 from app.models import (
@@ -530,7 +531,11 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             request=request, name='settings.html',
             context=_page_context(request, 'settings', settings=snapshot, users=users,
                                   portable_paths=portable_paths, regions=REGIONS,
-                                  next_refresh=next_refresh, db_error=db_error),
+                                  next_refresh=next_refresh,
+                                  next_refresh_display=format_kst_datetime(
+                                      next_refresh, fallback='자동 수집 사용 안 함'
+                                  ),
+                                  db_error=db_error),
         )
 
     return application
