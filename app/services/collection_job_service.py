@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
+from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Agency, CollectionJob, CollectionJobItem, CollectionJobItemStatus,
     CollectionJobStatus, CollectionTriggerType, OrgUnit, Source, SourceBinding,
 )
+from app.models.common import utc_now
 from app.services.source_query_service import SourceFilterError, SourceFilterSpec, SourceQueryService
 
 
@@ -25,6 +28,19 @@ MANUAL_TRIGGERS = {
     CollectionTriggerType.MANUAL_AGENCY,
     CollectionTriggerType.MANUAL_REGION,
     CollectionTriggerType.MANUAL_ALL,
+}
+ACTIVE_JOB_STATUSES = (CollectionJobStatus.PENDING, CollectionJobStatus.RUNNING)
+TERMINAL_FEEDBACK_SECONDS = 30
+TRIGGER_LABELS = {
+    CollectionTriggerType.MANUAL_SOURCE: "개별 소스 즉시 수집",
+    CollectionTriggerType.MANUAL_SELECTION: "선택 소스 즉시 수집",
+    CollectionTriggerType.MANUAL_FILTER: "검색 결과 즉시 수집",
+    CollectionTriggerType.MANUAL_ORG_UNIT: "부서 범위 즉시 수집",
+    CollectionTriggerType.MANUAL_AGENCY: "기관 범위 즉시 수집",
+    CollectionTriggerType.MANUAL_REGION: "지역 범위 즉시 수집",
+    CollectionTriggerType.MANUAL_ALL: "전체 소스 즉시 수집",
+    CollectionTriggerType.SCHEDULED_FULL: "자동 전체 수집",
+    CollectionTriggerType.SCHEDULED_RETRY: "자동 실패 재시도",
 }
 
 
@@ -165,6 +181,12 @@ class CollectionJobService:
             raise CollectionJobError("Collection job was not found.")
         return job
 
+    def get_summary(self, job_id: uuid.UUID) -> CollectionJob:
+        job = self.session.get(CollectionJob, job_id)
+        if job is None:
+            raise CollectionJobError("Collection job was not found.")
+        return job
+
     def list_recent(
         self, *, failures_only: bool = False, limit: int = 100,
         include_items: bool = False,
@@ -178,6 +200,105 @@ class CollectionJobService:
         if failures_only:
             statement = statement.where(CollectionJob.failed_items > 0)
         return [self.project(job, include_items=include_items) for job in self.session.scalars(statement).unique()]
+
+    def active_snapshot(self) -> dict:
+        """Return one bounded DB-owned status projection for shared-shell polling."""
+        active_count = self.session.scalar(
+            select(func.count()).select_from(CollectionJob).where(CollectionJob.status.in_(ACTIVE_JOB_STATUSES))
+        ) or 0
+        current_item = self.session.scalar(
+            select(CollectionJobItem)
+            .join(CollectionJob, CollectionJob.id == CollectionJobItem.job_id)
+            .where(
+                CollectionJob.status.in_(ACTIVE_JOB_STATUSES),
+                CollectionJobItem.status == CollectionJobItemStatus.RUNNING,
+            )
+            .order_by(CollectionJob.priority.desc(), CollectionJob.created_at, CollectionJobItem.sequence)
+            .limit(1)
+        )
+        job = current_item.job if current_item is not None else self.session.scalar(
+            select(CollectionJob)
+            .where(CollectionJob.status.in_(ACTIVE_JOB_STATUSES))
+            .order_by(CollectionJob.priority.desc(), CollectionJob.created_at, CollectionJob.id)
+            .limit(1)
+        )
+        recent_terminal = False
+        if job is None:
+            candidate = self.session.scalar(
+                select(CollectionJob)
+                .where(CollectionJob.finished_at.is_not(None))
+                .order_by(CollectionJob.finished_at.desc(), CollectionJob.id.desc())
+                .limit(1)
+            )
+            if candidate and candidate.finished_at >= utc_now() - timedelta(seconds=TERMINAL_FEEDBACK_SECONDS):
+                job = candidate
+                recent_terminal = True
+        if job is None:
+            return {"active_job_count": 0, "recent_terminal": False, "job": None}
+        if current_item is None and not recent_terminal:
+            current_item = self.session.scalar(
+                select(CollectionJobItem)
+                .where(
+                    CollectionJobItem.job_id == job.id,
+                    CollectionJobItem.status.in_((CollectionJobItemStatus.RUNNING, CollectionJobItemStatus.PENDING)),
+                )
+                .order_by(CollectionJobItem.sequence)
+                .limit(1)
+            )
+        projection = self.summary_projection(job, current_item=current_item)
+        return {
+            "active_job_count": active_count,
+            "recent_terminal": recent_terminal,
+            "job": projection,
+        }
+
+    def summary_projection(
+        self, job: CollectionJob, *, current_item: CollectionJobItem | None = None,
+    ) -> dict:
+        if current_item is None and job.status in ACTIVE_JOB_STATUSES:
+            current_item = self.session.scalar(
+                select(CollectionJobItem)
+                .where(
+                    CollectionJobItem.job_id == job.id,
+                    CollectionJobItem.status.in_((CollectionJobItemStatus.RUNNING, CollectionJobItemStatus.PENDING)),
+                )
+                .order_by(
+                    (CollectionJobItem.status == CollectionJobItemStatus.RUNNING).desc(),
+                    CollectionJobItem.sequence,
+                )
+                .limit(1)
+            )
+        projection = self.project(job, include_items=False)
+        projection["trigger_label"] = TRIGGER_LABELS.get(job.trigger_type, "수집 작업")
+        projection["current_item"] = self._current_item_projection(current_item)
+        return projection
+
+    def _current_item_projection(self, item: CollectionJobItem | None) -> dict | None:
+        if item is None:
+            return None
+        source = item.source
+        binding = self.session.scalar(
+            select(SourceBinding)
+            .options(selectinload(SourceBinding.agency), selectinload(SourceBinding.org_unit))
+            .where(SourceBinding.source_id == source.id, SourceBinding.active.is_(True))
+            .order_by(SourceBinding.created_at, SourceBinding.id)
+            .limit(1)
+        )
+        parsed = urlsplit(source.url)
+        display_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))[:160]
+        method_labels = {
+            "WEB_PAGE": "개별 URL · 스크래핑",
+            "WEB_CRAWL": "Index URL · 크롤링",
+            "API": "공개 API / RSS",
+        }
+        return {
+            "source_id": str(source.id),
+            "status": item.status.value,
+            "agency": binding.agency.official_name if binding else None,
+            "org_unit": binding.org_unit.name if binding and binding.org_unit else None,
+            "method": method_labels.get(source.collection_method.value, source.collection_method.value),
+            "url": display_url,
+        }
 
     @staticmethod
     def project(job: CollectionJob, *, include_items: bool = True) -> dict:

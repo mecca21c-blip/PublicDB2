@@ -19,6 +19,10 @@ DB 장애는 fixture fallback 없이 명시적 한국어 오류로 표시한다.
 인증되지 않은 운영 화면은 /login으로 이동한다. 공통 header에는 현재 사용자명,
 역할과 POST 로그아웃만 간결하게 표시하며 알림·가상 avatar·profile dashboard는 없다.
 Settings 메뉴는 ADMIN에게만 표시한다.
+공통 header의 작은 수집 상태 indicator는 DB의 CollectionJob projection을 3초마다
+조회하며, 수집 대기·수집 중·완료·오류 포함 완료·중단·취소를 한국어로 표시한다.
+활성/최근 작업이 없으면 숨기고, 여러 작업이면 개수를 명시하며, 클릭하면 `/runs`로
+이동한다. 페이지 이동 후에도 시작 화면의 JavaScript memory가 아닌 DB 상태를 사용한다.
 
 ## 동결 workspace
 
@@ -52,6 +56,9 @@ Source wizard의 하단 action bar는 modal 내부의 유일한 세로 scroll ow
 가로 scroll을 강제하지 않으며, DB 자체가 비었을 때와 필터 결과만 비었을 때를 서로 다른
 안내로 표시한다. 필터 결과 전체 및 전체 소스 즉시 수집은 서버가 다시 계산한 방식별
 대상 수를 확인한 뒤에만 background CollectionJob을 만든다.
+202 Accepted 뒤에는 `수집 작업을 시작했습니다`를 즉시 표시하고 persisted job 진행률,
+성공·오류 수와 현재 Source를 갱신한다. 현재 수집/대기 badge는 운영 overlay이며 기존
+최근 수집 결과 badge를 덮어쓰지 않는다.
 
 ### /runs 수집 이력
 
@@ -60,6 +67,9 @@ Source wizard의 하단 action bar는 modal 내부의 유일한 세로 scroll ow
 DB 반영을 의미하지 않는다.
 수집 방식은 현재 Source가 아니라 실행 당시 CrawlRun snapshot에서 표시한다. 다중
 Observation 실행은 method config와 통계, 각 RAW evidence를 run context로 유지한다.
+활성 CollectionJob 행은 full-page reload 없이 summary-only API로 약 3초마다 진행률,
+성공·오류 수와 상태를 갱신한다. 오류 상세는 safe HTTP reason과 가능한 HTTP 상태를
+표시하며 traceback, credential, cookie, secret query 또는 raw body를 표시하지 않는다.
 
 ### /contacts 연락처 DB
 

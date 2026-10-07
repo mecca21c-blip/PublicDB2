@@ -21,6 +21,14 @@
 .global-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--color-text); background: transparent; }
 .global-search input::placeholder { color: #8594a9; opacity: 1; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
+.global-job-status { max-width: 260px; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #b9d4f7; border-radius: 999px; color: #174f99; background: #eff6ff; font-size: 12px; font-weight: 750; white-space: nowrap; }
+.global-job-status.is-terminal { border-color: #cfd9e6; color: #40546d; background: #f6f8fb; }
+.global-job-spinner { width: 9px; height: 9px; border: 2px solid #9fc5f4; border-top-color: #2563eb; border-radius: 50%; animation: job-spin .9s linear infinite; }
+.global-job-status.is-terminal .global-job-spinner { animation: none; border-color: #5b9d6e; background: #5b9d6e; }
+.collection-progress { width: 100%; display: grid; grid-template-columns: auto auto auto auto; align-items: center; gap: 6px 16px; padding: 12px 14px; border: 1px solid #b9d4f7; border-radius: var(--radius-sm); background: #f4f8fe; }
+.collection-progress small { grid-column: 1 / -1; color: var(--color-muted); }
+.live-source-badge { display: inline-flex; margin-left: 6px; padding: 2px 7px; border-radius: 999px; color: #174f99; background: #e6f1ff; font-size: 11px; font-weight: 750; }
+@keyframes job-spin { to { transform: rotate(360deg); } }
 .page-content { min-width: 0; padding: 26px 28px 36px; }
 
 @media (max-width: 1280px) {

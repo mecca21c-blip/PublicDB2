@@ -252,7 +252,13 @@
       <button class="button button--secondary" type="button" data-job-filtered-open{% if workspace.eligible_total==0 %} disabled{% endif %}>필터 결과 전체 지금 수집</button>
       <button class="button button--secondary" type="button" data-job-all-open{% if workspace.all_eligible_total==0 %} disabled{% endif %}>전체 소스 지금 수집</button>
     </div>
-    <p class="detail-note" data-job-status aria-live="polite" hidden></p>
+    <section class="collection-progress" data-job-status aria-live="polite" hidden>
+      <strong data-job-status-title>수집 작업을 시작했습니다.</strong>
+      <span data-job-status-scope></span>
+      <span data-job-status-progress></span>
+      <span data-job-status-counts></span>
+      <small data-job-status-current></small>
+    </section>
   </section>
 
   <div class="workspace-layout">
@@ -262,10 +268,10 @@
         <table class="data-table workspace-table workspace-table--sources">
           <thead><tr><th><input type="checkbox" data-source-select-page aria-label="현재 페이지 수집 가능한 소스 전체 선택"></th><th>기관</th><th>부서</th><th>URL/Endpoint</th><th>수집 방식</th><th>최근 확인</th><th>발견 수</th><th>상태</th><th>자동수집</th></tr></thead>
           <tbody>{% for item in workspace['items'] %}
-            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}">
+            <tr class="selectable-row{% if loop.first %} is-selected{% endif %}" data-detail-target="{{item.id}}" data-source-row="{{item.source_id}}">
               <td><input type="checkbox" data-source-select value="{{item.source_id}}" aria-label="{{item.url}} 선택"{% if not item.collection_enabled %} disabled{% endif %}></td>
               <td><strong>{{item.agency_summary}}</strong>{% if item.binding_count > 1 %}<small class="binding-count">{{item.binding_count}}개 연결</small>{% endif %}</td>
-              <td>{{item.department}}</td><td class="url-cell" title="{{item.url}}">{{item.url}}</td><td>{{item.collection_method_label}}</td><td>{{item.checked}}</td><td>{{item.found}}</td><td>{{status_badge(item.status,item.tone)}}</td><td>{{'포함' if item.scheduled_refresh_enabled else '제외'}}</td>
+              <td>{{item.department}}</td><td class="url-cell" title="{{item.url}}">{{item.url}}</td><td>{{item.collection_method_label}}</td><td>{{item.checked}}</td><td>{{item.found}}</td><td><span data-source-history-status>{{status_badge(item.status,item.tone)}}</span><span class="live-source-badge" data-source-live-status hidden></span></td><td>{{'포함' if item.scheduled_refresh_enabled else '제외'}}</td>
             </tr>
           {% else %}<tr><td colspan="9" class="empty-state-cell">{% if workspace.registered_total==0 %}<strong>등록된 수집 소스가 없습니다.</strong><span>수집 소스 추가에서 첫 소스를 등록하세요.</span>{% else %}<strong>현재 조건에 맞는 수집 소스가 없습니다.</strong><span>필터 조건을 변경하거나 초기화해 보세요.</span>{% endif %}</td></tr>{% endfor %}</tbody>
         </table>

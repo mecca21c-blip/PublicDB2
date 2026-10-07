@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -17,7 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.collectors.http_fetcher import HTTPFetchError, HTTPFetcher, UnsafeRequestTarget
+from app.collectors.http_fetcher import (
+    HTTPFetchError, HTTPFetcher, UnsafeRequestTarget, safe_http_error_summary,
+)
 from app.models import (
     ApiAuthMode, ApiPaginationMode, ApiSourceKind, CollectionMethod, CrawlRun,
     ExtractionRun, ExtractionStatus, Observation, RunStatus, Source, StageStatus,
@@ -37,6 +40,7 @@ from app.services.structured_extraction_service import StructuredExtractionError
 
 HTML_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
 COLLECTOR_VERSION = "05B-1"
+logger = logging.getLogger("publicdb2")
 
 
 class SourceNotFoundError(LookupError):
@@ -184,11 +188,32 @@ class CollectionService:
             except IntegrityError as error:
                 self.session.rollback()
                 raise CollectionBusyError("이미 이 소스를 수집 중입니다.") from error
-            if source.collection_method is CollectionMethod.WEB_PAGE:
-                return self._collect_scrape(source, run)
-            if source.collection_method is CollectionMethod.WEB_CRAWL:
-                return self._collect_crawl(source, run)
-            return self._collect_api(source, run)
+            host = urlsplit(source.url).hostname or "unknown"
+            logger.info(
+                "collection_started source_id=%s host=%s method=%s",
+                source.id, host, source.collection_method.value,
+            )
+            try:
+                if source.collection_method is CollectionMethod.WEB_PAGE:
+                    result = self._collect_scrape(source, run)
+                elif source.collection_method is CollectionMethod.WEB_CRAWL:
+                    result = self._collect_crawl(source, run)
+                else:
+                    result = self._collect_api(source, run)
+            except Exception as error:
+                logger.warning(
+                    "collection_failed source_id=%s host=%s error_class=%s",
+                    source.id, host, error.__class__.__name__,
+                )
+                raise
+            event = "collection_succeeded" if result.crawl_run.status is RunStatus.SUCCESS else "collection_failed"
+            logger.info(
+                "%s source_id=%s host=%s run_id=%s status=%s http_status=%s error_code=%s",
+                event, source.id, host, result.crawl_run.id, result.crawl_run.status.value,
+                result.crawl_run.http_status,
+                (result.crawl_run.collection_statistics or {}).get("error_code", "-"),
+            )
+            return result
         finally:
             if self._claim_id is not None and self._claim_owner is not None:
                 with Session(bind=self.session.get_bind()) as claim_session:
@@ -235,6 +260,7 @@ class CollectionService:
         seen = {seed}
         robots: dict[str, RobotFileParser | None] = {}
         attempts = fetches = successes = failures = contact_count = directory_count = 0
+        first_fetch_error: HTTPFetchError | None = None
         max_depth_reached = 0
         last_observation = None
         last_artifact = None
@@ -261,8 +287,9 @@ class CollectionService:
                     source.url, fetched.final_url, config.scope.value,
                     config.allowed_paths or [config.allowed_path], config.excluded_paths or [],
                 )
-            except HTTPFetchError:
+            except HTTPFetchError as error:
                 failures += 1
+                first_fetch_error = first_fetch_error or error
                 continue
             fetches += 1
             if successes == 0:
@@ -304,7 +331,7 @@ class CollectionService:
         total = contact_count + directory_count
         if successes == 0:
             final = self._finish_failure(
-                run.id, RuntimeError("수집에 성공한 eligible 페이지가 없습니다."),
+                run.id, first_fetch_error or RuntimeError("수집에 성공한 eligible 페이지가 없습니다."),
                 StageStatus.SUCCESS if fetches else StageStatus.FAILED,
                 StageStatus.FAILED if fetches else StageStatus.SKIPPED,
                 StageStatus.SKIPPED, None, stats,
@@ -341,6 +368,7 @@ class CollectionService:
         last_observation = None
         last_artifact = None
         errors: list[str] = []
+        http_error_code: str | None = None
         pages = config.max_pages if config.pagination_mode is ApiPaginationMode.PAGE_NUMBER else 1
         for offset in range(pages):
             request_params = dict(params)
@@ -354,7 +382,8 @@ class CollectionService:
             try:
                 fetched = self.fetcher.fetch(source.url, params=request_params, headers=headers)
             except HTTPFetchError as error:
-                errors.append(_summary(error))
+                errors.append(safe_http_error_summary(error))
+                http_error_code = error.error_code
                 continue
             if requests_succeeded == 0:
                 self._connection_success(run.id, fetched.status_code)
@@ -391,6 +420,8 @@ class CollectionService:
             "requests_attempted": requests_attempted, "requests_succeeded": requests_succeeded,
             "raw_records": raw_records, "mapped_records": mapped_records,
         }
+        if http_error_code:
+            stats["error_code"] = http_error_code
         if config.kind in {ApiSourceKind.RSS, ApiSourceKind.ATOM}:
             stats["feed_items"] = raw_records
         meaningful = raw_records if config.discovery_only or config.kind in {ApiSourceKind.RSS, ApiSourceKind.ATOM} else mapped_records
@@ -572,8 +603,11 @@ class CollectionService:
         if http_status is not None or run.http_status is None:
             run.http_status = http_status
         run.records_observed = 0
-        run.error_summary = _summary(error)
-        run.collection_statistics = statistics
+        run.error_summary = safe_http_error_summary(error) if isinstance(error, HTTPFetchError) else _summary(error)
+        run.collection_statistics = {
+            **statistics,
+            **({"error_code": error.error_code} if isinstance(error, HTTPFetchError) else {}),
+        }
         run.finished_at = finished
         run.heartbeat_at = finished
         if source is not None:

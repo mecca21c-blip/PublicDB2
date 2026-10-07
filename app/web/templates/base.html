@@ -60,6 +60,12 @@
           <input type="search" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." readonly aria-label="통합 검색 (읽기 전용)">
         </div>
         <div class="header-actions">
+          {% if current_user %}
+          <a class="global-job-status" href="/runs" data-global-job-status hidden aria-live="polite">
+            <span class="global-job-spinner" aria-hidden="true"></span>
+            <span data-global-job-text>수집 상태</span>
+          </a>
+          {% endif %}
           {% if current_user %}<span class="muted-cell">{{ current_user.display_name or current_user.username }} · {{ current_user.role.value }}</span>
           <button class="button button--secondary" type="button" data-logout>로그아웃</button>{% endif %}
         </div>

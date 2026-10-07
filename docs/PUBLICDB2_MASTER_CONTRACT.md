@@ -334,6 +334,34 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   전체 수집 일정의 포함 여부만 뜻한다. 별도 preset, per-filter schedule, cron, 새 queue
   제품은 이 계약에 포함하지 않는다.
 
+## 06C-5B Collection Runtime Visibility and HTTP Error Contract
+
+- Background collection must expose accepted, waiting, running, completed,
+  completed-with-errors, failed, and cancelled state in Korean user language. The
+  persisted CollectionJob/CollectionJobItem counters are the authority; browser row
+  counts and page-local memory are not.
+- Every authenticated page polls one bounded active-job projection approximately every
+  three seconds. The shared header indicator survives navigation, links to `/runs`,
+  reports multiple active/pending jobs without implying only one exists, and retains a
+  terminal result briefly before hiding. `/sources` additionally acknowledges a 202
+  response immediately and overlays the current Source's operational state without
+  replacing its historical collection status.
+- The bounded projection returns one highest-priority executing/pending job, aggregate
+  counters, and at most one current item summary. It does not load every Source,
+  CrawlRun, or job item. `/runs` updates rendered job summaries through the summary-only
+  status API rather than full-page reload.
+- HTTP collection failures use safe categories: timeout, DNS, TLS, remote connection,
+  remote disconnect, HTTP status, redirect, unsafe target, response-size limit, or
+  other HTTP failure. CrawlRun.error_summary and CollectionJobItem error fields store a
+  concise category (and HTTP status where available), never an unbounded traceback.
+- Collection logs distinguish metadata discovery from actual collection with
+  `collection_started`, `collection_succeeded`, and `collection_failed`. They may record
+  safe exception class/code, status, Source ID, and target host, but never credentials,
+  secret query values, cookies, raw bodies, or full secret-bearing URLs.
+- A Source-local HTTP failure remains an item failure and the sequential worker continues
+  with the next item. This visibility contract adds no queue, worker, WebSocket, Redis,
+  Celery, or pywebview-specific IPC.
+
 ## PORTABLE PROJECT CONTRACT
 
 PublicDB2 설치 폴더가 application과 data의 이동 단위다. 기본 runtime 경로는 모두

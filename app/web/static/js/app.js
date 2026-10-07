@@ -1149,22 +1149,42 @@
   });
 
   const jobStatusText = (job) => {
-    const progress = job.completed_items + "/" + job.total_items;
-    if (job.status === "PENDING") return "수집 작업 대기 중 · " + progress;
-    if (job.status === "RUNNING") return "수집 진행 중 · " + progress;
+    const progress = job.completed_items + " / " + job.total_items;
+    if (job.status === "PENDING") return "수집 대기 " + progress;
+    if (job.status === "RUNNING") return "수집 중 " + progress;
     if (job.status === "COMPLETED") return "수집 완료 · " + progress;
-    if (job.status === "COMPLETED_WITH_ERRORS") return "오류 포함 완료 · 성공 " + job.succeeded_items + " / 실패 " + job.failed_items;
-    return "수집 작업 " + job.status + " · " + progress;
+    if (job.status === "COMPLETED_WITH_ERRORS") return "수집 완료 · 오류 " + job.failed_items + "건";
+    if (job.status === "FAILED") return "수집 작업이 중단되었습니다.";
+    if (job.status === "CANCELLED") return "수집 작업이 취소되었습니다.";
+    return "수집 작업 상태 확인 중";
+  };
+
+  const currentItemText = (item) => {
+    if (!item) return "";
+    const context = [item.agency, item.org_unit].filter(Boolean).join(" · ");
+    return [context, item.method, item.url].filter(Boolean).join(" · ");
+  };
+
+  const renderJobStatus = (job, output, accepted = false) => {
+    if (!output) return;
+    output.hidden = false;
+    const title = output.querySelector?.("[data-job-status-title]");
+    if (!title) { output.textContent = accepted ? "수집 작업을 시작했습니다. " + jobStatusText(job) : jobStatusText(job); return; }
+    title.textContent = accepted ? "수집 작업을 시작했습니다." : jobStatusText(job);
+    output.querySelector("[data-job-status-scope]").textContent = job.trigger_label || "수집 작업";
+    output.querySelector("[data-job-status-progress]").textContent = jobStatusText(job);
+    output.querySelector("[data-job-status-counts]").textContent = "성공 " + job.succeeded_items + " · 오류 " + job.failed_items;
+    output.querySelector("[data-job-status-current]").textContent = currentItemText(job.current_item);
   };
 
   const pollCollectionJob = (job, output, onTerminal) => {
-    if (output) { output.hidden = false; output.textContent = jobStatusText(job); }
+    renderJobStatus(job, output);
     const timer = window.setInterval(async () => {
       try {
-        const response = await fetch("/api/collection-jobs/" + job.id);
+        const response = await fetch("/api/collection-jobs/" + job.id + "?include_items=false");
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "수집 작업 상태를 확인하지 못했습니다.");
-        if (output) { output.hidden = false; output.textContent = jobStatusText(result.job); }
+        renderJobStatus(result.job, output);
         if (["COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"].includes(result.job.status)) {
           window.clearInterval(timer);
           if (onTerminal) onTerminal(result.job);
@@ -1183,9 +1203,53 @@
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "수집 작업을 만들지 못했습니다.");
-    pollCollectionJob(result.job, output, () => window.location.reload());
+    renderJobStatus(result.job, output, true);
+    pollCollectionJob(result.job, output);
     return result.job;
   };
+
+  const globalJobStatus = document.querySelector("[data-global-job-status]");
+  const updateGlobalJobStatus = async () => {
+    if (!globalJobStatus) return;
+    try {
+      const response = await fetch("/api/collection-jobs/active");
+      if (!response.ok) { globalJobStatus.hidden = true; return; }
+      const snapshot = await response.json();
+      const job = snapshot.job;
+      if (!job) {
+        globalJobStatus.hidden = true;
+        const sourcesPanel = document.querySelector(".collection-actions [data-job-status]");
+        if (sourcesPanel) sourcesPanel.hidden = true;
+        document.querySelectorAll("[data-source-live-status]").forEach((badge) => { badge.hidden = true; });
+        return;
+      }
+      const terminal = ["COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "CANCELLED"].includes(job.status);
+      const label = snapshot.active_job_count > 1
+        ? "수집 작업 " + snapshot.active_job_count + "개 진행 중/대기"
+        : jobStatusText(job);
+      globalJobStatus.querySelector("[data-global-job-text]").textContent = label;
+      globalJobStatus.classList.toggle("is-terminal", terminal);
+      globalJobStatus.hidden = false;
+
+      const sourcesPanel = document.querySelector(".collection-actions [data-job-status]");
+      if (sourcesPanel) renderJobStatus(job, sourcesPanel);
+      document.querySelectorAll("[data-source-live-status]").forEach((badge) => { badge.hidden = true; });
+      if (job.current_item) {
+        const row = document.querySelector('[data-source-row="' + job.current_item.source_id + '"]');
+        const badge = row?.querySelector("[data-source-live-status]");
+        if (badge) {
+          badge.textContent = job.current_item.status === "RUNNING" ? "수집 중" : "대기 중";
+          badge.hidden = false;
+        }
+      }
+    } catch (_error) {
+      globalJobStatus.hidden = true;
+    }
+  };
+  if (globalJobStatus) {
+    updateGlobalJobStatus();
+    window.setInterval(updateGlobalJobStatus, 3000);
+  }
 
   document.querySelectorAll("[data-scrape-list]").forEach((button) => {
     button.addEventListener("click", () => window.location.reload());
@@ -1201,6 +1265,7 @@
       button.disabled = true;
       try {
         await createCollectionJob({trigger_type: "MANUAL_SELECTION", source_ids: sourceIds}, output);
+        button.textContent = "수집 요청됨";
       } catch (error) {
         output.textContent = error.message; output.hidden = false; button.disabled = false;
       }
@@ -1223,7 +1288,9 @@
         const response = await fetch("/api/sources/" + sourceId + "/collect", {method: "POST", headers: csrfHeaders()});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "수집 작업을 만들지 못했습니다.");
-        pollCollectionJob(result.job, errorBox, () => window.location.reload());
+        related.forEach((item) => { item.textContent = "수집 요청됨"; });
+        renderJobStatus(result.job, errorBox, true);
+        pollCollectionJob(result.job, errorBox);
       } catch (error) {
         related.forEach((item) => {
           item.disabled = item.dataset.collectWasDisabled === "true";
@@ -1264,7 +1331,10 @@
     if (!sourceIds.length) { sharedJobStatus.textContent = "수집할 소스를 선택하세요."; return; }
     if (sourceIds.length > 20 && !window.confirm(sourceIds.length + "개 소스를 수집하시겠습니까?")) return;
     event.currentTarget.disabled = true;
-    try { await createCollectionJob({trigger_type: "MANUAL_SELECTION", source_ids: sourceIds}, sharedJobStatus); }
+    try {
+      await createCollectionJob({trigger_type: "MANUAL_SELECTION", source_ids: sourceIds}, sharedJobStatus);
+      event.currentTarget.textContent = "수집 요청됨";
+    }
     catch (error) { sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false; }
   });
   const sourceFilterSnapshot = () => {
@@ -1316,6 +1386,7 @@
     try {
       closeModal(event.currentTarget.closest("[data-modal]"));
       await createCollectionJob({trigger_type: "MANUAL_ALL"}, sharedJobStatus);
+      event.currentTarget.textContent = "수집 요청됨";
     } catch (error) {
       sharedJobStatus.hidden = false; sharedJobStatus.textContent = error.message; event.currentTarget.disabled = false;
     }
@@ -1328,6 +1399,7 @@
     try {
       closeModal(event.currentTarget.closest("[data-modal]"));
       await createCollectionJob({trigger_type: "MANUAL_FILTER", filter}, sharedJobStatus);
+      event.currentTarget.textContent = "수집 요청됨";
     } catch (error) {
       sharedJobStatus.hidden = false;
       sharedJobStatus.textContent = error.message;
@@ -1337,26 +1409,26 @@
   document.querySelectorAll("[data-job-agency]").forEach((button) => button.addEventListener("click", async () => {
     button.disabled = true;
     const output = button.closest(".detail-content")?.querySelector("[data-job-status]");
-    try { await createCollectionJob({trigger_type: "MANUAL_AGENCY", agency_id: button.dataset.jobAgency}, output); }
+    try { await createCollectionJob({trigger_type: "MANUAL_AGENCY", agency_id: button.dataset.jobAgency}, output); button.textContent = "수집 요청됨"; }
     catch (error) { if (output) output.textContent = error.message; button.disabled = false; }
   }));
   document.querySelectorAll("[data-job-org-unit]").forEach((button) => button.addEventListener("click", async () => {
     button.disabled = true;
     const output = button.closest(".detail-content")?.querySelector("[data-job-status]");
-    try { await createCollectionJob({trigger_type: "MANUAL_ORG_UNIT", org_unit_id: button.dataset.jobOrgUnit}, output); }
+    try { await createCollectionJob({trigger_type: "MANUAL_ORG_UNIT", org_unit_id: button.dataset.jobOrgUnit}, output); button.textContent = "수집 요청됨"; }
     catch (error) { if (output) output.textContent = error.message; button.disabled = false; }
   }));
   const liveJobRows = [...document.querySelectorAll("[data-job-summary]")];
   if (liveJobRows.some((row) => ["PENDING", "RUNNING"].includes(row.querySelector("[data-job-state]")?.dataset.jobStateCode))) {
     window.setInterval(async () => {
       await Promise.all(liveJobRows.map(async (row) => {
-        const response = await fetch("/api/collection-jobs/" + row.dataset.jobSummary);
+        const response = await fetch("/api/collection-jobs/" + row.dataset.jobSummary + "?include_items=false");
         if (!response.ok) return;
         const job = (await response.json()).job;
         row.querySelector("[data-job-progress]").textContent = job.completed_items + " / " + job.total_items + " (" + job.progress_percent + "%)";
         row.querySelector("[data-job-success]").textContent = job.succeeded_items;
         row.querySelector("[data-job-failed]").textContent = job.failed_items;
-        const labels = {PENDING: "대기", RUNNING: "진행 중", COMPLETED: "완료", COMPLETED_WITH_ERRORS: "오류 포함 완료", FAILED: "실패", CANCELLED: "취소"};
+        const labels = {PENDING: "수집 대기", RUNNING: "수집 중", COMPLETED: "수집 완료", COMPLETED_WITH_ERRORS: "완료 · 오류 있음", FAILED: "작업 중단", CANCELLED: "취소됨"};
         row.querySelector("[data-job-state]").textContent = labels[job.status] || job.status;
         row.querySelector("[data-job-state]").dataset.jobStateCode = job.status;
       }));

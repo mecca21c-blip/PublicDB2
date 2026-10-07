@@ -29,6 +29,6 @@ def collect_source(
             source_id=source_id,
         )
         request.app.state.collection_background_runtime.notify()
-        return {"job": service.project(job)}
+        return {"job": service.summary_projection(job)}
     except CollectionJobError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

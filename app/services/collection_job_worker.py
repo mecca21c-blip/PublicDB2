@@ -106,6 +106,7 @@ class CollectionJobWorker:
                     crawl_run_id = result.crawl_run.id
                     run_status = result.crawl_run.status
                     run_error = result.crawl_run.error_summary
+                    run_error_code = (getattr(result.crawl_run, "collection_statistics", None) or {}).get("error_code")
                 if run_status is RunStatus.SUCCESS:
                     self._finish_item(
                         claimed.item_id, CollectionJobItemStatus.SUCCESS,
@@ -115,7 +116,7 @@ class CollectionJobWorker:
                     self._finish_item(
                         claimed.item_id, CollectionJobItemStatus.FAILED,
                         crawl_run_id=crawl_run_id,
-                        error_code=f"COLLECTION_{run_status.value}",
+                        error_code=run_error_code or f"COLLECTION_{run_status.value}",
                         error_summary=run_error or "Collection did not complete successfully.",
                     )
                 return WorkerResult.ITEM_COMPLETE

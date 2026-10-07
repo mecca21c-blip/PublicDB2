@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import ssl
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
@@ -19,6 +20,8 @@ from app.core.config import (
 
 
 class HTTPFetchError(RuntimeError):
+    error_code = "HTTP_FETCH_ERROR"
+
     def __init__(self, message: str, *, status_code: int | None = None, final_url: str | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -26,15 +29,59 @@ class HTTPFetchError(RuntimeError):
 
 
 class HTTPStatusFailure(HTTPFetchError):
-    pass
+    error_code = "HTTP_STATUS_ERROR"
 
 
 class ResponseTooLarge(HTTPFetchError):
-    pass
+    error_code = "RESPONSE_TOO_LARGE"
 
 
 class UnsafeRequestTarget(HTTPFetchError):
-    pass
+    error_code = "UNSAFE_REQUEST_TARGET"
+
+
+class RequestTimeout(HTTPFetchError):
+    error_code = "HTTP_TIMEOUT"
+
+
+class DNSResolutionFailure(HTTPFetchError):
+    error_code = "DNS_FAILURE"
+
+
+class TLSConnectionFailure(HTTPFetchError):
+    error_code = "TLS_FAILURE"
+
+
+class RemoteConnectionFailure(HTTPFetchError):
+    error_code = "CONNECTION_FAILURE"
+
+
+class RemoteDisconnected(HTTPFetchError):
+    error_code = "REMOTE_DISCONNECTED"
+
+
+class RedirectFailure(HTTPFetchError):
+    error_code = "REDIRECT_ERROR"
+
+
+def safe_http_error_summary(error: HTTPFetchError) -> str:
+    """Return the bounded, user-facing category for an HTTP failure."""
+    if isinstance(error, HTTPStatusFailure):
+        return f"HTTP {error.status_code}" if error.status_code is not None else "HTTP 상태 오류"
+    labels = (
+        (RequestTimeout, "연결 시간 초과"),
+        (DNSResolutionFailure, "DNS 확인 실패"),
+        (TLSConnectionFailure, "TLS 연결 실패"),
+        (RemoteDisconnected, "원격 서버가 연결을 종료함"),
+        (RemoteConnectionFailure, "원격 서버 연결 실패"),
+        (RedirectFailure, "리디렉션 오류"),
+        (UnsafeRequestTarget, "안전하지 않은 주소 차단"),
+        (ResponseTooLarge, "응답 크기 제한 초과"),
+    )
+    for error_type, label in labels:
+        if isinstance(error, error_type):
+            return label
+    return "기타 HTTP 수집 실패"
 
 
 @dataclass(frozen=True)
@@ -92,7 +139,7 @@ def validate_request_target(url: str, resolver: Callable[[str], Iterable[str]] =
         try:
             addresses = list(resolver(host))
         except OSError as error:
-            raise HTTPFetchError("대상 호스트의 주소를 확인하지 못했습니다.", final_url=url) from error
+            raise DNSResolutionFailure("DNS 확인 실패", final_url=url) from error
     if not addresses or any(not _is_public_ip(address) for address in addresses):
         raise UnsafeRequestTarget("공개 인터넷 주소가 아닌 대상은 수집할 수 없습니다.", final_url=url)
 
@@ -159,9 +206,9 @@ class HTTPFetcher:
                         if response.is_redirect:
                             location = response.headers.get("location")
                             if not location:
-                                raise HTTPStatusFailure("리디렉션 위치가 없습니다.", status_code=response.status_code, final_url=final_url)
+                                raise RedirectFailure("리디렉션 오류", status_code=response.status_code, final_url=final_url)
                             if redirect_count >= self._max_redirects:
-                                raise HTTPFetchError("허용된 리디렉션 횟수를 초과했습니다.", status_code=response.status_code, final_url=final_url)
+                                raise RedirectFailure("리디렉션 오류", status_code=response.status_code, final_url=final_url)
                             target = urljoin(final_url, location)
                             validate_request_target(target, self._resolver)
                             if target_validator is not None:
@@ -169,7 +216,7 @@ class HTTPFetcher:
                             continue
                         if not 200 <= response.status_code < 300:
                             raise HTTPStatusFailure(
-                                f"HTTP 응답 상태 {response.status_code}",
+                                f"HTTP {response.status_code}",
                                 status_code=response.status_code,
                                 final_url=final_url,
                             )
@@ -178,7 +225,7 @@ class HTTPFetcher:
                             try:
                                 if int(content_length) > self._max_response_bytes:
                                     raise ResponseTooLarge(
-                                        f"응답이 최대 {self._max_response_bytes}바이트를 초과합니다.",
+                                        "응답 크기 제한 초과",
                                         status_code=response.status_code,
                                         final_url=final_url,
                                     )
@@ -188,7 +235,7 @@ class HTTPFetcher:
                         for chunk in response.iter_bytes():
                             if len(body) + len(chunk) > self._max_response_bytes:
                                 raise ResponseTooLarge(
-                                    f"응답이 최대 {self._max_response_bytes}바이트를 초과합니다.",
+                                    "응답 크기 제한 초과",
                                     status_code=response.status_code,
                                     final_url=final_url,
                                 )
@@ -197,6 +244,21 @@ class HTTPFetcher:
                         return FetchResult(bytes(body), response.status_code, final_url, content_type, charset)
         except HTTPFetchError:
             raise
+        except httpx.TimeoutException as error:
+            raise RequestTimeout("연결 시간 초과", final_url=target) from error
+        except httpx.RemoteProtocolError as error:
+            raise RemoteDisconnected("원격 서버가 연결을 종료함", final_url=target) from error
+        except httpx.ConnectError as error:
+            causes = []
+            cause: BaseException | None = error
+            while cause is not None and cause not in causes:
+                causes.append(cause)
+                cause = cause.__cause__ or cause.__context__
+            if any(isinstance(value, socket.gaierror) for value in causes):
+                raise DNSResolutionFailure("DNS 확인 실패", final_url=target) from error
+            if any(isinstance(value, ssl.SSLError) for value in causes) or "SSL" in str(error).upper():
+                raise TLSConnectionFailure("TLS 연결 실패", final_url=target) from error
+            raise RemoteConnectionFailure("원격 서버 연결 실패", final_url=target) from error
         except httpx.HTTPError as error:
-            raise HTTPFetchError("HTTP 수집 실패", final_url=url) from error
-        raise HTTPFetchError("HTTP 수집을 완료하지 못했습니다.", final_url=target)
+            raise HTTPFetchError("기타 HTTP 수집 실패", final_url=target) from error
+        raise HTTPFetchError("기타 HTTP 수집 실패", final_url=target)
