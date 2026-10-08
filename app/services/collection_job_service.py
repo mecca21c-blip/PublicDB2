@@ -43,6 +43,14 @@ TRIGGER_LABELS = {
     CollectionTriggerType.SCHEDULED_FULL: "자동 전체 수집",
     CollectionTriggerType.SCHEDULED_RETRY: "자동 실패 재시도",
 }
+JOB_STATUS_LABELS = {
+    CollectionJobStatus.PENDING: "수집 대기",
+    CollectionJobStatus.RUNNING: "수집 중",
+    CollectionJobStatus.COMPLETED: "완료",
+    CollectionJobStatus.COMPLETED_WITH_ERRORS: "완료 · 오류 있음",
+    CollectionJobStatus.FAILED: "실패",
+    CollectionJobStatus.CANCELLED: "취소됨",
+}
 
 
 class CollectionJobError(ValueError):
@@ -159,6 +167,32 @@ class CollectionJobService:
         if source_ids is not None:
             statement = statement.where(Source.id.in_(source_ids))
         return list(self.session.scalars(statement.order_by(Source.normalized_url)).unique())
+
+    def scheduled_source_count(self) -> int:
+        statement = (
+            select(func.count(func.distinct(Source.id)))
+            .select_from(Source)
+            .join(SourceBinding, SourceBinding.source_id == Source.id)
+            .where(
+                Source.active.is_(True),
+                SourceBinding.active.is_(True),
+                Source.scheduled_refresh_enabled.is_(True),
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def latest_scheduled_full(self) -> dict | None:
+        job = self.session.scalar(
+            select(CollectionJob)
+            .where(CollectionJob.trigger_type == CollectionTriggerType.SCHEDULED_FULL)
+            .order_by(CollectionJob.created_at.desc(), CollectionJob.id.desc())
+            .limit(1)
+        )
+        if job is None:
+            return None
+        projection = self.project(job, include_items=False)
+        projection["status_label"] = JOB_STATUS_LABELS[job.status]
+        return projection
 
     @staticmethod
     def _eligible_source_statement(*, scheduled: bool):
@@ -321,6 +355,7 @@ class CollectionJobService:
             "created_at_display": format_kst_datetime(job.created_at),
             "started_at": serialize_utc_datetime(job.started_at),
             "finished_at": serialize_utc_datetime(job.finished_at),
+            "finished_at_display": format_kst_datetime(job.finished_at),
             "parent_job_id": str(job.parent_job_id) if job.parent_job_id else None,
             "scope_summary": CollectionJobService._scope_summary(job),
         }

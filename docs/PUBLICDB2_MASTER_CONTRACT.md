@@ -455,3 +455,11 @@ Apache/HTTPS/Windows service 구성은 이 계약의 범위가 아니다.
 - Machine/API timestamp fields use offset-aware ISO 8601 UTC (`+00:00`).
 - Korean business UI and user-facing XLSX timestamps are rendered with `Asia/Seoul` as `YYYY-MM-DD HH:mm` through `app.core.time_presentation`.
 - Sorting, stale checks, worker claims, scheduler calculations, and Master history comparisons continue to use canonical datetime values rather than formatted KST strings.
+
+## Operator settings and HTML workspace filters
+
+- Settings is the operator-facing owner of the global automatic collection schedule. Sources separately own each Source's `scheduled_refresh_enabled` inclusion flag.
+- Automatic collection enabled state and the application-owned background collection engine state are distinct and must be presented independently.
+- The scheduler remains application-process owned, uses Asia/Seoul wall-clock rules, and may enqueue only the latest missed due slot after restart rather than every historical slot.
+- A blank optional enum value submitted by an HTML workspace filter means no filter. Invalid non-blank HTML GET query values must return users to a safe application-shell workspace state instead of stranding the desktop shell on raw validation JSON.
+- API schemas remain strict and continue returning structured 4xx responses for invalid enum values.

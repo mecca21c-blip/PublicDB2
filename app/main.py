@@ -10,6 +10,8 @@ import uuid
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -32,9 +34,9 @@ from app.api.dependencies import ensure_csrf_token, get_current_user_optional, g
 from app.collectors.http_fetcher import HTTPFetcher
 from app.core.config import allowed_hosts, get_database_url, runtime_paths
 from app.core.logging import close_file_logging, configure_file_logging
+from app.core.html_query import HTMLFilterValueError, parse_optional_enum
 from app.core.schema import MIGRATION_HEAD
 from app.core.security import SecretStore, SecurityHeadersMiddleware, SignedSessionMiddleware
-from app.core.time_presentation import format_kst_datetime
 from app.db.engine import create_db_engine
 from app.db.session import create_session_factory
 from app.models import (
@@ -228,6 +230,16 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             return RedirectResponse('/login', status_code=status.HTTP_303_SEE_OTHER)
         return JSONResponse({'detail': error.detail}, status_code=error.status_code, headers=error.headers)
 
+    @application.exception_handler(HTMLFilterValueError)
+    async def html_filter_error(request: Request, _error: HTMLFilterValueError):
+        return RedirectResponse(request.url.path, status_code=status.HTTP_303_SEE_OTHER)
+
+    @application.exception_handler(RequestValidationError)
+    async def request_validation_error(request: Request, error: RequestValidationError):
+        if request.method == 'GET' and not request.url.path.startswith('/api/'):
+            return RedirectResponse(request.url.path, status_code=status.HTTP_303_SEE_OTHER)
+        return await request_validation_exception_handler(request, error)
+
     @application.exception_handler(SQLAlchemyError)
     async def database_error(request: Request, error: SQLAlchemyError):
         logger.error('database operation failed: %s', error.__class__.__name__)
@@ -301,10 +313,11 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         )
 
     @application.get('/agencies', response_class=HTMLResponse, name='agencies', dependencies=[Depends(require_viewer)])
-    def agencies(request: Request, search: str | None = None, agency_type: AgencyType | None = None, region_code: str | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
+    def agencies(request: Request, search: str | None = None, agency_type: str | None = None, region_code: str | None = None, page: int = 1, page_size: int = 100) -> HTMLResponse:
+        selected_agency_type = parse_optional_enum(agency_type, AgencyType)
         session = application.state.session_factory()
         try:
-            workspace = AgencyService(session).list_page(search=search, agency_type=agency_type, region_code=region_code, page=page, page_size=page_size)
+            workspace = AgencyService(session).list_page(search=search, agency_type=selected_agency_type, region_code=region_code, page=page, page_size=page_size)
             db_error = None
         except SQLAlchemyError:
             session.rollback()
@@ -312,7 +325,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             db_error = '기관 데이터를 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
         finally:
             session.close()
-        return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context(request, 'agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': agency_type.value if agency_type else '', 'region_code': region_code or ''}, agency_types=AgencyType, agency_type_labels=AGENCY_TYPE_LABELS, regions=REGIONS))
+        return templates.TemplateResponse(request=request, name='agencies.html', context=_page_context(request, 'agencies', workspace=workspace, db_error=db_error, filters={'search': search or '', 'agency_type': selected_agency_type.value if selected_agency_type else '', 'region_code': region_code or ''}, agency_types=AgencyType, agency_type_labels=AGENCY_TYPE_LABELS, regions=REGIONS))
 
     @application.get('/sources', response_class=HTMLResponse, name='sources', dependencies=[Depends(require_viewer)])
     def sources(
@@ -371,11 +384,12 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         date_from: date | None = None,
         date_to: date | None = None,
         agency_id: str | None = None,
-        status: RunStatus | None = None,
+        status: str | None = None,
         search: str | None = None,
         page: int = 1,
         page_size: int = 100,
     ) -> HTMLResponse:
+        selected_status = parse_optional_enum(status, RunStatus)
         session = application.state.session_factory()
         try:
             agencies_page = AgencyService(session).list_page(page_size=500)
@@ -383,13 +397,13 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                 date_from=date_from,
                 date_to=date_to,
                 agency_id=_uuid_or_none(agency_id),
-                status=status,
+                status=selected_status,
                 search=search,
                 page=page,
                 page_size=page_size,
             )
             collection_jobs = CollectionJobService(session).list_recent(
-                failures_only=(status == RunStatus.FAILED), limit=50, include_items=True
+                failures_only=(selected_status == RunStatus.FAILED), limit=50, include_items=True
             )
             db_error = None
         except SQLAlchemyError:
@@ -414,7 +428,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                     'date_from': date_from.isoformat() if date_from else '',
                     'date_to': date_to.isoformat() if date_to else '',
                     'agency_id': agency_id or '',
-                    'status': status.value if status else '',
+                    'status': selected_status.value if selected_status else '',
                     'search': search or '',
                 },
             ),
@@ -426,10 +440,11 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         search: str | None = None,
         agency_id: str | None = None,
         org_unit_id: str | None = None,
-        contact_type: ContactType | None = None,
+        contact_type: str | None = None,
         page: int = 1,
         page_size: int = 100,
     ) -> HTMLResponse:
+        selected_contact_type = parse_optional_enum(contact_type, ContactType)
         session = application.state.session_factory()
         try:
             agencies_page = AgencyService(session).list_page(page_size=500)
@@ -441,7 +456,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                 search=search,
                 agency_id=_uuid_or_none(agency_id),
                 org_unit_id=_uuid_or_none(org_unit_id),
-                contact_type=contact_type,
+                contact_type=selected_contact_type,
                 page=page,
                 page_size=page_size,
             )
@@ -462,7 +477,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                 filters={
                     'search': search or '', 'agency_id': agency_id or '',
                     'org_unit_id': org_unit_id or '',
-                    'contact_type': contact_type.value if contact_type else '',
+                    'contact_type': selected_contact_type.value if selected_contact_type else '',
                 },
             ),
         )
@@ -472,17 +487,19 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         request: Request,
         search: str | None = None,
         agency_id: str | None = None,
-        review_status: ReviewStatus | None = None,
-        change_type: ChangeEventType | None = None,
+        review_status: str | None = None,
+        change_type: str | None = None,
         page: int = 1,
         page_size: int = 100,
     ) -> HTMLResponse:
+        selected_review_status = parse_optional_enum(review_status, ReviewStatus)
+        selected_change_type = parse_optional_enum(change_type, ChangeEventType)
         session = application.state.session_factory()
         try:
             agencies_page = AgencyService(session).list_page(page_size=500)
             workspace = ReviewReadService(session).list_page(
                 search=search, agency_id=_uuid_or_none(agency_id),
-                review_status=review_status, change_type=change_type,
+                review_status=selected_review_status, change_type=selected_change_type,
                 page=page, page_size=page_size,
             )
             db_error = None
@@ -501,8 +518,8 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                 review_statuses=ReviewStatus, change_types=ChangeEventType,
                 filters={
                     'search': search or '', 'agency_id': agency_id or '',
-                    'review_status': review_status.value if review_status else '',
-                    'change_type': change_type.value if change_type else '',
+                    'review_status': selected_review_status.value if selected_review_status else '',
+                    'change_type': selected_change_type.value if selected_change_type else '',
                 },
             ),
         )
@@ -511,13 +528,17 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     def settings(request: Request):
         session = application.state.session_factory()
         try:
-            snapshot = SettingsService(session).snapshot()
             next_refresh = application.state.collection_scheduler.next_run()
+            operational = SettingsService(session).operational_projection(
+                next_run=next_refresh,
+                background_runtime_running=application.state.collection_background_runtime.running,
+            )
+            snapshot = operational['settings']
             users = UserService(session).list_users()
             db_error = None
         except SQLAlchemyError:
             session.rollback()
-            snapshot, users, next_refresh = None, (), None
+            snapshot, users, operational = None, (), None
             db_error = '설정 데이터를 불러오지 못했습니다. 데이터베이스 연결 상태를 확인하세요.'
         finally:
             session.close()
@@ -531,10 +552,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             request=request, name='settings.html',
             context=_page_context(request, 'settings', settings=snapshot, users=users,
                                   portable_paths=portable_paths, regions=REGIONS,
-                                  next_refresh=next_refresh,
-                                  next_refresh_display=format_kst_datetime(
-                                      next_refresh, fallback='자동 수집 사용 안 함'
-                                  ),
+                                  operational=operational,
                                   db_error=db_error),
         )
 

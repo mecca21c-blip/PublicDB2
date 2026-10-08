@@ -1251,6 +1251,33 @@
     });
   });
 
+  const settingsForm = document.querySelector("[data-settings-form]");
+  if (settingsForm) {
+    const enabled = settingsForm.querySelector("[data-auto-enabled]");
+    const recurrence = settingsForm.querySelector("[data-refresh-recurrence]");
+    const syncScheduleControls = () => {
+      const active = Boolean(enabled?.checked);
+      const mode = recurrence?.value || "WEEKLY";
+      settingsForm.classList.toggle("is-muted", !active);
+      settingsForm.setAttribute("data-auto-active", String(active));
+      settingsForm.querySelectorAll("[data-schedule-field]").forEach((field) => {
+        const visible = field.dataset.scheduleField === mode.toLowerCase();
+        field.hidden = !visible;
+        field.querySelectorAll("input, select").forEach((control) => { control.disabled = !visible; });
+      });
+    };
+    enabled?.addEventListener("change", syncScheduleControls);
+    recurrence?.addEventListener("change", syncScheduleControls);
+    syncScheduleControls();
+
+    const feedback = sessionStorage.getItem("publicdb2:settings-success");
+    if (feedback) {
+      const output = settingsForm.querySelector("[data-form-success]");
+      if (output) { output.textContent = feedback; output.hidden = false; }
+      sessionStorage.removeItem("publicdb2:settings-success");
+    }
+  }
+
   document.querySelectorAll("[data-api-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       if (event.defaultPrevented) return;
@@ -1264,6 +1291,9 @@
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "요청을 처리하지 못했습니다.");
+        if (form.dataset.successMessage) {
+          sessionStorage.setItem("publicdb2:settings-success", form.dataset.successMessage);
+        }
         window.location.reload();
       } catch (error) {
         if (errorBox) {

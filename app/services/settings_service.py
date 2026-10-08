@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import HTTP_TIMEOUT_SECONDS, MAX_RESPONSE_BYTES, PUBLICDB_USER_AGENT
 from app.models import OperationalSettings, RefreshRecurrence
+from app.core.time_presentation import format_kst_datetime
+from app.services.collection_job_service import CollectionJobService
 
 
 MIN_TIMEOUT_SECONDS = 1.0
@@ -59,6 +62,21 @@ class SettingsService:
             row.refresh_time_of_day,
             row.retry_failed_next_day,
         )
+
+    def operational_projection(
+        self, *, next_run: datetime | None, background_runtime_running: bool,
+    ) -> dict:
+        settings = self.snapshot()
+        jobs = CollectionJobService(self.session)
+        return {
+            "settings": settings,
+            "next_run_display": format_kst_datetime(
+                next_run, fallback="자동 수집 사용 안 함"
+            ),
+            "scheduled_source_count": jobs.scheduled_source_count(),
+            "background_runtime_running": bool(background_runtime_running),
+            "last_scheduled_full": jobs.latest_scheduled_full(),
+        }
 
     def update(
         self,
