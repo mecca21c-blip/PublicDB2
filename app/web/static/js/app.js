@@ -4,6 +4,25 @@
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
   const csrfHeaders = (extra = {}) => ({...extra, "X-CSRF-Token": csrfToken});
 
+  function sourceWizardErrorMessage(payload, fallback) {
+    const detail = payload && typeof payload === "object" && !Array.isArray(payload)
+      && Object.hasOwn(payload, "detail") ? payload.detail : payload;
+    const readable = (value) => {
+      if (typeof value === "string") {
+        const text = value.trim();
+        return text && text !== "[object Object]" ? text : "";
+      }
+      if (Array.isArray(value)) return value.map(readable).filter(Boolean).join(" · ");
+      if (!value || typeof value !== "object") return "";
+      const location = Array.isArray(value.loc)
+        ? value.loc.filter((part) => !["body", "query", "path"].includes(String(part))).join(" › ")
+        : "";
+      const message = readable(value.msg) || readable(value.message) || readable(value.error);
+      return [location, message].filter(Boolean).join(": ");
+    };
+    return readable(detail) || fallback;
+  }
+
   const activateDetail = (row) => {
     const workspace = row.closest(".workspace-layout");
     if (!workspace) return;
@@ -685,7 +704,7 @@
           body: JSON.stringify({...discoveryContext(), representative_url: job.url}),
         }).then(async (response) => {
           const payload = await response.json();
-          if (!response.ok) throw new Error(payload.detail || "기관을 자동 확인하지 못했습니다.");
+          if (!response.ok) throw new Error(sourceWizardErrorMessage(payload, "기관을 자동 확인하지 못했습니다."));
           if (closed || job.generation !== state.generation || job.identityGeneration !== state.identityGeneration) return;
           state.discovery = payload;
           const agencyInput = job.row.querySelector("[data-row-agency]");
@@ -906,7 +925,7 @@
         method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}), body: JSON.stringify(batchPayload()),
       });
       const preview = await response.json();
-      if (!response.ok) throw new Error(preview.detail || "등록 행을 확인하지 못했습니다.");
+      if (!response.ok) throw new Error(sourceWizardErrorMessage(preview, "등록 행을 확인하지 못했습니다."));
       lastPreview = preview; applyPreview(preview);
       if (preview.summary.errors) throw new Error("URL 오류가 있는 행을 수정하거나 삭제하세요.");
       const pending = [...preview.agency_resolutions, ...preview.org_resolutions];
@@ -1054,12 +1073,12 @@
       form.dataset.createdSourceIds = JSON.stringify(result.source_ids || []);
       form.querySelector("[data-interactive-result]").hidden = false;
       form.querySelector(".source-review-table").hidden = true;
-      form.querySelector(".modal-actions--sticky").hidden = true;
+      form.querySelector(".source-wizard-actions").hidden = true;
     };
     form.querySelector("[data-interactive-fix]").addEventListener("click", () => {
       form.querySelector("[data-interactive-result]").hidden = true;
       form.querySelector(".source-review-table").hidden = false;
-      form.querySelector(".modal-actions--sticky").hidden = false;
+      form.querySelector(".source-wizard-actions").hidden = false;
       showStep(1);
     });
     form.addEventListener("submit", (event) => {
@@ -1087,7 +1106,7 @@
         let result = {};
         try { result = text ? JSON.parse(text) : {}; }
         catch (_error) { throw new Error("등록 응답을 해석하지 못했습니다. 수집 소스 목록에서 결과를 확인하세요."); }
-        if (!response.ok) throw new Error(result.detail || "행 기반 Source 등록을 완료하지 못했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(result, "행 기반 Source 등록을 완료하지 못했습니다."));
         requestSucceeded = true;
         showRegistrationResult(result);
         registrationReady = false;
@@ -1154,7 +1173,7 @@
           body: JSON.stringify({url: payload.url, method_config: payload.method_config}),
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || "설정을 확인하지 못했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(result, "설정을 확인하지 못했습니다."));
         output.textContent = "HTTP " + result.http_status + " · 원시 " + result.raw_count + "건 · 표본 " + result.mapped_sample.length + "건";
       } catch (error) {
         output.textContent = error.message;
@@ -1177,7 +1196,7 @@
           body: JSON.stringify({secret_value: secret, credential_ref: ref?.value || null}),
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || "자격증명을 저장하지 못했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(result, "자격증명을 저장하지 못했습니다."));
         if (ref) ref.value = result.credential_ref;
         form.querySelector("[data-credential-secret]").value = "";
         output.textContent = "자격증명이 저장되었습니다. 비밀 값은 다시 표시되지 않습니다.";
@@ -1249,7 +1268,7 @@
           body: JSON.stringify(payload),
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || "등록 대상을 미리 보지 못했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(result, "등록 대상을 미리 보지 못했습니다."));
         const summary = result.summary;
         form.querySelector("[data-scrape-summary]").innerHTML = [
           ["입력 URL", summary.input_urls], ["신규 소스", summary.new_sources],
@@ -1897,7 +1916,7 @@
           }),
         });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || "기관 확인에 실패했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(payload, "기관 확인에 실패했습니다."));
         lastDiscovery = payload;
         form.dataset.discoveryFingerprint = fingerprint();
         renderDiscovery(payload);
@@ -1944,7 +1963,7 @@
           }),
         });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || "기관 등록에 실패했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(payload, "기관 등록에 실패했습니다."));
         lookupSelect(form, "agency", payload.item);
         inlineAgency.hidden = true;
       } catch (error) {
@@ -1978,7 +1997,7 @@
           body: JSON.stringify({name, unit_type: "DEPARTMENT", parent_org_unit_id: null}),
         });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || "부서 등록에 실패했습니다.");
+        if (!response.ok) throw new Error(sourceWizardErrorMessage(payload, "부서 등록에 실패했습니다."));
         lookupSelect(form, "org", payload.item);
         inlineOrg.hidden = true;
       } catch (error) {
