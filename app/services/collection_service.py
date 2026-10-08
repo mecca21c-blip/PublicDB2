@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urldefrag, urljoin, urlsplit, urlunsplit
-from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 from sqlalchemy import select
@@ -34,6 +33,7 @@ from app.services.crawl_scope import crawl_path_allowed
 from app.services.directory_extraction_service import DirectoryExtractionService
 from app.services.master_promotion_apply_service import MasterPromotionApplyService
 from app.services.raw_artifact_store import RawArtifactStore, StoredArtifact
+from app.services.robots_policy import RobotsPolicy
 from app.services.semantic_discovery_service import SemanticDiscoveryProjector
 from app.services.operation_claim_service import OperationClaimService
 from app.services.source_change_detection_service import SourceChangeDetectionService
@@ -60,6 +60,18 @@ class CollectionBusyError(RuntimeError):
 
 class CollectionFinalizationError(RuntimeError):
     pass
+
+
+class RobotsDisallowed(RuntimeError):
+    error_code = "ROBOTS_DISALLOWED"
+
+
+class RobotsFetchFailed(RuntimeError):
+    error_code = "ROBOTS_FETCH_FAILED"
+
+    def __init__(self, error: HTTPFetchError) -> None:
+        super().__init__("robots.txt를 가져오지 못했습니다: " + safe_http_error_summary(error))
+        self.status_code = error.status_code
 
 
 @dataclass(frozen=True)
@@ -261,8 +273,12 @@ class CollectionService:
         seed = _canonical_page_url(source.url)
         queue = deque([(seed, 0)])
         seen = {seed}
-        robots: dict[str, RobotFileParser | None] = {}
+        robots: dict[str, RobotsPolicy | RobotsFetchFailed] = {}
         attempts = fetches = successes = failures = contact_count = directory_count = 0
+        robots_blocked = 0
+        robots_delay_ms = 0
+        effective_delay_ms = config.request_delay_ms
+        robots_group = "NONE"
         first_fetch_error: HTTPFetchError | None = None
         max_depth_reached = 0
         last_observation = None
@@ -270,14 +286,44 @@ class CollectionService:
         observation_ids: list[uuid.UUID] = []
         extraction_failed = False
         directory_runs: list[uuid.UUID] = []
+
+        def crawl_statistics() -> dict[str, object]:
+            return {
+                "pages_discovered": len(seen), "pages_attempted": attempts,
+                "pages_succeeded": successes, "pages_failed": failures,
+                "max_depth_reached": max_depth_reached,
+                "robots_fetch_count": len(robots), "robots_blocked": robots_blocked,
+                "robots_group": robots_group,
+                "configured_request_delay_ms": config.request_delay_ms,
+                "robots_crawl_delay_ms": robots_delay_ms,
+                "effective_request_delay_ms": effective_delay_ms,
+            }
+
         while queue and attempts < config.max_pages:
             target, depth = queue.popleft()
             max_depth_reached = max(max_depth_reached, depth)
-            if not self._robots_allowed(target, robots):
-                failures += 1
+            try:
+                policy = self._robots_policy(target, robots)
+            except RobotsFetchFailed as error:
+                return CollectionResult(self._finish_failure(
+                    run.id, error, StageStatus.FAILED, StageStatus.SKIPPED,
+                    StageStatus.SKIPPED, error.status_code, crawl_statistics(),
+                ), None, None)
+            robots_group = policy.selected_group
+            robots_delay_ms = int((policy.crawl_delay_seconds or 0) * 1000)
+            effective_delay_ms = max(config.request_delay_ms, robots_delay_ms)
+            if not policy.allows(target):
+                robots_blocked += 1
+                if target == seed and successes == 0:
+                    return CollectionResult(self._finish_failure(
+                        run.id,
+                        RobotsDisallowed("robots.txt 정책에 의해 시작 URL 수집이 허용되지 않습니다."),
+                        StageStatus.FAILED, StageStatus.SKIPPED, StageStatus.SKIPPED,
+                        None, crawl_statistics(),
+                    ), None, None)
                 continue
             if attempts:
-                self.sleeper(config.request_delay_ms / 1000)
+                self.sleeper(effective_delay_ms / 1000)
             attempts += 1
             try:
                 fetched = self.fetcher.fetch(
@@ -328,11 +374,7 @@ class CollectionService:
                             continue
                         seen.add(canonical)
                         queue.append((canonical, depth + 1))
-        stats = {
-            "pages_discovered": len(seen), "pages_attempted": attempts,
-            "pages_succeeded": successes, "pages_failed": failures,
-            "max_depth_reached": max_depth_reached,
-        }
+        stats = crawl_statistics()
         total = SemanticDiscoveryProjector(self.session).summary(run.id)["meaningful_total"]
         if successes == 0:
             final = self._finish_failure(
@@ -530,29 +572,34 @@ class CollectionService:
         if not crawl_path_allowed(target.path or "/", effective_allowed_paths, excluded_paths):
             raise UnsafeRequestTarget("허용 경로를 벗어나거나 제외 경로에 해당하는 URL입니다.", final_url=target_url)
 
-    def _robots_allowed(self, target: str, cache: dict[str, RobotFileParser | None]) -> bool:
+    def _robots_policy(
+        self, target: str, cache: dict[str, RobotsPolicy | RobotsFetchFailed],
+    ) -> RobotsPolicy:
         parts = urlsplit(target)
         origin = f"{parts.scheme}://{parts.netloc}"
         if origin not in cache:
-            parser = RobotFileParser()
-            parser.set_url(origin + "/robots.txt")
+            robots_url = origin + "/robots.txt"
             try:
                 fetched = self.fetcher.fetch(
-                    parser.url,
+                    robots_url,
                     target_validator=lambda value: self._validate_scope(
                         origin + "/", value, "SAME_DOMAIN", ["/"], []
                     ),
                 )
-                parser.parse(fetched.content.decode(fetched.declared_charset or "utf-8", errors="replace").splitlines())
-                cache[origin] = parser
+                try:
+                    document = fetched.content.decode(fetched.declared_charset or "utf-8", errors="replace")
+                except LookupError:
+                    document = fetched.content.decode("utf-8", errors="replace")
+                cache[origin] = RobotsPolicy.parse(document)
             except HTTPFetchError as error:
                 if error.status_code in {404, 410}:
-                    cache[origin] = None
+                    cache[origin] = RobotsPolicy(())
                 else:
-                    parser.parse(["User-agent: *", "Disallow: /"])
-                    cache[origin] = parser
-        parser = cache[origin]
-        return True if parser is None else parser.can_fetch(self.fetcher.user_agent, target)
+                    cache[origin] = RobotsFetchFailed(error)
+        policy = cache[origin]
+        if isinstance(policy, RobotsFetchFailed):
+            raise policy
+        return policy
 
     @staticmethod
     def _links(content: bytes, base_url: str, charset: str | None) -> tuple[str, ...]:
@@ -660,9 +707,10 @@ class CollectionService:
             run.http_status = http_status
         run.records_observed = 0
         run.error_summary = safe_http_error_summary(error) if isinstance(error, HTTPFetchError) else _summary(error)
+        error_code = getattr(error, "error_code", None)
         run.collection_statistics = {
             **statistics,
-            **({"error_code": error.error_code} if isinstance(error, HTTPFetchError) else {}),
+            **({"error_code": error_code} if error_code else {}),
         }
         run.finished_at = finished
         run.heartbeat_at = finished
