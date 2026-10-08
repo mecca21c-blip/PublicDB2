@@ -149,27 +149,26 @@ def test_real_gangseo_shape_auto_sync_and_same_data_recollection(auto_sync_db):
         )
 
 
-def test_changed_directory_contact_stays_in_review(auto_sync_db):
+def test_strict_changed_directory_contact_auto_updates_through_review_writer(auto_sync_db):
     factory, root = auto_sync_db
     with factory() as session:
         agency_id, source_id = _source(session, "changed")
         _collector(session, root, _one_directory_html("02-1111-2222")).collect(source_id)
         original = session.scalar(select(ContactPoint).where(ContactPoint.agency_id == agency_id))
         original_id = original.id
-        original_verified = original.verified_at
         _collector(session, root, _one_directory_html("02-3333-4444")).collect(source_id)
 
         session.expire_all()
         current = session.get(ContactPoint, original_id)
         changed = session.scalar(select(DetectedChangeCandidate).where(
             DetectedChangeCandidate.proposed_event_type == ChangeEventType.CONTACT_CHANGED,
-            DetectedChangeCandidate.review_status == ReviewStatus.PENDING_REVIEW,
+            DetectedChangeCandidate.review_status == ReviewStatus.APPROVED,
         ))
         assert _count(session, ContactPoint) == 1
-        assert current.normalized_value == "0211112222"
-        assert current.verified_at == original_verified
-        assert _count(session, ContactHistory) == 1
+        assert current.normalized_value == "0233334444"
+        assert _count(session, ContactHistory) == 2
         assert changed is not None and changed.existing_entity_id == original_id
+        assert changed.resolution_note == "AUTO_SAFE_STRUCTURED_CONTACT_CHANGE"
 
 
 def test_unknown_standalone_is_discovery_only(auto_sync_db):

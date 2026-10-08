@@ -269,12 +269,47 @@ class ReviewService:
     def _replace_contact(self, candidate):
         entity = self.session.get(ContactPoint, candidate.existing_entity_id)
         old = candidate.old_value or {}
+        values = candidate.new_value or {}
         if (
             entity is None or not entity.active or entity.agency_id != candidate.agency_id
             or entity.normalized_value != old.get("normalized_value")
         ):
             raise ReviewConflict("Re-review required: confirmed contact changed after detection.")
-        values = candidate.new_value or {}
+        org = self._resolve_org(candidate, values)
+        duty = self._resolve_duty(candidate, values, org)
+        try:
+            contact_type = ContactType(values["type"])
+        except (KeyError, ValueError) as error:
+            raise ReviewConflict("Re-review required: contact type is invalid.") from error
+        if (
+            entity.org_unit_id != (org.id if org else None)
+            or entity.duty_id != (duty.id if duty else None)
+            or entity.person_assignment_id is not None
+            or entity.contact_type is not contact_type
+        ):
+            raise ReviewConflict("Re-review required: confirmed contact context changed after detection.")
+        slot = list(self.session.scalars(select(ContactPoint).where(
+            ContactPoint.agency_id == candidate.agency_id,
+            ContactPoint.org_unit_id == entity.org_unit_id,
+            ContactPoint.duty_id == entity.duty_id,
+            ContactPoint.person_assignment_id.is_(None),
+            ContactPoint.contact_type == entity.contact_type,
+            ContactPoint.active.is_(True),
+        )))
+        if len(slot) != 1 or slot[0].id != entity.id:
+            raise ReviewConflict("Re-review required: contact slot is no longer unique.")
+        duplicate = self.session.scalar(select(ContactPoint.id).where(
+            ContactPoint.agency_id == candidate.agency_id,
+            ContactPoint.org_unit_id == entity.org_unit_id,
+            ContactPoint.duty_id == entity.duty_id,
+            ContactPoint.person_assignment_id.is_(None),
+            ContactPoint.contact_type == entity.contact_type,
+            ContactPoint.normalized_value == values.get("normalized_value"),
+            ContactPoint.active.is_(True),
+            ContactPoint.id != entity.id,
+        ).limit(1))
+        if duplicate is not None:
+            raise ReviewConflict("Re-review required: replacement contact already exists.")
         active_histories = list(self.session.scalars(select(ContactHistory).where(
             ContactHistory.contact_id == entity.id, ContactHistory.active.is_(True)
         )))

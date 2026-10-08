@@ -603,7 +603,13 @@ class CollectionService:
                 return
             detector = SourceChangeDetectionService(self.session)
             if detector.baseline_exists(observation.source_id, agency_id):
-                detector.generate(extraction.id, agency_id)
+                detection = detector.generate(extraction.id, agency_id)
+                auto_change = detector.auto_resolve(uuid.UUID(detection["detection_id"]))
+                logger.info(
+                    "auto_change_resolution_completed source_id=%s observation_id=%s resolved=%s failed=%s",
+                    observation.source_id, observation.id,
+                    auto_change.get("resolved", 0), auto_change.get("failed", 0),
+                )
         except Exception as error:
             self.session.rollback()
             logger.warning(

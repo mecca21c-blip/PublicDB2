@@ -48,7 +48,9 @@ from app.services.contact_service import ContactService
 from app.services.dashboard_service import DashboardService
 from app.services.master_promotion_apply_service import MasterPromotionApplyService
 from app.services.review_service import ReviewConflict, ReviewService
-from app.services.source_change_detection_service import SourceChangeDetectionService
+from app.services.source_change_detection_service import (
+    AUTO_RESOLUTION_NOTE, SourceChangeDetectionService,
+)
 from app.services.source_import_service import PreviewStore, SourceImportService
 from app.services.source_method_service import MethodConfigError, SourceMethodService
 from app.services.source_service import SourceService
@@ -591,14 +593,12 @@ def test_coherent_e2e_from_clean_db_through_export_and_logout(acceptance_db):
             ),
         ).collect(source_id)
         assert second.crawl_run.status is RunStatus.SUCCESS
-        candidate_id = session.scalar(select(DetectedChangeCandidate.id).where(
-            DetectedChangeCandidate.review_status == ReviewStatus.PENDING_REVIEW,
-            DetectedChangeCandidate.actionable.is_(True),
+        candidate = session.scalar(select(DetectedChangeCandidate).where(
+            DetectedChangeCandidate.review_status == ReviewStatus.APPROVED,
+            DetectedChangeCandidate.resolution_note == AUTO_RESOLUTION_NOTE,
         ).order_by(DetectedChangeCandidate.created_at))
-        assert candidate_id is not None
-        reviewed = ReviewService(session).approve(candidate_id, note="06A E2E")
-        assert reviewed["status"] == ReviewStatus.APPROVED.value
-        assert session.scalar(select(func.count()).select_from(ContactHistory)) >= before_history
+        assert candidate is not None
+        assert session.scalar(select(func.count()).select_from(ContactHistory)) == before_history + 1
         assert ContactService(session).list_page()["items"]
         dashboard = DashboardService(session).read()
         assert dashboard["recent_runs"]

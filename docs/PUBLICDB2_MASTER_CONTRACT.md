@@ -166,8 +166,16 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
   idempotent SourceOccurrence로 출처를 보존한다. 생성 entity는 APPROVED
   ChangeEvent를, 생성 ContactPoint는 최초 ContactHistory를 가진다.
 - exact 동일 연락처의 재관찰은 ContactPoint나 ContactHistory를 복제하지 않고 verified_at과
-  새 Observation의 SourceOccurrence만 갱신한다. 같은 context의 다른 값은 자동 교체하지 않고
-  기존 change/review 경로로 보낸다.
+  새 Observation의 SourceOccurrence만 갱신한다.
+- 유효한 구조화 DirectoryRecord가 같은 exact Agency/OrgUnit/Duty/contact type 슬롯에서
+  하나의 기존값을 하나의 새 PHONE/EMAIL/FAX 값으로 대체하고, 기존 ContactPoint의 distinct
+  Source provenance가 현재 canonical Source 하나뿐인 경우에만 변경 candidate를 자동 승인한다.
+  자동 승인은 먼저 DetectedChangeCandidate를 보존하고 기존 ReviewService writer를 사용하며
+  `AUTO_SAFE_STRUCTURED_CONTACT_CHANGE` resolution note로 사람 승인과 구분한다.
+- 여러 새 값·여러 기존값·교차 Source provenance·context 변경·standalone BUSINESS·SITE_WIDE·
+  UNKNOWN·invalid/stale 상태는 자동 교체하지 않고 change/review 예외 큐에 남긴다.
+  strict replacement로 짝지어진 COMPLETE_SNAPSHOT 변경은 같은 기존값의 CONTACT_MISSING을
+  중복 생성하지 않는다.
 - Source.coverage_mode는 UNKNOWN, ADDITIVE_ONLY, COMPLETE_SNAPSHOT 중 하나다.
   UNKNOWN과 ADDITIVE_ONLY에서는 부재를 삭제 신호로 사용하지 않는다.
   COMPLETE_SNAPSHOT에서만 신뢰 가능한 비모호 extraction의 부재 후보를 만든다.
@@ -180,6 +188,8 @@ PublicDB1(C:\PublicDB)은 읽기 전용 legacy reference다. 코드나 DB를 통
 - 연락처 교체는 이전 활성 ContactHistory를 닫고 새 활성 history를 만든다.
   missing 승인은 물리 삭제 대신 active=false로 전환한다. stale 후보는 덮어쓰지 않고
   재검토 충돌을 반환한다.
+- 자동 변경도 삭제나 비활성화를 수행하지 않는다. 신규 안전값은 auto insert, 동일값은
+  auto confirm, strict structured 1:1 변경만 auto update이며 나머지는 Review가 소유한다.
 - /contacts는 ContactPoint만 읽고 confirmed context별 전화·이메일·팩스를 묶는다.
   공식 출처는 ContactPoint → SourceOccurrence → Observation → Source로 계산한다.
 - /review는 DetectedChangeCandidate만 읽는다. 비실행 후보의 반영 버튼은 비활성이다.
