@@ -893,6 +893,57 @@
       ["신규 기관 예정", summary.new_agencies_planned], ["신규 부서 예정", summary.new_org_units_planned],
       ["확인 필요", summary.unresolved], ["오류", summary.errors],
     ].map(([label, value]) => "<span><strong>" + value + "</strong><small>" + label + "</small></span>").join("");
+    const renderFinalMethodReview = (payload) => {
+      const output = form.querySelector("[data-final-method-config]");
+      const config = payload.method_config || {};
+      const methodLabels = {WEB_PAGE: "개별 URL · 스크래핑", WEB_CRAWL: "Index URL · 크롤링", API: "공개 API / RSS"};
+      const rows = [{key: "method", label: "수집 방식", value: methodLabels[payload.collection_method] || payload.collection_method}];
+      if (["WEB_PAGE", "WEB_CRAWL"].includes(payload.collection_method)) {
+        const extractors = [];
+        if (config.extract_contacts) extractors.push("연락처");
+        if (config.extract_directory) extractors.push("직원·업무 명부");
+        rows.push({key: "extractors", label: "가져올 정보", value: extractors.join(" · ") || "-"});
+      }
+      if (payload.collection_method === "WEB_CRAWL") {
+        rows.push(
+          {key: "scope", label: "탐색 범위", value: config.scope === "SAME_DOMAIN" ? "같은 도메인 전체" : "시작 주소의 경로 안"},
+          {key: "allowed_paths", label: "포함할 경로", value: (config.allowed_paths || []).join("\n") || "-"},
+          {key: "excluded_paths", label: "제외할 경로", value: (config.excluded_paths || []).join("\n") || "-"},
+          {key: "max_depth", label: "최대 깊이", value: String(config.max_depth ?? "-")},
+          {key: "max_pages", label: "최대 페이지", value: String(config.max_pages ?? "-")},
+          {key: "request_delay_ms", label: "요청 간격", value: config.request_delay_ms == null ? "-" : config.request_delay_ms + " ms"},
+        );
+      }
+      if (payload.collection_method === "API") {
+        const kindLabels = {OPEN_API: "OpenAPI", RSS: "RSS", ATOM: "Atom"};
+        const mapping = Object.entries(config.field_mapping || {}).filter(([, value]) => value);
+        const parameters = Object.entries(config.static_params || {});
+        rows.push(
+          {key: "api_kind", label: "자료 형식", value: kindLabels[config.kind] || config.kind || "OpenAPI"},
+          {key: "endpoint", label: "Endpoint", value: payload.rows.map((row) => row.url).join("\n") || "-"},
+        );
+        if (config.kind === "OPEN_API") {
+          rows.push(
+            {key: "response_format", label: "응답 형식", value: config.response_format || "JSON"},
+            {key: "field_mapping", label: "필드 매핑", value: mapping.map(([key, value]) => key + " → " + value).join(" · ") || "-"},
+            {key: "pagination_mode", label: "페이지 처리", value: config.pagination_mode === "PAGE_NUMBER" ? "페이지 번호" : "없음"},
+            {key: "static_params", label: "고정 파라미터", value: parameters.map(([key, value]) => key + "=" + value).join(" · ") || "-"},
+            {key: "auth_mode", label: "인증 방식", value: {NONE: "인증 없음", QUERY_API_KEY: "주소 매개변수 API 키", HEADER_API_KEY: "헤더 API 키"}[config.auth_mode] || "인증 없음"},
+            {key: "credential_ref", label: "자격증명 참조", value: config.credential_ref ? "설정됨" : "없음"},
+          );
+        }
+      }
+      rows.push(
+        {key: "scheduled_refresh_enabled", label: "자동 전체 수집", value: payload.scheduled_refresh_enabled ? "포함" : "제외"},
+        {key: "description", label: "설명", value: payload.description || "-"},
+      );
+      output.replaceChildren();
+      rows.forEach(({key, label, value}) => {
+        const term = document.createElement("dt"); term.textContent = label;
+        const detail = document.createElement("dd"); detail.dataset.reviewField = key; detail.textContent = value;
+        output.append(term, detail);
+      });
+    };
     const showStep = (next) => {
       step = next;
       if (step !== 3) registrationReady = false;
@@ -906,11 +957,14 @@
     };
     const renderFinal = (preview) => {
       form.querySelector("[data-final-summary]").innerHTML = summaryMarkup(preview.summary);
+      renderFinalMethodReview(batchPayload());
       const body = form.querySelector("[data-final-rows]"); body.replaceChildren();
       preview.rows.slice(0, 100).forEach((item) => {
         const tr = document.createElement("tr");
-        [item.url, item.agency_name || "-", item.org_unit_name || "기관 전체", statusLabels[item.status]?.[1] || item.status].forEach((value) => {
-          const td = document.createElement("td"); td.textContent = value; tr.append(td);
+        [item.url, item.agency_name || "-", item.org_unit_name || "기관 전체", statusLabels[item.status]?.[1] || item.status].forEach((value, index) => {
+          const td = document.createElement("td"); td.textContent = value;
+          if (index === 0) { td.className = "source-review-url"; td.title = value; td.dataset.finalReviewUrl = ""; }
+          tr.append(td);
         });
         body.append(tr);
       });
@@ -1027,6 +1081,11 @@
       registrationReady = false;
       showStep(step - 1);
     });
+    form.querySelectorAll('[name="description"], [name="scheduled_refresh_enabled"]').forEach((control) => {
+      const refreshFinalReview = () => { if (step === 3) renderFinalMethodReview(batchPayload()); };
+      control.addEventListener("input", refreshFinalReview);
+      control.addEventListener("change", refreshFinalReview);
+    });
     addButton.addEventListener("click", () => { if (allRows().length < 200 && selector.value === "WEB_PAGE") createRow().querySelector("[data-row-url]").focus(); });
     selector.addEventListener("change", () => {
       if (selector.value !== "WEB_PAGE") allRows().slice(1).forEach((row) => { stateOf(row).controller?.abort(); row.remove(); });
@@ -1059,7 +1118,9 @@
       const output = form.querySelector("[data-interactive-result-summary]"); output.replaceChildren();
       labels.forEach(([label, value]) => { const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value + "개"; output.append(dt, dd); });
       const failedRows = result.rows.filter((item) => item.result === "ERROR" || (item.result === "SKIPPED" && !["DUPLICATE"].includes(item.status)));
-      form.querySelector("[data-interactive-result-title]").textContent = failedRows.length ? "등록 완료 · 일부 오류" : "등록 완료";
+      const registered = Number(result.summary.registered || 0);
+      form.querySelector("[data-interactive-result-title]").textContent = registered && failedRows.length
+        ? "일부 등록 완료" : registered ? "등록 완료" : "등록 실패";
       const errorSection = form.querySelector("[data-interactive-error-section]");
       const errorRows = form.querySelector("[data-interactive-error-rows]"); errorRows.replaceChildren();
       failedRows.forEach((item) => {
@@ -1070,7 +1131,9 @@
       });
       errorSection.hidden = failedRows.length === 0;
       form.querySelector("[data-interactive-fix]").hidden = failedRows.length === 0;
-      form.dataset.createdSourceIds = JSON.stringify(result.source_ids || []);
+      const sourceIds = [...new Set(result.source_ids || [])];
+      form.dataset.createdSourceIds = JSON.stringify(sourceIds);
+      form.querySelector("[data-interactive-result] [data-scrape-collect]").hidden = sourceIds.length === 0;
       form.querySelector("[data-interactive-result]").hidden = false;
       form.querySelector(".source-review-table").hidden = true;
       form.querySelector(".source-wizard-actions").hidden = true;
@@ -1098,9 +1161,11 @@
       registering = true; submit.disabled = true; submit.textContent = "등록 중...";
       errorBox.hidden = true;
       try {
+        const registrationPayload = batchPayload();
+        renderFinalMethodReview(registrationPayload);
         const response = await fetch("/api/source-bindings/interactive/register", {
           method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
-          body: JSON.stringify(batchPayload()),
+          body: JSON.stringify(registrationPayload),
         });
         const text = await response.text();
         let result = {};
@@ -1111,6 +1176,7 @@
         showRegistrationResult(result);
         registrationReady = false;
       } catch (error) {
+        if (!requestSucceeded) form.querySelector("[data-interactive-result]").hidden = true;
         errorBox.textContent = requestSucceeded
           ? "등록 요청은 성공했지만 결과 화면을 표시하지 못했습니다. 수집 소스 목록에서 등록 결과를 확인하세요."
           : error.message;

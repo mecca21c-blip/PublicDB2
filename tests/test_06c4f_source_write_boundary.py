@@ -133,7 +133,7 @@ def test_create_wizard_has_one_explicit_registration_owner(boundary_db):
     assert "if (registering) return" in javascript
     assert "submit.disabled = requestSucceeded || !registrationReady" in javascript
     assert 'errorBox.scrollIntoView({block: "nearest"})' in javascript
-    assert "등록 완료 · 일부 오류" in javascript
+    assert '"일부 등록 완료"' in javascript
     assert "등록 요청은 성공했지만 결과 화면을 표시하지 못했습니다." in javascript
 
 

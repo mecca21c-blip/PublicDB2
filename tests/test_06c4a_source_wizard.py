@@ -278,47 +278,155 @@ def test_source_wizard_runs_in_headless_browser_without_object_render(wizard_db)
         script.replace_with(inline)
     harness = soup.new_tag("script")
     harness.string = r"""
-      setTimeout(() => {
-        const modal = document.querySelector('[data-modal="source-create"]');
-        modal.hidden = false;
-        const form = modal.querySelector('[data-source-wizard]');
-        const steps = [...form.querySelectorAll('[data-wizard-step]')];
-        steps.forEach((item, index) => { item.hidden = index !== 1; });
-        const modes = {};
-        for (const method of ['WEB_PAGE', 'WEB_CRAWL', 'API']) {
-          const choice = form.querySelector('[data-method-choice][value="' + method + '"]');
-          choice.checked = true;
-          choice.dispatchEvent(new Event('change', {bubbles: true}));
-          modes[method] = !form.querySelector('[data-method-panel="' + method + '"]').hidden;
-        }
-        const crawlChoice = form.querySelector('[data-method-choice][value="WEB_CRAWL"]');
-        crawlChoice.checked = true;
-        crawlChoice.dispatchEvent(new Event('change', {bubbles: true}));
-        const advanced = form.querySelector('[data-method-panel="WEB_CRAWL"] details.advanced-settings');
-        advanced.open = true;
-        advanced.dispatchEvent(new Event('toggle'));
-        setTimeout(() => {
-          const scroll = form.querySelector('[data-source-wizard-scroll]');
+      setTimeout(async () => {
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const response = (payload, ok = true) => ({
+          ok, status: ok ? 200 : 422,
+          json: async () => payload,
+          text: async () => JSON.stringify(payload),
+        });
+        try {
+          const modal = document.querySelector('[data-modal="source-create"]');
+          const form = modal.querySelector('[data-source-wizard]');
+          let registerAttempt = 0;
+          let registrationPayload = null;
+          const previewPayloads = [];
+          const previewFor = (payload) => {
+            const row = payload.rows[0];
+            return {
+              summary: {
+                input: 1, agency_count: 1, org_connections: 0, agency_wide_connections: 1,
+                new_sources: 1, existing_sources: 0, duplicates: 0, new_bindings: 1,
+                existing_bindings: 0, new_agencies_planned: 0, new_org_units_planned: 0,
+                unresolved: 0, errors: 0, importable: 1,
+              },
+              rows: [{
+                row_id: row.row_id, url: row.url, agency_id: "agency-1", agency_name: "강서구청",
+                org_unit_id: null, org_unit_name: null, status: "RESOLVED", importable: true,
+                message: "연결 확인됨",
+              }],
+              agency_resolutions: [], org_resolutions: [],
+            };
+          };
+          window.fetch = async (target, options = {}) => {
+            const path = String(target);
+            if (path.includes('/api/source-agency-discovery')) return response({
+              existing_agency: {id: "agency-1", name: "강서구청"}, existing_org_unit: null,
+              candidate_name: "강서구청", org_unit_candidate: null, message: "기관 확인됨",
+            });
+            if (path.includes('/api/source-bindings/interactive/preview')) {
+              const payload = JSON.parse(options.body); previewPayloads.push(payload);
+              return response(previewFor(payload));
+            }
+            if (path.includes('/api/source-bindings/interactive/register')) {
+              registrationPayload = JSON.parse(options.body); registerAttempt += 1;
+              if (registerAttempt === 1) return response({
+                detail: [{loc: ["body", "rows"], msg: "등록 요청 검증 오류"}],
+              }, false);
+              const preview = previewFor(registrationPayload);
+              if (registerAttempt === 2) return response({
+                summary: {input: 2, registered: 1, created_sources: 1, existing_sources_reused: 0,
+                  created_bindings: 1, created_agencies: 0, created_org_units: 0,
+                  duplicates_skipped: 0, errors: 1},
+                rows: [
+                  {...preview.rows[0], result: "REGISTERED", source_id: "source-1"},
+                  {...preview.rows[0], url: "https://example.invalid/failed", result: "ERROR", message: "검증 오류"},
+                ],
+                source_ids: ["source-1"],
+              });
+              return response({
+                summary: {input: 1, registered: 1, created_sources: 1, existing_sources_reused: 0,
+                  created_bindings: 1, created_agencies: 0, created_org_units: 0,
+                  duplicates_skipped: 0, errors: 0},
+                rows: [{...preview.rows[0], result: "REGISTERED", source_id: "source-1"}],
+                source_ids: ["source-1"],
+              });
+            }
+            return response({job: null, jobs: []});
+          };
+
+          document.querySelector('[data-modal-open="source-create"]').click();
+          const selectMethod = (method) => {
+            const choice = form.querySelector('[data-method-choice][value="' + method + '"]');
+            choice.checked = true;
+            choice.dispatchEvent(new Event('change', {bubbles: true}));
+          };
+          const next = async () => { form.querySelector('[data-wizard-next]').click(); await delay(140); };
+          const previous = () => form.querySelector('[data-wizard-prev]').click();
+          const review = () => Object.fromEntries([...form.querySelectorAll('[data-final-method-config] [data-review-field]')]
+            .map((item) => [item.dataset.reviewField, item.textContent]));
+          const visible = (node) => getComputedStyle(node).display !== 'none';
+
+          selectMethod('WEB_CRAWL');
+          const urlInput = form.querySelector('[data-row-url]');
+          urlInput.value = 'https://www.gangseo.seoul.kr/health/ht060301';
+          urlInput.dispatchEvent(new Event('input', {bubbles: true}));
+          await delay(600);
+          await next();
+
+          const crawlPanel = form.querySelector('[data-method-panel="WEB_CRAWL"]');
+          crawlPanel.querySelector('[name="method_config.scope"]').value = 'PATH_PREFIX';
+          crawlPanel.querySelector('[name="method_config.allowed_paths"]').value = '/health/ht0603';
+          crawlPanel.querySelector('[name="method_config.excluded_paths"]').value = '/health/ht060304';
+          crawlPanel.querySelector('[name="method_config.max_depth"]').value = '1';
+          crawlPanel.querySelector('[name="method_config.max_pages"]').value = '3';
+          crawlPanel.querySelector('[name="method_config.request_delay_ms"]').value = '1000';
+          await next();
+
+          const result = form.querySelector('[data-interactive-result]');
+          const collect = result.querySelector('[data-scrape-collect]');
           const footer = form.querySelector('.source-wizard-actions');
-          const modalRect = modal.querySelector('.modal-shell').getBoundingClientRect();
-          const footerRect = footer.getBoundingClientRect();
-          const visibleScrollOwners = [...form.querySelectorAll('*')].filter((node) => {
-            const style = getComputedStyle(node);
-            return node.matches('div, section, form') && node.getClientRects().length
-              && ['auto', 'scroll'].includes(style.overflowY);
-          });
-          const edit = document.querySelector('[data-modal^="edit-"] [data-source-wizard]');
+          const scroll = form.querySelector('[data-source-wizard-scroll]');
+          const reviewUrl = form.querySelector('[data-final-review-url]');
+          const preRegister = {
+            resultVisible: visible(result), collectVisible: visible(collect), crawl: review(),
+            fullUrl: reviewUrl.textContent, fullUrlTitle: reviewUrl.title,
+            fullUrlWhiteSpace: getComputedStyle(reviewUrl).whiteSpace,
+            footerOutsideScroll: !scroll.contains(footer), footerVisible: visible(footer),
+            scrollOwners: [...form.querySelectorAll('[data-source-wizard-scroll]')].filter((node) => {
+              const style = getComputedStyle(node);
+              return node.getClientRects().length && ['auto', 'scroll'].includes(style.overflowY);
+            }).length,
+          };
+
+          previous(); selectMethod('WEB_PAGE'); await next();
+          const webPageReview = review();
+          previous(); selectMethod('API');
+          const feed = form.querySelector('[data-api-kind-choice][value="FEED"]');
+          feed.checked = true; feed.dispatchEvent(new Event('change', {bubbles: true}));
+          form.querySelector('[data-feed-kind]').value = 'RSS';
+          form.querySelector('[data-feed-kind]').dispatchEvent(new Event('change', {bubbles: true}));
+          await next();
+          const apiReview = review();
+          previous(); selectMethod('WEB_CRAWL'); await next();
+
+          const submit = form.querySelector('[data-source-register]');
+          submit.click(); await delay(140);
+          const errorState = {
+            falseComplete: visible(result),
+            message: form.querySelector('[data-form-error]').textContent,
+          };
+          submit.click(); await delay(140);
+          const partialState = {
+            visible: visible(result), title: form.querySelector('[data-interactive-result-title]').textContent,
+            collectVisible: visible(collect), sourceIds: JSON.parse(form.dataset.createdSourceIds),
+          };
+          form.querySelector('[data-interactive-fix]').click();
+          await next(); await next();
+          form.querySelector('[data-source-register]').click(); await delay(140);
+          const successState = {
+            visible: visible(result), title: form.querySelector('[data-interactive-result-title]').textContent,
+            collectVisible: visible(collect), sourceIds: JSON.parse(form.dataset.createdSourceIds),
+          };
           document.body.dataset.wizardBrowserContract = JSON.stringify({
             noObjectText: !form.innerText.includes('[object Object]'),
-            modes,
-            steps: steps.length,
-            advancedFields: advanced.querySelectorAll('[name^="method_config."]').length,
-            footerOutsideScroll: !scroll.contains(footer),
-            footerVisible: footerRect.height > 0 && footerRect.bottom <= modalRect.bottom + 1,
-            scrollOwners: visibleScrollOwners.length,
-            editRendered: Boolean(edit) && !edit.innerText.includes('[object Object]'),
+            preRegister, webPageReview, apiReview, registrationPayload,
+            previewPayload: previewPayloads.at(-1), errorState, partialState, successState,
+            editRendered: Boolean(document.querySelector('[data-modal^="edit-"] [data-source-wizard]')),
           });
-        }, 100);
+        } catch (error) {
+          document.body.dataset.wizardBrowserError = error.stack || error.message || String(error);
+        }
       }, 50);
     """
     soup.body.append(harness)
@@ -328,7 +436,7 @@ def test_source_wizard_runs_in_headless_browser_without_object_render(wizard_db)
         [
             str(browser), "--headless=new", "--disable-gpu", "--no-first-run",
             "--no-default-browser-check", f"--user-data-dir={tmp_path / 'chrome-profile'}",
-            "--virtual-time-budget=1000", "--dump-dom", html_path.as_uri(),
+            "--virtual-time-budget=5000", "--dump-dom", html_path.as_uri(),
         ],
         check=True,
         capture_output=True,
@@ -337,16 +445,51 @@ def test_source_wizard_runs_in_headless_browser_without_object_render(wizard_db)
         timeout=30,
     )
     rendered = BeautifulSoup(completed.stdout, "html.parser")
+    assert "data-wizard-browser-error" not in rendered.body.attrs, rendered.body.get("data-wizard-browser-error")
     contract = json.loads(rendered.body["data-wizard-browser-contract"])
-    assert contract == {
-        "noObjectText": True,
-        "modes": {"WEB_PAGE": True, "WEB_CRAWL": True, "API": True},
-        "steps": 3,
-        "advancedFields": 6,
+    assert contract["noObjectText"] is True
+    assert contract["editRendered"] is True
+    assert contract["preRegister"] == {
+        "resultVisible": False,
+        "collectVisible": False,
+        "crawl": {
+            "method": "Index URL · 크롤링", "extractors": "연락처 · 직원·업무 명부",
+            "scope": "시작 주소의 경로 안", "allowed_paths": "/health/ht0603",
+            "excluded_paths": "/health/ht060304", "max_depth": "1", "max_pages": "3",
+            "request_delay_ms": "1000 ms", "scheduled_refresh_enabled": "포함", "description": "-",
+        },
+        "fullUrl": "https://www.gangseo.seoul.kr/health/ht060301",
+        "fullUrlTitle": "https://www.gangseo.seoul.kr/health/ht060301",
+        "fullUrlWhiteSpace": "normal",
         "footerOutsideScroll": True,
         "footerVisible": True,
         "scrollOwners": 1,
-        "editRendered": True,
+    }
+    assert contract["webPageReview"] == {
+        "method": "개별 URL · 스크래핑", "extractors": "연락처 · 직원·업무 명부",
+        "scheduled_refresh_enabled": "포함", "description": "-",
+    }
+    assert contract["apiReview"] == {
+        "method": "공개 API / RSS", "api_kind": "RSS",
+        "endpoint": "https://www.gangseo.seoul.kr/health/ht060301",
+        "scheduled_refresh_enabled": "포함", "description": "-",
+    }
+    payload = contract["registrationPayload"]
+    config = payload["method_config"]
+    assert payload == contract["previewPayload"]
+    assert payload["collection_method"] == "WEB_CRAWL"
+    assert payload["scheduled_refresh_enabled"] is True
+    assert config == {
+        "extract_contacts": True, "extract_directory": True, "scope": "PATH_PREFIX",
+        "allowed_paths": ["/health/ht0603"], "excluded_paths": ["/health/ht060304"],
+        "max_depth": "1", "max_pages": "3", "request_delay_ms": "1000",
+    }
+    assert contract["errorState"] == {"falseComplete": False, "message": "rows: 등록 요청 검증 오류"}
+    assert contract["partialState"] == {
+        "visible": True, "title": "일부 등록 완료", "collectVisible": True, "sourceIds": ["source-1"],
+    }
+    assert contract["successState"] == {
+        "visible": True, "title": "등록 완료", "collectVisible": True, "sourceIds": ["source-1"],
     }
 
 
