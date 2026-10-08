@@ -151,8 +151,9 @@ select.control { appearance: auto; }
 .modal-shell--source-create { position: relative; width: min(960px, calc(100vw - 48px)); max-width: 100%; max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
 .modal-shell--source-create > .modal-heading { flex: 0 0 auto; }
 .modal-shell--compact { width: min(560px, calc(100vw - 48px)); max-width: 100%; }
-.source-create-form { --source-wizard-footer-height: 71px; min-height: 0; flex: 1 1 auto; display: grid; gap: 16px; max-height: none; padding-bottom: 0; overflow-y: auto; scroll-padding-bottom: var(--source-wizard-footer-height); }
-.source-create-form .source-wizard-actions { min-height: var(--source-wizard-footer-height); bottom: 0; margin: 0 -22px; }
+.source-create-form { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; max-height: none; padding: 0; overflow: hidden; }
+.source-wizard-scroll-region { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 16px; padding: 20px 22px; overflow-y: auto; overscroll-behavior: contain; }
+.source-create-form .source-wizard-actions { min-height: 71px; flex: 0 0 auto; align-items: center; flex-wrap: wrap; margin: 0; padding: 14px 22px; border-top: 1px solid var(--color-border); background: #fff; }
 .source-create-form .source-wizard-actions .button[hidden] { display: none; }
 .form-section { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #fbfcfe; }
 .form-section h3 { margin: 0; font-size: 14px; }
@@ -366,6 +367,9 @@ select.control { appearance: auto; }
   .discovery-page-controls { justify-content: space-between; }
   .settings-status-grid, .settings-schedule-grid, .settings-last-run-grid { grid-template-columns: minmax(0,1fr); }
   .settings-field--wide { grid-column: auto; }
+  .modal-shell--source-create { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
+  .source-wizard-scroll-region { padding: 16px; }
+  .source-create-form .source-wizard-actions { min-height: 64px; padding: 10px 16px; }
 }
 .workspace-pager {
   align-items: center;

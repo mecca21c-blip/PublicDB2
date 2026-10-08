@@ -197,6 +197,7 @@
 
 {% macro source_wizard(action, http_method, submit_label, method='WEB_PAGE', config={}, agency_id='', agency_name='', org_id='', org_name='', description='', scheduled=true, create=false) %}
 <form class="modal-body source-create-form"{% if not create %} data-api-form{% endif %} data-source-wizard{% if create %} data-source-create{% endif %} action="{{action}}" data-method="{{http_method}}">
+  <div class="source-wizard-scroll-region" data-source-wizard-scroll>
   {% if create %}
   <ol class="wizard-steps" aria-label="등록 단계"><li data-wizard-indicator="1">1 기본 정보</li><li data-wizard-indicator="2">2 수집 설정</li><li data-wizard-indicator="3">3 등록 확인</li></ol>
   <section class="source-wizard-step" data-wizard-step="1" data-wizard-kind="row-basic"><h3>기본 정보</h3><p>수집 방식을 선택하고 URL별 기관·부서 연결을 확인합니다.</p>{{method_cards(method)}}{{source_intake_grid()}}</section>
@@ -209,7 +210,8 @@
   <section class="source-wizard-step" data-wizard-step="3" data-wizard-kind="config" hidden><h3>세부 설정</h3><p>선택한 방식에 필요한 항목만 입력합니다.</p>{{method_panels(method,config,false)}}</section>
   {% endif %}
   <p data-form-error role="alert" hidden></p>
-  <div class="modal-actions modal-actions--sticky source-wizard-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--secondary" type="button" data-wizard-prev hidden>이전</button><button class="button button--primary" type="button" data-wizard-next>다음</button><button class="button button--primary" type="{{'button' if create else 'submit'}}" data-wizard-submit{% if create %} data-source-register{% endif %} hidden{% if create %} disabled{% endif %}>{{submit_label}}</button></div>
+  </div>
+  <div class="modal-actions source-wizard-actions"><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--secondary" type="button" data-wizard-prev hidden>이전</button><button class="button button--primary" type="button" data-wizard-next>다음</button><button class="button button--primary" type="{{'button' if create else 'submit'}}" data-wizard-submit{% if create %} data-source-register{% endif %} hidden{% if create %} disabled{% endif %}>{{submit_label}}</button></div>
 </form>
 {% endmacro %}
 

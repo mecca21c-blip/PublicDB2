@@ -53,6 +53,21 @@ def test_source_create_is_three_step_exclusive_wizard(wizard_db):
     soup = BeautifulSoup(page.text, "html.parser")
     modal = soup.select_one('[data-modal="source-create"]')
     form = modal.select_one("[data-source-wizard]")
+    assert len(form.select("[data-source-wizard-scroll]")) == 1
+    scroll_region = form.select_one("[data-source-wizard-scroll]")
+    actions = form.select_one(".source-wizard-actions")
+    assert scroll_region is not None and scroll_region.parent is form
+    assert actions is not None and actions.parent is form
+    assert actions not in scroll_region.select(".source-wizard-actions")
+    crawl_advanced = scroll_region.select_one(
+        '[data-method-panel="WEB_CRAWL"] details.advanced-settings'
+    )
+    assert crawl_advanced is not None
+    for field in (
+        "scope", "allowed_paths", "excluded_paths", "max_depth",
+        "max_pages", "request_delay_ms",
+    ):
+        assert crawl_advanced.select_one(f'[name="method_config.{field}"]') is not None
     steps = form.select("[data-wizard-step]")
     assert len(steps) == 3
     assert not steps[0].has_attr("hidden")
@@ -76,7 +91,6 @@ def test_source_create_is_three_step_exclusive_wizard(wizard_db):
     assert "control.disabled = !active" in js
     assert '[name]:not(:disabled):not([data-ui-only])' in js
     assert 'data-job-all-open' in page.text and 'data-job-filtered-open' in page.text
-    actions = form.select_one(".source-wizard-actions")
     assert not actions.select_one("[data-modal-close]").has_attr("hidden")
     assert actions.select_one("[data-wizard-prev]").has_attr("hidden")
     assert not actions.select_one("[data-wizard-next]").has_attr("hidden")
@@ -159,13 +173,20 @@ def test_source_wizard_layout_and_copy_contracts(wizard_db):
 
     css = Path("app/web/static/css/workspace.css").read_text(encoding="utf-8")
     js = Path("app/web/static/js/app.js").read_text(encoding="utf-8")
-    assert "--source-wizard-footer-height" in css
-    assert "scroll-padding-bottom: var(--source-wizard-footer-height)" in css
+    assert ".source-create-form { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column;" in css
+    assert ".source-wizard-scroll-region { min-height: 0; flex: 1 1 auto;" in css
+    assert "overflow-y: auto; overscroll-behavior: contain;" in css
+    assert ".source-create-form .source-wizard-actions { min-height: 71px; flex: 0 0 auto;" in css
+    assert ".source-create-form .source-wizard-actions {" in css
+    assert "position: sticky" not in css.split(".source-create-form .source-wizard-actions", 1)[1].split("}", 1)[0]
     assert ".source-wizard-step { display: grid; gap: 12px; min-height: 0;" in css
     assert "[data-job-status][hidden] { display: none; }" in css
     assert 'form.querySelector("[data-wizard-prev]").hidden = step === 1' in js
     assert 'form.querySelector("[data-wizard-next]").hidden = step === 3' in js
     assert "submit.hidden = step !== 3" in js
+    assert 'const region = form.querySelector("[data-source-wizard-scroll]")' in js
+    assert "region.scrollTop = 0" in js
+    assert 'details.addEventListener("toggle"' in js
     assert 'confirm.textContent = "수집 시작"' in js
 
 
@@ -175,6 +196,12 @@ def test_edit_wizard_preloads_selected_method_and_keeps_other_panels_inactive(wi
     page = TestClient(regression_app(url, project_root=root)).get("/sources")
     soup = BeautifulSoup(page.text, "html.parser")
     edit = soup.select_one('[data-modal^="edit-"] [data-source-wizard]')
+    edit_scroll = edit.select_one("[data-source-wizard-scroll]")
+    edit_actions = edit.select_one(".source-wizard-actions")
+    assert edit_scroll is not None and edit_scroll.parent is edit
+    assert edit_actions is not None and edit_actions.parent is edit
+    assert edit_actions not in edit_scroll.select(".source-wizard-actions")
+    assert edit_scroll.select_one('[data-method-panel="WEB_CRAWL"] details.advanced-settings')
     assert edit.select_one("[data-method-selector]")["value"] == "API"
     assert edit.select_one('[data-method-choice][value="API"]').has_attr("checked")
     assert edit.select_one('[data-method-panel="API"]') is not None

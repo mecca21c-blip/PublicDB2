@@ -462,8 +462,31 @@
     refresh();
   });
 
+  const setupSourceWizardScroll = (form) => {
+    const region = form.querySelector("[data-source-wizard-scroll]");
+    const reset = () => { if (region) region.scrollTop = 0; };
+    if (region) {
+      region.querySelectorAll("details.advanced-settings").forEach((details) => {
+        details.addEventListener("toggle", () => {
+          if (!details.open) return;
+          requestAnimationFrame(() => {
+            const regionRect = region.getBoundingClientRect();
+            const detailsRect = details.getBoundingClientRect();
+            if (detailsRect.bottom > regionRect.bottom - 16) {
+              region.scrollTop += detailsRect.bottom - regionRect.bottom + 16;
+            } else if (detailsRect.top < regionRect.top + 16) {
+              region.scrollTop -= regionRect.top + 16 - detailsRect.top;
+            }
+          });
+        });
+      });
+    }
+    return {reset};
+  };
+
   document.querySelectorAll("[data-source-wizard]").forEach((form) => {
     if (form.dataset.sourceCreate !== undefined) return;
+    const wizardScroll = setupSourceWizardScroll(form);
     let step = 1;
     const selector = form.querySelector("[data-method-selector]");
     const scopeControls = [...form.querySelectorAll("[data-binding-scope]")];
@@ -520,6 +543,7 @@
       if (step === 3 && form.dataset.sourceCreate !== undefined && selector.value === "WEB_PAGE") {
         submit.disabled = form.dataset.scrapePreviewReady !== "true";
       }
+      wizardScroll.reset();
     };
     const validateStep = () => {
       const active = form.querySelector('[data-wizard-step="' + step + '"]');
@@ -568,6 +592,7 @@
   });
 
   document.querySelectorAll("[data-source-create]").forEach((form) => {
+    const wizardScroll = setupSourceWizardScroll(form);
     const selector = form.querySelector("[data-method-selector]");
     const rowsRoot = form.querySelector("[data-source-grid-rows]");
     const rowTemplate = form.querySelector("[data-source-row-template]");
@@ -858,6 +883,7 @@
       form.querySelector("[data-wizard-next]").hidden = step === 3;
       submit.hidden = step !== 3;
       submit.disabled = step !== 3 || !registrationReady || registering;
+      wizardScroll.reset();
     };
     const renderFinal = (preview) => {
       form.querySelector("[data-final-summary]").innerHTML = summaryMarkup(preview.summary);
