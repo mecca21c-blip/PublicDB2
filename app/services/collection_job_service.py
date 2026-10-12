@@ -6,16 +6,18 @@ import uuid
 from datetime import timedelta
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Agency, CollectionJob, CollectionJobItem, CollectionJobItemStatus,
-    CollectionJobStatus, CollectionTriggerType, OrgUnit, Source, SourceBinding,
+    CollectionJobStatus, CollectionTriggerType, OrgUnit, RunStatus, Source, SourceBinding,
 )
 from app.models.common import utc_now
 from app.core.time_presentation import format_kst_datetime, serialize_utc_datetime
 from app.services.source_query_service import SourceFilterError, SourceFilterSpec, SourceQueryService
+from app.services.pagination import page_metadata, page_values
+from app.services.run_history_filter import RunHistoryFilter
 
 
 MANUAL_PRIORITY = 100
@@ -235,6 +237,77 @@ class CollectionJobService:
         if failures_only:
             statement = statement.where(CollectionJob.failed_items > 0)
         return [self.project(job, include_items=include_items) for job in self.session.scalars(statement).unique()]
+
+    def list_page(
+        self,
+        filters: RunHistoryFilter,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+        include_items: bool = True,
+    ) -> dict:
+        """Return bounded jobs matching the same query used by CrawlRun history."""
+        page, page_size, offset = page_values(page, min(page_size, 15))
+        statement = select(CollectionJob).order_by(
+            CollectionJob.created_at.desc(), CollectionJob.id.desc()
+        )
+        if include_items:
+            statement = statement.options(
+                selectinload(CollectionJob.items).selectinload(CollectionJobItem.source)
+            )
+        if filters.utc_start:
+            statement = statement.where(CollectionJob.created_at >= filters.utc_start)
+        if filters.utc_end_exclusive:
+            statement = statement.where(CollectionJob.created_at < filters.utc_end_exclusive)
+        if filters.status is not None:
+            if filters.status is RunStatus.SUCCESS:
+                statement = statement.where(
+                    CollectionJob.status == CollectionJobStatus.COMPLETED,
+                    CollectionJob.failed_items == 0,
+                    CollectionJob.skipped_items == 0,
+                )
+            elif filters.status is RunStatus.PARTIAL:
+                statement = statement.where(
+                    CollectionJob.status == CollectionJobStatus.COMPLETED_WITH_ERRORS
+                )
+            elif filters.status is RunStatus.FAILED:
+                statement = statement.where(CollectionJob.status == CollectionJobStatus.FAILED)
+            elif filters.status in (RunStatus.PENDING, RunStatus.RUNNING):
+                statement = statement.where(CollectionJob.status.in_(ACTIVE_JOB_STATUSES))
+
+        source_conditions = []
+        if filters.agency_id:
+            source_conditions.append(
+                Source.bindings.any(SourceBinding.agency_id == filters.agency_id)
+            )
+        if filters.search:
+            pattern = f"%{filters.search}%"
+            source_conditions.append(or_(
+                Source.url.ilike(pattern),
+                Source.title.ilike(pattern),
+                Source.bindings.any(or_(
+                    SourceBinding.agency.has(Agency.official_name.ilike(pattern)),
+                    SourceBinding.org_unit.has(OrgUnit.name.ilike(pattern)),
+                )),
+            ))
+        if source_conditions:
+            matching_item = exists(
+                select(CollectionJobItem.id)
+                .join(Source, Source.id == CollectionJobItem.source_id)
+                .where(
+                    CollectionJobItem.job_id == CollectionJob.id,
+                    and_(*source_conditions),
+                )
+            )
+            statement = statement.where(matching_item)
+
+        count_statement = statement.order_by(None).with_only_columns(CollectionJob.id).subquery()
+        total = self.session.scalar(select(func.count()).select_from(count_statement)) or 0
+        jobs = self.session.scalars(statement.offset(offset).limit(page_size)).unique()
+        return {
+            "items": tuple(self.project(job, include_items=include_items) for job in jobs),
+            "pagination": page_metadata(total, page, page_size),
+        }
 
     def active_snapshot(self) -> dict:
         """Return one bounded DB-owned status projection for shared-shell polling."""

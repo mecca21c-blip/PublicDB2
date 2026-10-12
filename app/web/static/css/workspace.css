@@ -318,7 +318,25 @@ select.control { appearance: auto; }
 .row-resolution-card [data-resolution-similar] { display: flex; flex-wrap: wrap; gap: 7px; }
 .row-resolution-card [data-resolution-similar] p { flex-basis: 100%; color: var(--color-text-muted); font-size: 12px; }
 .row-resolution-card [role="alert"] { color: #a52f36; font-size: 12px; }
+.toolbar-actions { display: flex; gap: 8px; }
+.run-filter-feedback { margin: -7px 0 9px; color: var(--color-text-muted); font-size: 12px; }
 .collection-job-history { margin-bottom: 16px; }
+.run-job-scroll { max-height: 270px; overflow: auto; overscroll-behavior: contain; }
+.run-job-scroll .data-table { min-width: 920px; }
+.run-job-scroll thead th,
+.run-list-scroll thead th { position: sticky; z-index: 2; top: 0; }
+.run-history-workspace { align-items: stretch; }
+.run-list-panel,
+.run-detail-panel { height: clamp(420px, calc(100vh - 360px), 680px); max-height: 680px; }
+.run-list-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+.run-list-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.run-detail-panel { position: sticky; display: block; overflow: hidden; }
+.run-detail-panel .detail-view { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.run-detail-panel .detail-view[hidden] { display: none; }
+.run-detail-panel .detail-content { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.run-detail-value { white-space: pre-line; }
+.run-observation-list { display: grid; gap: 6px; max-height: 180px; margin: 0; padding: 0 0 0 22px; overflow: auto; overscroll-behavior: contain; }
+.run-observation-list li { padding-right: 6px; overflow-wrap: anywhere; white-space: normal; }
 .agency-create-form { display: grid; gap: 17px; }
 .agency-form-field { width: 100%; display: grid; gap: 6px; }
 .agency-form-field .field-label strong { color: var(--color-red-500, #bd4249); }

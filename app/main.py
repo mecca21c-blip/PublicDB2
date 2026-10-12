@@ -54,6 +54,7 @@ from app.services.contact_service import ContactService
 from app.services.dashboard_service import DashboardService
 from app.services.review_read_service import ReviewReadService
 from app.services.run_service import RunService
+from app.services.run_history_filter import RunHistoryFilter
 from app.services.settings_service import SettingsService
 from app.services.pagination import page_metadata
 from app.services.source_service import SourceService
@@ -88,22 +89,33 @@ WORKSPACE_PAGES = {
 }
 
 
+def _pagination_urls(
+    request: Request,
+    pagination: dict,
+    *,
+    page_parameter: str = 'page',
+    page_size_parameter: str = 'page_size',
+) -> dict:
+    pagination = dict(pagination)
+    params = dict(request.query_params)
+    params[page_size_parameter] = str(pagination['page_size'])
+    for key, target in (
+        ('previous_url', pagination['page'] - 1 if pagination['has_previous'] else None),
+        ('next_url', pagination['page'] + 1 if pagination['has_next'] else None),
+    ):
+        if target is None:
+            pagination[key] = None
+        else:
+            params[page_parameter] = str(target)
+            pagination[key] = request.url.path + '?' + urlencode(params)
+    return pagination
+
+
 def _page_context(request: Request, active_page: str, **values: object) -> dict[str, object]:
     user = getattr(request.state, 'current_user', None)
     workspace = values.get('workspace')
     if isinstance(workspace, dict) and workspace.get('pagination'):
-        pagination = dict(workspace['pagination'])
-        params = dict(request.query_params)
-        params['page_size'] = str(pagination['page_size'])
-        for key, target in (
-            ('previous_url', pagination['page'] - 1 if pagination['has_previous'] else None),
-            ('next_url', pagination['page'] + 1 if pagination['has_next'] else None),
-        ):
-            if target is None:
-                pagination[key] = None
-            else:
-                params['page'] = str(target)
-                pagination[key] = request.url.path + '?' + urlencode(params)
+        pagination = _pagination_urls(request, workspace['pagination'])
         values['workspace'] = {**workspace, 'pagination': pagination}
     return {
         'active_page': active_page, 'navigation': NAVIGATION,
@@ -387,30 +399,50 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         status: str | None = None,
         search: str | None = None,
         page: int = 1,
-        page_size: int = 100,
+        page_size: int = 25,
+        job_page: int = 1,
+        job_page_size: int = 10,
     ) -> HTMLResponse:
         selected_status = parse_optional_enum(status, RunStatus)
+        history_filter = RunHistoryFilter.normalize(
+            date_from=date_from,
+            date_to=date_to,
+            agency_id=_uuid_or_none(agency_id),
+            status=selected_status,
+            search=search,
+        )
         session = application.state.session_factory()
         try:
             agencies_page = AgencyService(session).list_page(page_size=500)
             workspace = RunService(session).list_page(
-                date_from=date_from,
-                date_to=date_to,
-                agency_id=_uuid_or_none(agency_id),
-                status=selected_status,
-                search=search,
+                filters=history_filter,
                 page=page,
                 page_size=page_size,
             )
-            collection_jobs = CollectionJobService(session).list_recent(
-                failures_only=(selected_status == RunStatus.FAILED), limit=50, include_items=True
+            collection_job_workspace = CollectionJobService(session).list_page(
+                history_filter,
+                page=job_page,
+                page_size=job_page_size,
+                include_items=True,
             )
+            collection_job_workspace = {
+                **collection_job_workspace,
+                'pagination': _pagination_urls(
+                    request,
+                    collection_job_workspace['pagination'],
+                    page_parameter='job_page',
+                    page_size_parameter='job_page_size',
+                ),
+            }
             db_error = None
         except SQLAlchemyError:
             session.rollback()
             agencies_page = {'items': ()}
-            workspace = {'items': (), 'details': ()}
-            collection_jobs = ()
+            workspace = {'items': (), 'details': (), 'pagination': page_metadata(0, 1, 25)}
+            collection_job_workspace = {
+                'items': (), 'pagination': _pagination_urls(request, page_metadata(0, 1, 10),
+                    page_parameter='job_page', page_size_parameter='job_page_size')
+            }
             db_error = '수집 이력을 불러오지 못했습니다. 데이터베이스 마이그레이션과 연결 상태를 확인하세요.'
         finally:
             session.close()
@@ -420,7 +452,8 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
             context=_page_context(request,
                 'runs',
                 workspace=workspace,
-                collection_jobs=collection_jobs,
+                collection_jobs=collection_job_workspace['items'],
+                collection_job_workspace=collection_job_workspace,
                 db_error=db_error,
                 agencies=agencies_page['items'],
                 run_statuses=RunStatus,
@@ -429,7 +462,7 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                     'date_to': date_to.isoformat() if date_to else '',
                     'agency_id': agency_id or '',
                     'status': selected_status.value if selected_status else '',
-                    'search': search or '',
+                    'search': history_filter.search,
                 },
             ),
         )
