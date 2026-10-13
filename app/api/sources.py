@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session, require_operator, require_viewer
@@ -15,7 +18,9 @@ from app.models import ApiAuthMode, CollectionMethod, User, UserRole
 from app.services.normalization import SourceURLValidationError
 from app.services.source_service import SourceBindingConflict, SourceService, SourceServiceError
 from app.services.source_method_service import MethodConfigError
-from app.services.source_import_service import MAX_IMPORT_BYTES, SourceImportError, SourceImportService
+from app.services.source_import_service import (
+    MAX_IMPORT_BYTES, PREVIEW_PAGE_SIZE, SourceImportError, SourceImportService,
+)
 from app.services.source_query_service import FILTER_METHODS, SourceFilterError, SourceFilterSpec, SourceQueryService
 from app.services.scrape_batch_service import ScrapeBatchError, ScrapeBatchService
 from app.services.source_interactive_batch_service import InteractiveBatchError, SourceInteractiveBatchService
@@ -174,12 +179,33 @@ async def preview_import(request: Request, file: UploadFile = File(...), session
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
-@router.post("/imports/{token}/confirm", dependencies=[Depends(require_operator)])
-def confirm_import(token: str, request: Request, session: Session = Depends(get_session)) -> dict:
+@router.get("/imports/{token}/preview", dependencies=[Depends(require_operator)])
+def page_import_preview(
+    token: str, request: Request, filter: str = "all", page: int = 1,
+    page_size: int = PREVIEW_PAGE_SIZE, session: Session = Depends(get_session),
+) -> dict:
+    try:
+        entry = request.app.state.source_import_previews.get(token)
+        return SourceImportService(session, request.app.state.runtime_paths).preview(
+            entry.original_filename, entry.temp_path.read_bytes(),
+            filter_name=filter, page=page, page_size=page_size,
+        )
+    except SourceImportError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/imports/{token}/confirm")
+def confirm_import(
+    token: str, request: Request, collect_after_confirm: bool = False,
+    user: User = Depends(require_operator), session: Session = Depends(get_session),
+) -> dict:
     store = request.app.state.source_import_previews
     try:
         entry = store.get(token)
-        return SourceImportService(session, request.app.state.runtime_paths).confirm(entry)
+        return SourceImportService(session, request.app.state.runtime_paths).confirm(
+            entry, collect_after_confirm=collect_after_confirm,
+            requested_by_user_id=user.id,
+        )
     except SourceImportError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     finally:
@@ -194,5 +220,37 @@ def discard_import(token: str, request: Request) -> dict[str, bool]:
 
 @router.get("/imports/template.csv")
 def download_import_template() -> Response:
-    content = "\ufeff기관명,부서명,URL,소스 설명,수집 방식\r\n"
+    content = "\ufeff기관명,기관유형,지역,부서명,URL,수집방식,소스설명,자동수집\r\n"
     return Response(content=content.encode("utf-8"), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="publicdb2-source-import-template.csv"'})
+
+
+@router.get("/imports/template.xlsx")
+def download_import_xlsx_template() -> Response:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "수집 소스"
+    headers = ["기관명", "기관유형", "지역", "부서명", "URL", "수집방식", "소스설명", "자동수집"]
+    sheet.append(headers)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:H1"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="235EA7")
+    for column, width in zip("ABCDEFGH", (24, 26, 16, 24, 52, 22, 42, 16)):
+        sheet.column_dimensions[column].width = width
+    guide = workbook.create_sheet("입력 안내")
+    guide.append(["항목", "안내"])
+    guide.append(["필수", "기관명, URL"])
+    guide.append(["기관유형", "CENTRAL_GOVERNMENT, AGENCY, COMMISSION, METROPOLITAN_GOVERNMENT, BASIC_LOCAL_GOVERNMENT, PUBLIC_INSTITUTION, OTHER 또는 한국어 별칭"])
+    guide.append(["지역", "PublicDB2 지역 코드 또는 지역명. 광역/기초 자치단체 신규 등록 시 필수"])
+    guide.append(["수집방식", "WEB_PAGE, WEB_CRAWL, RSS, ATOM. 일반 OpenAPI는 전용 Source 설정에서 등록"])
+    guide.append(["자동수집", "Y/N, TRUE/FALSE, 포함/제외. 빈 값은 포함"])
+    guide.column_dimensions["A"].width = 20
+    guide.column_dimensions["B"].width = 120
+    stream = io.BytesIO()
+    workbook.save(stream)
+    return Response(
+        content=stream.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="publicdb2-source-import-template.xlsx"'},
+    )

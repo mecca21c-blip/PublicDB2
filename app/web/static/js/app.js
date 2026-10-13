@@ -2123,10 +2123,18 @@
     const previewBox = importWorkflow.querySelector("[data-import-preview-result]");
     const rowsBox = importWorkflow.querySelector("[data-import-rows]");
     const summaryBox = importWorkflow.querySelector("[data-import-summary]");
+    const filterControl = importWorkflow.querySelector("[data-import-filter]");
+    const pageStatus = importWorkflow.querySelector("[data-import-page-status]");
+    const previousButton = importWorkflow.querySelector("[data-import-prev]");
+    const nextButton = importWorkflow.querySelector("[data-import-next]");
     const confirmButton = importWorkflow.querySelector("[data-import-confirm]");
+    const collectAfterConfirm = importWorkflow.querySelector("[data-import-collect-after-confirm]");
     const completeBox = importWorkflow.querySelector("[data-import-complete]");
     const completeSummary = importWorkflow.querySelector("[data-import-complete-summary]");
+    const collectionResult = importWorkflow.querySelector("[data-import-collection-result]");
+    const historyLink = importWorkflow.querySelector("[data-import-history]");
     let previewToken = null;
+    let previewPage = 1;
     const labels = {
       READY: "등록 가능", NEW_AGENCY: "신규 기관", NEW_ORG_UNIT: "신규 부서",
       EXACT_DUPLICATE: "중복", EXISTING_SOURCE_NEW_BINDING: "기존 URL 새 연결",
@@ -2142,6 +2150,59 @@
       fetch("/api/source-bindings/imports/" + previewToken, {method: "DELETE", headers: csrfHeaders(), keepalive: true});
       previewToken = null;
     };
+    const addSummaryValue = (label, value) => {
+      const dt = document.createElement("dt");
+      const dd = document.createElement("dd");
+      dt.textContent = label;
+      dd.textContent = String(value);
+      summaryBox.append(dt, dd);
+    };
+    const renderPreview = (result) => {
+      rowsBox.replaceChildren();
+      result.rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        const typeRegion = [row.agency_type || "-", row.region_code || "미지정"].join(" · ");
+        const method = row.api_kind || row.collection_method || "-";
+        [
+          row.row_number, row.resolved_agency || row.raw_agency, typeRegion,
+          row.resolved_org_unit || "기관 공통", row.normalized_url || row.raw_url,
+          method, row.scheduled_refresh_enabled ? "포함" : "제외",
+          labels[row.classification], row.message,
+        ].forEach((value) => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        });
+        rowsBox.appendChild(tr);
+      });
+      const s = result.summary;
+      summaryBox.replaceChildren();
+      [
+        ["입력 행", s.total], ["등록 가능", s.importable], ["신규 기관", s.new_agencies],
+        ["신규 부서", s.new_org_units], ["신규 Source", s.new_sources],
+        ["기존 Source 새 연결", s.existing_source_new_bindings], ["중복", s.duplicates],
+        ["충돌", s.conflicts], ["오류", s.invalid],
+      ].forEach(([label, value]) => addSummaryValue(label, value));
+      previewPage = result.preview.page;
+      pageStatus.textContent = result.preview.total + "건 중 " + result.preview.page + " / " + result.preview.pages + " 페이지";
+      previousButton.disabled = !result.preview.has_previous;
+      nextButton.disabled = !result.preview.has_next;
+      confirmButton.disabled = s.importable === 0;
+    };
+    const loadPreviewPage = async (page) => {
+      if (!previewToken) return;
+      errorBox.hidden = true;
+      const query = new URLSearchParams({filter: filterControl.value, page: String(page), page_size: "50"});
+      try {
+        const response = await fetch("/api/source-bindings/imports/" + previewToken + "/preview?" + query, {headers: csrfHeaders()});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "미리보기 페이지를 불러오지 못했습니다.");
+        renderPreview(result);
+      } catch (error) {
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+      }
+    };
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       discardPreview();
@@ -2153,21 +2214,10 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "파일을 확인하지 못했습니다.");
         previewToken = result.token;
-        rowsBox.replaceChildren();
-        result.rows.forEach((row) => {
-          const tr = document.createElement("tr");
-          [row.row_number, row.resolved_agency || row.raw_agency, row.resolved_org_unit || "기관 공통", row.normalized_url || row.raw_url, labels[row.classification], row.message].forEach((value) => {
-            const td = document.createElement("td");
-            td.textContent = value;
-            tr.appendChild(td);
-          });
-          rowsBox.appendChild(tr);
-        });
-        const s = result.summary;
-        summaryBox.textContent = "전체 " + s.total + " · 등록 가능 " + s.importable + " · 신규 기관 " + s.new_agencies + " · 신규 부서 " + s.new_org_units + " · 중복 " + s.duplicates + " · 충돌 " + s.conflicts + " · 오류 " + s.invalid;
+        filterControl.value = "all";
+        renderPreview(result);
         previewBox.hidden = false;
         completeBox.hidden = true;
-        confirmButton.disabled = s.importable === 0;
         setStep("preview");
       } catch (error) {
         errorBox.textContent = error.message;
@@ -2176,17 +2226,39 @@
         setStep("select");
       }
     });
+    filterControl.addEventListener("change", () => loadPreviewPage(1));
+    previousButton.addEventListener("click", () => loadPreviewPage(previewPage - 1));
+    nextButton.addEventListener("click", () => loadPreviewPage(previewPage + 1));
     confirmButton.addEventListener("click", async () => {
       if (!previewToken) return;
       confirmButton.disabled = true;
       setStep("result");
       try {
-        const response = await fetch("/api/source-bindings/imports/" + previewToken + "/confirm", {method: "POST", headers: csrfHeaders()});
+        const query = new URLSearchParams({collect_after_confirm: collectAfterConfirm.checked ? "true" : "false"});
+        const response = await fetch("/api/source-bindings/imports/" + previewToken + "/confirm?" + query, {method: "POST", headers: csrfHeaders()});
         const result = await response.json();
         previewToken = null;
         if (!response.ok) throw new Error(result.detail || "등록을 완료하지 못했습니다.");
         const s = result.summary;
-        completeSummary.textContent = "연결 " + s.created_bindings + "건 등록 · 중복 " + s.duplicates_skipped + "건 건너뜀 · 오류 " + (s.invalid_rows + s.conflicts + s.unexpected_failures) + "건";
+        completeSummary.replaceChildren();
+        [
+          ["입력 행", s.input_rows], ["신규 기관", s.created_agencies],
+          ["신규 부서", s.created_org_units], ["신규 Source", s.created_sources],
+          ["기존 Source 새 연결", s.existing_source_new_bindings], ["등록 연결", s.created_bindings],
+          ["중복 건너뜀", s.duplicates_skipped], ["충돌", s.conflicts],
+          ["오류", s.invalid_rows + s.unexpected_failures],
+        ].forEach(([label, value]) => {
+          const dt = document.createElement("dt"); const dd = document.createElement("dd");
+          dt.textContent = label; dd.textContent = String(value); completeSummary.append(dt, dd);
+        });
+        const queueLabels = {
+          QUEUED: "신규 Source " + result.collection_source_count + "건의 수집 작업이 대기 중입니다.",
+          FAILED_TO_QUEUE: "등록은 완료되었지만 즉시 수집 작업을 시작하지 못했습니다. 수집 소스 목록에서 다시 수집할 수 있습니다.",
+          NO_NEW_SOURCES: "신규 Source가 없어 즉시 수집 작업을 만들지 않았습니다.",
+          NOT_REQUESTED: "즉시 수집을 요청하지 않았습니다.",
+        };
+        collectionResult.textContent = queueLabels[result.collection_queue_status] || result.collection_queue_status;
+        historyLink.hidden = result.collection_queue_status !== "QUEUED";
         previewBox.hidden = true;
         completeBox.hidden = false;
         setStep("complete");
