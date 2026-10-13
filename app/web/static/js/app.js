@@ -2125,10 +2125,17 @@
     const summaryBox = importWorkflow.querySelector("[data-import-summary]");
     const filterControl = importWorkflow.querySelector("[data-import-filter]");
     const pageStatus = importWorkflow.querySelector("[data-import-page-status]");
+    const pageSummary = importWorkflow.querySelector("[data-import-page-summary]");
+    const tableScroll = importWorkflow.querySelector("[data-import-table-scroll]");
     const previousButton = importWorkflow.querySelector("[data-import-prev]");
     const nextButton = importWorkflow.querySelector("[data-import-next]");
     const confirmButton = importWorkflow.querySelector("[data-import-confirm]");
     const collectAfterConfirm = importWorkflow.querySelector("[data-import-collect-after-confirm]");
+    const previewFooter = importWorkflow.querySelector("[data-import-footer]");
+    const compactFile = importWorkflow.querySelector("[data-import-file-compact]");
+    const previewFilename = importWorkflow.querySelector("[data-import-filename]");
+    const previewFileRows = importWorkflow.querySelector("[data-import-file-rows]");
+    const fileChangeButton = importWorkflow.querySelector("[data-import-file-change]");
     const completeBox = importWorkflow.querySelector("[data-import-complete]");
     const completeSummary = importWorkflow.querySelector("[data-import-complete-summary]");
     const collectionResult = importWorkflow.querySelector("[data-import-collection-result]");
@@ -2151,11 +2158,14 @@
       previewToken = null;
     };
     const addSummaryValue = (label, value) => {
+      const item = document.createElement("div");
+      item.className = "import-summary-item";
       const dt = document.createElement("dt");
       const dd = document.createElement("dd");
       dt.textContent = label;
       dd.textContent = String(value);
-      summaryBox.append(dt, dd);
+      item.append(dt, dd);
+      summaryBox.append(item);
     };
     const renderPreview = (result) => {
       rowsBox.replaceChildren();
@@ -2163,14 +2173,30 @@
         const tr = document.createElement("tr");
         const typeRegion = [row.agency_type || "-", row.region_code || "미지정"].join(" · ");
         const method = row.api_kind || row.collection_method || "-";
+        const detail = typeRegion + " · 자동수집 " + (row.scheduled_refresh_enabled ? "포함" : "제외")
+          + (row.description ? " · " + row.description : "");
         [
-          row.row_number, row.resolved_agency || row.raw_agency, typeRegion,
-          row.resolved_org_unit || "기관 공통", row.normalized_url || row.raw_url,
-          method, row.scheduled_refresh_enabled ? "포함" : "제외",
-          labels[row.classification], row.message,
-        ].forEach((value) => {
+          [row.row_number, ""],
+          [labels[row.classification], "import-cell-status"],
+          [row.resolved_agency || row.raw_agency, "import-cell-clamp"],
+          [row.resolved_org_unit || "기관 공통", "import-cell-clamp"],
+          [row.normalized_url || row.raw_url, "import-cell-clamp"],
+          [method, ""],
+          [detail, "import-cell-meta import-cell-clamp"],
+          [row.message, "import-cell-clamp"],
+        ].forEach(([value, className]) => {
           const td = document.createElement("td");
-          td.textContent = value;
+          td.title = String(value ?? "");
+          if (className.includes("import-cell-clamp")) {
+            td.className = className.replace("import-cell-clamp", "").trim();
+            const clipped = document.createElement("span");
+            clipped.className = "import-cell-clamp";
+            clipped.textContent = value;
+            td.appendChild(clipped);
+          } else {
+            td.textContent = value;
+            if (className) td.className = className;
+          }
           tr.appendChild(td);
         });
         rowsBox.appendChild(tr);
@@ -2185,9 +2211,13 @@
       ].forEach(([label, value]) => addSummaryValue(label, value));
       previewPage = result.preview.page;
       pageStatus.textContent = result.preview.total + "건 중 " + result.preview.page + " / " + result.preview.pages + " 페이지";
+      const firstRow = result.preview.total ? ((result.preview.page - 1) * result.preview.page_size) + 1 : 0;
+      const lastRow = result.preview.total ? firstRow + result.rows.length - 1 : 0;
+      pageSummary.textContent = firstRow + "–" + lastRow + "행 표시 · 페이지당 최대 50행";
       previousButton.disabled = !result.preview.has_previous;
       nextButton.disabled = !result.preview.has_next;
       confirmButton.disabled = s.importable === 0;
+      previewFileRows.textContent = String(s.total);
     };
     const loadPreviewPage = async (page) => {
       if (!previewToken) return;
@@ -2198,6 +2228,7 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "미리보기 페이지를 불러오지 못했습니다.");
         renderPreview(result);
+        tableScroll.scrollTop = 0;
       } catch (error) {
         errorBox.textContent = error.message;
         errorBox.hidden = false;
@@ -2216,13 +2247,21 @@
         previewToken = result.token;
         filterControl.value = "all";
         renderPreview(result);
+        previewFilename.textContent = result.filename || form.querySelector('input[type="file"]')?.files?.[0]?.name || "선택한 파일";
+        form.hidden = true;
+        compactFile.hidden = false;
         previewBox.hidden = false;
+        previewFooter.hidden = false;
         completeBox.hidden = true;
+        tableScroll.scrollTop = 0;
         setStep("preview");
       } catch (error) {
         errorBox.textContent = error.message;
         errorBox.hidden = false;
+        form.hidden = false;
+        compactFile.hidden = true;
         previewBox.hidden = true;
+        previewFooter.hidden = true;
         setStep("select");
       }
     });
@@ -2259,15 +2298,41 @@
         };
         collectionResult.textContent = queueLabels[result.collection_queue_status] || result.collection_queue_status;
         historyLink.hidden = result.collection_queue_status !== "QUEUED";
+        compactFile.hidden = true;
         previewBox.hidden = true;
+        previewFooter.hidden = true;
         completeBox.hidden = false;
         setStep("complete");
       } catch (error) {
         errorBox.textContent = error.message;
         errorBox.hidden = false;
+        confirmButton.disabled = false;
       }
     });
-    importWorkflow.closest("[data-modal]").querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", discardPreview));
+    const resetPreviewUi = () => {
+      form.reset();
+      form.hidden = false;
+      compactFile.hidden = true;
+      previewBox.hidden = true;
+      previewFooter.hidden = true;
+      completeBox.hidden = true;
+      errorBox.hidden = true;
+      filterControl.value = "all";
+      previewPage = 1;
+      rowsBox.replaceChildren();
+      summaryBox.replaceChildren();
+      confirmButton.disabled = true;
+      collectAfterConfirm.checked = false;
+      setStep("select");
+    };
+    fileChangeButton.addEventListener("click", () => {
+      discardPreview();
+      resetPreviewUi();
+    });
+    importWorkflow.closest("[data-modal]").querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", () => {
+      discardPreview();
+      resetPreviewUi();
+    }));
     importWorkflow.querySelector("[data-import-refresh]").addEventListener("click", () => window.location.reload());
   }
   document.querySelectorAll("[data-review-action]").forEach((button) => {

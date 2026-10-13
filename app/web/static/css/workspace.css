@@ -174,8 +174,48 @@ select.control { appearance: auto; }
 .import-summary-grid dd { margin: 2px 0 0; font-size: 20px; font-weight: 800; }
 .import-preview-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .import-preview-toolbar label { min-width: 220px; }
-.import-preview-scroll { max-height: min(44vh, 440px); overflow: auto; }
-.import-preview-scroll .import-table { min-width: 1180px; }
+.modal-shell--import { width: min(1120px, calc(100vw - 56px)); height: min(844px, calc(100vh - 56px)); max-height: calc(100vh - 56px); display: flex; flex-direction: column; }
+.modal-shell--import > .modal-heading { flex: 0 0 auto; padding: 14px 18px; }
+.import-workflow { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.import-workflow > [hidden], .import-preview-result[hidden], .import-preview-footer[hidden] { display: none; }
+.modal-shell--import .import-steps { flex: 0 0 auto; gap: 4px; margin: 0; padding: 8px 18px; border-bottom: 1px solid var(--color-border-soft); }
+.modal-shell--import .import-step { padding: 5px 6px; font-size: 10px; }
+.import-select-panel { min-height: 0; padding: 18px; overflow: auto; }
+.import-file-compact { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; border-bottom: 1px solid var(--color-border-soft); background: #fbfcfe; }
+.import-file-compact > div { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.import-file-compact strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-file-compact span { flex: 0 0 auto; color: var(--color-text-muted); font-size: 12px; }
+.import-preview-result { min-height: 0; flex: 1 1 auto; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px; padding: 8px 18px; overflow: hidden; }
+.import-preview-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; margin: 0; padding: 5px 8px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #f8fafc; }
+.import-preview-summary .import-summary-item { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.import-preview-summary dt { font-size: 11px; font-weight: 650; }
+.import-preview-summary dd { margin: 0; font-size: 15px; line-height: 1.25; }
+.import-preview-toolbar { align-items: center; margin: 0; }
+.import-preview-toolbar label { min-width: 190px; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; }
+.import-preview-toolbar .control { min-height: 32px; padding: 5px 28px 5px 9px; }
+.import-preview-toolbar > span { color: var(--color-text-muted); font-size: 11px; }
+.import-preview-scroll { min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); }
+.import-preview-scroll .import-table { min-width: 980px; table-layout: fixed; }
+.import-preview-scroll thead th { position: sticky; top: 0; z-index: 2; background: #f5f7fa; box-shadow: 0 1px 0 var(--color-border); }
+.import-preview-scroll th:nth-child(1) { width: 52px; }
+.import-preview-scroll th:nth-child(2) { width: 92px; }
+.import-preview-scroll th:nth-child(3) { width: 128px; }
+.import-preview-scroll th:nth-child(4) { width: 116px; }
+.import-preview-scroll th:nth-child(5) { width: 230px; }
+.import-preview-scroll th:nth-child(6) { width: 92px; }
+.import-preview-scroll th:nth-child(7) { width: 160px; }
+.import-preview-scroll th:nth-child(8) { width: 230px; }
+.import-preview-scroll td { vertical-align: top; }
+.import-cell-clamp { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.import-cell-meta { color: var(--color-text-subtle); font-size: 11px; line-height: 1.45; }
+.import-cell-status { font-weight: 800; }
+.import-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; color: var(--color-text-muted); font-size: 11px; }
+.import-pagination > div { display: flex; gap: 6px; }
+.import-pagination .button { min-height: 30px; padding: 5px 10px; }
+.import-preview-footer { flex: 0 0 auto; min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--color-border); background: #fff; box-shadow: 0 -8px 18px rgba(13,27,45,.05); }
+.import-preview-footer .check-row { margin: 0; font-size: 12px; }
+.import-preview-footer > div { flex: 0 0 auto; display: flex; gap: 8px; }
+.import-workflow > [data-import-error] { flex: 0 0 auto; margin: 0; padding: 8px 18px; color: #9f2931; background: #fff5f5; font-size: 12px; font-weight: 700; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .modal-actions--sticky { position: sticky; bottom: -20px; z-index: 2; margin: 0 -22px -20px; padding: 14px 22px; border-top: 1px solid var(--color-border); background: rgba(255,255,255,.97); }
 .modal-shell--agency-create { width: min(700px, calc(100vw - 48px)); max-width: 100%; }
@@ -439,6 +479,14 @@ select.control { appearance: auto; }
   .modal-shell--source-create { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
   .source-wizard-scroll-region { padding: 16px; }
   .source-create-form .source-wizard-actions { min-height: 64px; padding: 10px 16px; }
+  .modal-backdrop--import { padding: 12px; }
+  .modal-shell--import { width: calc(100vw - 24px); height: calc(100vh - 24px); max-height: calc(100vh - 24px); }
+  .modal-shell--import > .modal-heading { padding: 10px 12px; }
+  .modal-shell--import > .modal-heading p { display: none; }
+  .modal-shell--import .import-steps { padding: 6px 12px; }
+  .import-file-compact, .import-preview-result { padding-right: 12px; padding-left: 12px; }
+  .import-preview-footer { align-items: stretch; flex-direction: column; padding: 8px 12px; }
+  .import-preview-footer > div { justify-content: flex-end; }
 }
 .workspace-pager {
   align-items: center;
