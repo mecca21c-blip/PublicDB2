@@ -7,7 +7,7 @@ import socket
 import ssl
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote_plus, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -144,6 +144,22 @@ def validate_request_target(url: str, resolver: Callable[[str], Iterable[str]] =
         raise UnsafeRequestTarget("공개 인터넷 주소가 아닌 대상은 수집할 수 없습니다.", final_url=url)
 
 
+def _merge_request_query(url: str, params: dict[str, str | int] | None) -> str:
+    """Overlay runtime params without discarding unrelated registered query pairs."""
+    if not params:
+        return url
+    parts = urlsplit(url)
+    overridden = {str(key) for key in params}
+    preserved = []
+    for segment in parts.query.split("&") if parts.query else ():
+        raw_key = segment.partition("=")[0]
+        if unquote_plus(raw_key) not in overridden:
+            preserved.append(segment)
+    appended = urlencode([(str(key), value) for key, value in params.items()])
+    query = "&".join((*preserved, appended))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+
 class HTTPFetcher:
     """Fetch exactly one registered resource; redirects are bounded and revalidated."""
 
@@ -186,8 +202,7 @@ class HTTPFetcher:
         headers: dict[str, str] | None = None,
         target_validator: Callable[[str], None] | None = None,
     ) -> FetchResult:
-        target = url
-        request_params = params
+        target = _merge_request_query(url, params)
         request_headers = {"User-Agent": self._user_agent, **(headers or {})}
         try:
             with httpx.Client(
@@ -200,8 +215,7 @@ class HTTPFetcher:
                     validate_request_target(target, self._resolver)
                     if target_validator is not None:
                         target_validator(target)
-                    with client.stream("GET", target, params=request_params) as response:
-                        request_params = None
+                    with client.stream("GET", target) as response:
                         final_url = str(response.url)
                         if response.is_redirect:
                             location = response.headers.get("location")
