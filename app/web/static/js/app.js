@@ -392,6 +392,13 @@
     return payload;
   };
 
+  const resolveSourceConfigPreviewUrl = (form) => {
+    const input = form.dataset.sourceCreate !== undefined
+      ? form.querySelector("[data-source-row] [data-row-url]")
+      : form.querySelector('[name="url"]:not(:disabled)');
+    return input?.value.trim() || "";
+  };
+
   document.querySelectorAll("form [data-method-selector]").forEach((selector) => {
     const form = selector.form;
     form.querySelectorAll("[data-method-choice]").forEach((choice) => {
@@ -1234,13 +1241,23 @@
       button.disabled = true;
       try {
         const payload = jsonFromForm(form);
+        const url = resolveSourceConfigPreviewUrl(form);
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error();
+        } catch (_error) {
+          throw new Error("URL / Endpoint를 먼저 확인하세요.");
+        }
         const response = await fetch("/api/source-config/preview", {
           method: "POST", headers: csrfHeaders({"Content-Type": "application/json"}),
-          body: JSON.stringify({url: payload.url, method_config: payload.method_config}),
+          body: JSON.stringify({url, method_config: payload.method_config}),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(sourceWizardErrorMessage(result, "설정을 확인하지 못했습니다."));
-        output.textContent = "HTTP " + result.http_status + " · 원시 " + result.raw_count + "건 · 표본 " + result.mapped_sample.length + "건";
+        const kind = payload.method_config?.kind;
+        if (kind === "RSS") output.textContent = "HTTP " + result.http_status + " · RSS 항목 " + result.raw_count + "건";
+        else if (kind === "ATOM") output.textContent = "HTTP " + result.http_status + " · Atom 항목 " + result.raw_count + "건";
+        else output.textContent = "HTTP " + result.http_status + " · 원시 " + result.raw_count + "건 · 표본 " + result.mapped_sample.length + "건";
       } catch (error) {
         output.textContent = error.message;
       } finally {

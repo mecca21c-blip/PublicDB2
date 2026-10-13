@@ -110,7 +110,9 @@ def preview_source_config(
                 params[config.credential_name] = secret
             else:
                 headers[config.credential_name] = secret
-        fetched = request.app.state.preview_fetcher_factory().fetch(url, params=params, headers=headers)
+        fetched = request.app.state.preview_fetcher_factory().fetch(
+            url, params=params or None, headers=headers,
+        )
         if config.kind in {ApiSourceKind.RSS, ApiSourceKind.ATOM}:
             root = ET.fromstring(fetched.content)
             tag = "item" if config.kind is ApiSourceKind.RSS else "entry"
