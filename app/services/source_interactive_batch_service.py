@@ -144,6 +144,16 @@ class SourceInteractiveBatchService:
         if method is not CollectionMethod.WEB_PAGE and len(rows) != 1:
             raise InteractiveBatchError("Index URL과 API/RSS는 한 번에 주소 하나만 등록할 수 있습니다.")
 
+    @staticmethod
+    def validate_method_config(method: CollectionMethod, config: dict, url: str) -> None:
+        values = dict(config or {})
+        if method is CollectionMethod.WEB_PAGE:
+            SourceMethodService._scrape(values)
+        elif method is CollectionMethod.WEB_CRAWL:
+            SourceMethodService._crawl(url, values)
+        else:
+            SourceMethodService._api(values)
+
     def _preview_row(self, row: Any, method: CollectionMethod, line_number: int) -> dict:
         base = {
             "row_id": row.row_id, "line_number": line_number, "url": row.url,

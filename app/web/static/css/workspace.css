@@ -176,6 +176,8 @@ select.control { appearance: auto; }
 .modal-shell--compact { width: min(560px, calc(100vw - 48px)); max-width: 100%; }
 .source-create-form { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; max-height: none; padding: 0; overflow: hidden; }
 .source-wizard-scroll-region { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 16px; padding: 20px 22px; overflow-y: auto; overscroll-behavior: contain; }
+.source-wizard-validation { flex: 0 0 auto; margin: 0; padding: 10px 22px; border-top: 1px solid #f2c5c8; color: #9f2931; background: #fff5f5; font-size: 12px; font-weight: 700; }
+.source-wizard-validation[hidden] { display: none; }
 .source-create-form .source-wizard-actions { min-height: 71px; flex: 0 0 auto; align-items: center; flex-wrap: wrap; margin: 0; padding: 14px 22px; border-top: 1px solid var(--color-border); background: #fff; }
 .source-create-form .source-wizard-actions .button[hidden] { display: none; }
 .form-section { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #fbfcfe; }

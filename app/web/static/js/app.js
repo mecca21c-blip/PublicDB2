@@ -627,6 +627,7 @@
     const errorBox = form.querySelector("[data-form-error]");
     const resolution = form.querySelector("[data-row-resolution]");
     const submit = form.querySelector("[data-wizard-submit]");
+    const nextButton = form.querySelector("[data-wizard-next]");
     const queue = [];
     let activeDiscoveries = 0;
     let rowSequence = 0;
@@ -635,6 +636,7 @@
     let lastPreview = null;
     let registrationReady = false;
     let registering = false;
+    let advancing = false;
 
     const allRows = () => [...rowsRoot.querySelectorAll("[data-source-row]")];
     const stateOf = (row) => row._intakeState;
@@ -716,23 +718,26 @@
           state.discovery = payload;
           const agencyInput = job.row.querySelector("[data-row-agency]");
           const orgInput = job.row.querySelector("[data-row-org]");
-          if (payload.existing_agency) {
-            state.agencyName = payload.existing_agency.name;
-            state.agencyId = payload.existing_agency.id;
-            agencyInput.value = state.agencyName;
-            job.row.querySelector("[data-row-agency-id]").value = state.agencyId;
-          } else if (payload.candidate_name) {
-            state.agencyName = payload.candidate_name;
-            agencyInput.value = state.agencyName;
-          }
-          if (payload.existing_org_unit) {
-            state.orgName = payload.existing_org_unit.name;
-            state.orgId = payload.existing_org_unit.id;
-            orgInput.value = state.orgName;
-            job.row.querySelector("[data-row-org-id]").value = state.orgId;
-          } else if (payload.org_unit_candidate) {
-            state.orgName = payload.org_unit_candidate;
-            orgInput.value = state.orgName;
+          const identityConfirmed = ["RESOLVED", "PLANNED_NEW"].includes(state.status);
+          if (!identityConfirmed) {
+            if (payload.existing_agency) {
+              state.agencyName = payload.existing_agency.name;
+              state.agencyId = payload.existing_agency.id;
+              agencyInput.value = state.agencyName;
+              job.row.querySelector("[data-row-agency-id]").value = state.agencyId;
+            } else if (payload.candidate_name) {
+              state.agencyName = payload.candidate_name;
+              agencyInput.value = state.agencyName;
+            }
+            if (payload.existing_org_unit) {
+              state.orgName = payload.existing_org_unit.name;
+              state.orgId = payload.existing_org_unit.id;
+              orgInput.value = state.orgName;
+              job.row.querySelector("[data-row-org-id]").value = state.orgId;
+            } else if (payload.org_unit_candidate) {
+              state.orgName = payload.org_unit_candidate;
+              orgInput.value = state.orgName;
+            }
           }
           const exact = Boolean(state.agencyId) && (!state.orgName || Boolean(state.orgId));
           setStatus(job.row, exact ? "RESOLVED" : "NEEDS_REVIEW", payload.message || "자동 확인 결과를 검토하세요.");
@@ -957,7 +962,7 @@
       form.querySelectorAll("[data-wizard-step]").forEach((section) => { section.hidden = Number(section.dataset.wizardStep) !== step; });
       form.querySelectorAll("[data-wizard-indicator]").forEach((item) => item.classList.toggle("is-active", Number(item.dataset.wizardIndicator) === step));
       form.querySelector("[data-wizard-prev]").hidden = step === 1;
-      form.querySelector("[data-wizard-next]").hidden = step === 3;
+      nextButton.hidden = step === 3;
       submit.hidden = step !== 3;
       submit.disabled = step !== 3 || !registrationReady || registering;
       wizardScroll.reset();
@@ -1069,7 +1074,11 @@
       try { await resolveAgain(resolution._advance); } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
     });
     resolution.querySelector("[data-resolution-edit]").addEventListener("click", () => { resolution.hidden = true; showStep(1); });
-    form.querySelector("[data-wizard-next]").addEventListener("click", async () => {
+    nextButton.addEventListener("click", async () => {
+      if (advancing) return;
+      advancing = true;
+      nextButton.disabled = true;
+      nextButton.textContent = "확인 중...";
       errorBox.hidden = true;
       try {
         if (step === 1) { await resolveAgain(true); return; }
@@ -1082,7 +1091,14 @@
           && lastPreview.summary.unresolved === 0
           && lastPreview.summary.importable > 0;
         renderFinal(lastPreview); showStep(3);
-      } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+      } catch (error) {
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+      } finally {
+        advancing = false;
+        nextButton.textContent = "다음";
+        nextButton.disabled = false;
+      }
     });
     form.querySelector("[data-wizard-prev]").addEventListener("click", () => {
       registrationReady = false;
@@ -1103,7 +1119,12 @@
       allRows().forEach((row) => { stateOf(row).generation += 1; stateOf(row).controller?.abort(); if (stateOf(row).url.trim()) enqueueDiscovery(row); });
     });
     form.querySelectorAll("[data-api-kind-choice], [data-feed-kind], [data-api-auth]").forEach((control) => control.addEventListener("change", () => {
-      allRows().forEach((row) => { if (stateOf(row).url.trim()) enqueueDiscovery(row); });
+      allRows().forEach((row) => {
+        const state = stateOf(row);
+        const identityResolved = Boolean(state.agencyId || state.agencyIntent)
+          && (!state.orgName || Boolean(state.orgId || state.orgIntent));
+        if (state.url.trim() && !identityResolved) enqueueDiscovery(row);
+      });
     }));
     form.addEventListener("catalogrow", (event) => {
       const row = allRows()[0]; if (!row || !event.detail?.endpoint) return;

@@ -103,6 +103,9 @@ def preview_interactive_batch(
 ) -> dict:
     try:
         _require_secret_config_admin(payload.collection_method, payload.method_config, user)
+        SourceInteractiveBatchService.validate_method_config(
+            payload.collection_method, payload.method_config, payload.rows[0].url,
+        )
         return SourceInteractiveBatchService(session).preview(payload)
     except (InteractiveBatchError, SourceServiceError, SourceURLValidationError, MethodConfigError, ValueError) as error:
         raise _failure(error) from error
