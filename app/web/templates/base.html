@@ -55,10 +55,12 @@
 
     <div class="app-main">
       <header class="top-header">
-        <div class="global-search" role="search" aria-label="통합 검색">
+        <form class="global-search" role="search" aria-label="통합 검색" method="get" action="/search" data-global-search-form>
           {{ icon('search', 20) }}
-          <input type="search" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." readonly aria-label="통합 검색 (읽기 전용)">
-        </div>
+          <label class="screen-reader-only" for="global-search-input">통합 검색</label>
+          <input id="global-search-input" name="q" type="search" value="{{ global_search_query }}" placeholder="기관명, 부서명, URL, 담당자명 등으로 검색하세요..." aria-label="통합 검색" data-global-search-input>
+          <button class="global-search-submit" type="submit" aria-label="통합 검색 실행">검색</button>
+        </form>
         <div class="header-actions">
           {% if current_user %}
           <a class="global-job-status" href="/runs" data-global-job-status hidden aria-live="polite">

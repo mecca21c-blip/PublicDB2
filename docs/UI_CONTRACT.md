@@ -24,6 +24,18 @@ Settings 메뉴는 ADMIN에게만 표시한다.
 활성/최근 작업이 없으면 숨기고, 여러 작업이면 개수를 명시하며, 클릭하면 `/runs`로
 이동한다. 페이지 이동 후에도 시작 화면의 JavaScript memory가 아닌 DB 상태를 사용한다.
 
+## 검색 경계
+
+공통 header의 통합 검색은 `GET /search?q=...`가 소유한다. 현재 기관·부서·업무,
+수집 소스와 확정 연락처만 검색하고 범주별 결과는 최대 10건으로 제한한다. RAW body,
+RAW artifact와 과거 발견 문맥은 검색하지 않는다. 결과 링크는 대응하는 기관·소스·연락처
+workspace의 명시적 `search` query로 이동하며 다른 workspace의 로컬 필터를 변경하지 않는다.
+
+`/runs`의 로컬 검색은 별도의 `GET /runs?search=...` 계약이다. Source URL·제목과 현재
+Agency·OrgUnit 연결 문맥으로 CollectionJob/CrawlRun 실행을 찾으며 전역 검색이나
+연락처 전체 텍스트 검색을 대신하지 않는다. 두 form은 서로 다른 action, input name,
+접근성 label과 DOM selector를 가진다.
+
 ## 동결 workspace
 
 ### /agencies 기관/조직

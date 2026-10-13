@@ -7,13 +7,13 @@
 <div class="workspace-page">
   <header class="page-heading"><div class="page-heading-copy"><h1>수집 이력</h1><p>수집부터 발견 증거, 확정 DB 반영 상태를 단계별로 확인합니다.</p></div></header>
   {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{db_error}}</p></section>{% endif %}
-  <form class="panel toolbar" aria-label="수집 이력 필터" method="get">
+  <form id="run-history-filter-form" class="panel toolbar" role="search" aria-label="수집 이력 검색" method="get" action="/runs" data-run-search-form>
     <div class="toolbar-field"><label for="run-from">시작일</label><input class="control" id="run-from" name="date_from" type="date" value="{{filters.date_from}}"></div>
     <div class="toolbar-field"><label for="run-to">종료일</label><input class="control" id="run-to" name="date_to" type="date" value="{{filters.date_to}}"></div>
     <div class="toolbar-field"><label for="run-agency">기관</label><select class="control" id="run-agency" name="agency_id"><option value="">전체 기관</option>{% for agency in agencies %}<option value="{{agency.id}}"{% if filters.agency_id==agency.id %} selected{% endif %}>{{agency.name}}</option>{% endfor %}</select></div>
     <div class="toolbar-field"><label for="run-state">상태</label><select class="control" id="run-state" name="status"><option value="">전체 상태</option>{% for value,label in [('SUCCESS','성공'),('PARTIAL','부분 완료'),('FAILED','오류'),('RUNNING','수집 중')] %}<option value="{{value}}"{% if filters.status==value %} selected{% endif %}>{{label}}</option>{% endfor %}</select></div>
-    <div class="toolbar-field toolbar-field--search"><label for="run-search">검색</label><input class="control" id="run-search" name="search" type="search" value="{{filters.search}}" placeholder="기관 또는 소스"></div>
-    <div class="toolbar-actions"><button class="button button--secondary" type="submit">검색</button><a class="button button--ghost" href="/runs">초기화</a></div>
+    <div class="toolbar-field toolbar-field--search"><label for="run-search">수집 이력 검색</label><input class="control" id="run-search" name="search" type="search" value="{{filters.search}}" placeholder="기관 또는 소스" data-run-search-input></div>
+    <div class="toolbar-actions"><button class="button button--secondary" type="submit" data-run-search-submit>검색</button><a class="button button--ghost" href="/runs">초기화</a></div>
   </form>
   {% set job_labels = {'MANUAL_SOURCE':'개별 소스','MANUAL_SELECTION':'선택 소스','MANUAL_FILTER':'필터 결과','MANUAL_ORG_UNIT':'부서 범위','MANUAL_AGENCY':'기관 범위','MANUAL_REGION':'지역 범위','MANUAL_ALL':'전체 수동','SCHEDULED_FULL':'자동 전체 수집','SCHEDULED_RETRY':'자동 실패 재시도'} %}{% set job_status_labels = {'PENDING':'수집 대기','RUNNING':'수집 중','COMPLETED':'수집 완료','COMPLETED_WITH_ERRORS':'완료 · 오류 있음','FAILED':'작업 중단','CANCELLED':'취소됨'} %}
   {% if filters.search %}<p class="run-filter-feedback" role="status">검색: <strong>{{filters.search}}</strong></p>{% endif %}

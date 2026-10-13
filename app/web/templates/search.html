@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}통합 검색 · PublicDB2{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', path='/css/workspace.css') }}">{% endblock %}
+{% block content %}
+<div class="workspace-page global-search-page" data-global-search-results>
+  <header class="page-heading">
+    <div class="page-heading-copy">
+      <h1>통합 검색</h1>
+      {% if results.query %}<p><strong>“{{ results.query }}”</strong>에 대한 현재 운영 데이터 검색 결과입니다.</p>{% else %}<p>기관, 부서, 업무, 수집 소스와 확정 연락처를 한 번에 찾습니다.</p>{% endif %}
+    </div>
+    {% if results.query %}<span class="table-count">전체 {{ results.total }}건</span>{% endif %}
+  </header>
+
+  {% if db_error %}<section class="panel empty-state" role="alert"><strong>데이터베이스 오류</strong><p>{{ db_error }}</p></section>{% endif %}
+  {% if not results.query %}
+  <section class="panel empty-state global-search-neutral"><strong>검색어를 입력하세요.</strong><p>상단 통합 검색에서 한 글자 이상 입력하면 범주별 결과를 최대 {{ results.limit }}건씩 표시합니다.</p></section>
+  {% elif results.total == 0 %}
+  <section class="panel empty-state" data-global-search-zero><strong>검색 결과가 없습니다.</strong><p>“{{ results.query }}”와 일치하는 현재 운영 데이터를 찾지 못했습니다.</p></section>
+  {% else %}
+  <div class="global-search-groups">
+    {% for key, heading, workspace_href in [
+      ('organizations', '기관/조직', '/agencies?search=' ~ results.query|urlencode),
+      ('sources', '수집 소스', '/sources?search=' ~ results.query|urlencode),
+      ('contacts', '연락처 DB', '/contacts?search=' ~ results.query|urlencode)
+    ] %}
+    {% set group = results[key] %}
+    <section class="panel global-search-group" data-search-group="{{ key }}">
+      <header class="panel-heading"><h2>{{ heading }}</h2><span class="table-count">{{ group.total }}건</span></header>
+      <div class="global-search-result-list">
+        {% for item in group['items'] %}
+        <a class="global-search-result" href="{{ item.href }}" data-search-result-kind="{{ item.kind }}">
+          <span class="global-search-result-kind">{{ item.kind }}</span>
+          <span class="global-search-result-copy"><strong>{{ item.title }}</strong><small>{{ item.context }}</small>{% if item.detail %}<small class="url-cell">{{ item.detail }}</small>{% endif %}</span>
+          <span aria-hidden="true">›</span>
+        </a>
+        {% else %}<p class="global-search-group-empty">일치하는 {{ heading }} 결과가 없습니다.</p>{% endfor %}
+      </div>
+      {% if group.has_more %}<footer class="global-search-group-footer"><a href="{{ workspace_href }}">전체 보기</a></footer>{% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

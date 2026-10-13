@@ -320,6 +320,18 @@ select.control { appearance: auto; }
 .row-resolution-card [role="alert"] { color: #a52f36; font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
 .run-filter-feedback { margin: -7px 0 9px; color: var(--color-text-muted); font-size: 12px; }
+.global-search-groups { display: grid; gap: 16px; }
+.global-search-group { overflow: hidden; }
+.global-search-result-list { display: grid; }
+.global-search-result { min-width: 0; display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--color-border-soft); color: var(--color-text); }
+.global-search-result:hover { background: #f7faff; }
+.global-search-result-kind { justify-self: start; padding: 4px 8px; border-radius: 999px; color: var(--color-blue-600); background: var(--color-blue-100); font-size: 10px; font-weight: 800; }
+.global-search-result-copy { min-width: 0; display: grid; gap: 3px; }
+.global-search-result-copy strong, .global-search-result-copy small { overflow-wrap: anywhere; }
+.global-search-result-copy small { color: var(--color-text-muted); font-size: 11px; }
+.global-search-group-empty { margin: 0; padding: 24px 18px; border-top: 1px solid var(--color-border-soft); color: var(--color-text-muted); font-size: 12px; }
+.global-search-group-footer { padding: 11px 18px; border-top: 1px solid var(--color-border-soft); text-align: right; }
+.global-search-group-footer a { color: var(--color-blue-600); font-size: 12px; font-weight: 750; }
 .collection-job-history { margin-bottom: 16px; }
 .run-job-scroll { max-height: 270px; overflow: auto; overscroll-behavior: contain; }
 .run-job-scroll .data-table { min-width: 920px; }

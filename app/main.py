@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import date
 from pathlib import Path
 import logging
 import uuid
@@ -34,7 +33,7 @@ from app.api.dependencies import ensure_csrf_token, get_current_user_optional, g
 from app.collectors.http_fetcher import HTTPFetcher
 from app.core.config import allowed_hosts, get_database_url, runtime_paths
 from app.core.logging import close_file_logging, configure_file_logging
-from app.core.html_query import HTMLFilterValueError, parse_optional_enum
+from app.core.html_query import HTMLFilterValueError, parse_optional_date, parse_optional_enum
 from app.core.schema import MIGRATION_HEAD
 from app.core.security import SecretStore, SecurityHeadersMiddleware, SignedSessionMiddleware
 from app.db.engine import create_db_engine
@@ -55,6 +54,7 @@ from app.services.dashboard_service import DashboardService
 from app.services.review_read_service import ReviewReadService
 from app.services.run_service import RunService
 from app.services.run_history_filter import RunHistoryFilter
+from app.services.global_search_service import GlobalSearchService
 from app.services.settings_service import SettingsService
 from app.services.pagination import page_metadata
 from app.services.source_service import SourceService
@@ -119,7 +119,8 @@ def _page_context(request: Request, active_page: str, **values: object) -> dict[
         values['workspace'] = {**workspace, 'pagination': pagination}
     return {
         'active_page': active_page, 'navigation': NAVIGATION,
-        'current_user': user, 'csrf_token': ensure_csrf_token(request), **values,
+        'current_user': user, 'csrf_token': ensure_csrf_token(request),
+        'global_search_query': values.pop('global_search_query', ''), **values,
     }
 
 
@@ -128,6 +129,18 @@ def _uuid_or_none(value: str | None) -> uuid.UUID | None:
         return uuid.UUID(value) if value else None
     except ValueError:
         return None
+
+
+def _redirect_without_blank_query_values(request: Request) -> RedirectResponse | None:
+    """Canonicalize native GET forms while preserving every selected filter."""
+    pairs = list(request.query_params.multi_items())
+    if not any(value == '' for _key, value in pairs):
+        return None
+    retained = [(key, value) for key, value in pairs if value != '']
+    location = request.url.path
+    if retained:
+        location += '?' + urlencode(retained)
+    return RedirectResponse(location, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @asynccontextmanager
@@ -393,8 +406,8 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
     @application.get('/runs', response_class=HTMLResponse, name='runs', dependencies=[Depends(require_viewer)])
     def runs(
         request: Request,
-        date_from: date | None = None,
-        date_to: date | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         agency_id: str | None = None,
         status: str | None = None,
         search: str | None = None,
@@ -403,10 +416,15 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
         job_page: int = 1,
         job_page_size: int = 10,
     ) -> HTMLResponse:
+        canonical = _redirect_without_blank_query_values(request)
+        if canonical is not None:
+            return canonical
+        selected_date_from = parse_optional_date(date_from)
+        selected_date_to = parse_optional_date(date_to)
         selected_status = parse_optional_enum(status, RunStatus)
         history_filter = RunHistoryFilter.normalize(
-            date_from=date_from,
-            date_to=date_to,
+            date_from=selected_date_from,
+            date_to=selected_date_to,
             agency_id=_uuid_or_none(agency_id),
             status=selected_status,
             search=search,
@@ -458,12 +476,33 @@ def create_app(database_url: str | None = None, project_root: Path | None = None
                 agencies=agencies_page['items'],
                 run_statuses=RunStatus,
                 filters={
-                    'date_from': date_from.isoformat() if date_from else '',
-                    'date_to': date_to.isoformat() if date_to else '',
+                    'date_from': selected_date_from.isoformat() if selected_date_from else '',
+                    'date_to': selected_date_to.isoformat() if selected_date_to else '',
                     'agency_id': agency_id or '',
                     'status': selected_status.value if selected_status else '',
                     'search': history_filter.search,
                 },
+            ),
+        )
+
+    @application.get('/search', response_class=HTMLResponse, name='search', dependencies=[Depends(require_viewer)])
+    def global_search(request: Request, q: str | None = None) -> HTMLResponse:
+        session = application.state.session_factory()
+        try:
+            results = GlobalSearchService(session).search(q)
+            db_error = None
+        except SQLAlchemyError:
+            session.rollback()
+            results = GlobalSearchService._empty((q or '').strip(), 10)
+            db_error = '통합 검색 결과를 불러오지 못했습니다. 데이터베이스 연결 상태를 확인하세요.'
+        finally:
+            session.close()
+        return templates.TemplateResponse(
+            request=request,
+            name='search.html',
+            context=_page_context(
+                request, 'search', results=results, db_error=db_error,
+                global_search_query=results['query'],
             ),
         )
 

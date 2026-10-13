@@ -20,6 +20,7 @@
 .global-search:focus-within { border-color: var(--color-blue-500); box-shadow: 0 0 0 3px rgba(52,120,246,.11); }
 .global-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--color-text); background: transparent; }
 .global-search input::placeholder { color: #8594a9; opacity: 1; }
+.global-search-submit { width: 36px; height: 28px; border: 0; border-radius: 6px; color: var(--color-blue-600); background: #eef5ff; font-size: 11px; font-weight: 800; cursor: pointer; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .global-job-status { max-width: 260px; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #b9d4f7; border-radius: 999px; color: #174f99; background: #eff6ff; font-size: 12px; font-weight: 750; white-space: nowrap; }
 .global-job-status.is-terminal { border-color: #cfd9e6; color: #40546d; background: #f6f8fb; }
