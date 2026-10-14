@@ -2118,6 +2118,9 @@
 
   const importWorkflow = document.querySelector("[data-import-workflow]");
   if (importWorkflow) {
+    const importShell = importWorkflow.closest(".modal-shell--import");
+    const modalTitle = importShell.querySelector("[data-import-modal-title]");
+    const modalSubtitle = importShell.querySelector("[data-import-modal-subtitle]");
     const form = importWorkflow.querySelector("[data-import-preview]");
     const errorBox = importWorkflow.querySelector("[data-import-error]");
     const previewBox = importWorkflow.querySelector("[data-import-preview-result]");
@@ -2137,7 +2140,11 @@
     const previewFileRows = importWorkflow.querySelector("[data-import-file-rows]");
     const fileChangeButton = importWorkflow.querySelector("[data-import-file-change]");
     const completeBox = importWorkflow.querySelector("[data-import-complete]");
-    const completeSummary = importWorkflow.querySelector("[data-import-complete-summary]");
+    const completeSubtitle = importWorkflow.querySelector("[data-import-complete-subtitle]");
+    const completeOutcome = importWorkflow.querySelector("[data-import-complete-outcome]");
+    const collectionState = importWorkflow.querySelector("[data-import-collection-state]");
+    const collectionBadge = importWorkflow.querySelector("[data-import-collection-badge]");
+    const collectionTitle = importWorkflow.querySelector("[data-import-collection-title]");
     const collectionResult = importWorkflow.querySelector("[data-import-collection-result]");
     const historyLink = importWorkflow.querySelector("[data-import-history]");
     let previewToken = null;
@@ -2151,6 +2158,13 @@
       importWorkflow.querySelectorAll("[data-import-step]").forEach((step) => {
         step.classList.toggle("is-active", step.dataset.importStep === name);
       });
+    };
+    const setCompleteMode = (complete) => {
+      importShell.classList.toggle("is-complete", complete);
+      modalTitle.textContent = complete ? "수집 소스 등록 완료" : "수집 소스 대량 등록";
+      modalSubtitle.textContent = complete
+        ? "등록 처리 결과와 즉시 수집 작업 상태를 확인하세요."
+        : "기관과 URL 목록을 Excel/CSV로 등록합니다. 등록 전 중복·오류를 확인하며, 신규 기관과 부서는 필요한 경우 함께 생성합니다.";
     };
     const discardPreview = () => {
       if (!previewToken) return;
@@ -2237,6 +2251,7 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       discardPreview();
+      setCompleteMode(false);
       errorBox.hidden = true;
       confirmButton.disabled = true;
       setStep("columns");
@@ -2279,29 +2294,52 @@
         previewToken = null;
         if (!response.ok) throw new Error(result.detail || "등록을 완료하지 못했습니다.");
         const s = result.summary;
-        completeSummary.replaceChildren();
-        [
-          ["입력 행", s.input_rows], ["신규 기관", s.created_agencies],
-          ["신규 부서", s.created_org_units], ["신규 Source", s.created_sources],
-          ["기존 Source 새 연결", s.existing_source_new_bindings], ["등록 연결", s.created_bindings],
-          ["중복 건너뜀", s.duplicates_skipped], ["충돌", s.conflicts],
-          ["오류", s.invalid_rows + s.unexpected_failures],
-        ].forEach(([label, value]) => {
-          const dt = document.createElement("dt"); const dd = document.createElement("dd");
-          dt.textContent = label; dd.textContent = String(value); completeSummary.append(dt, dd);
+        completeSubtitle.textContent = s.input_rows + "개 입력 행 처리 결과";
+        completeBox.querySelectorAll("[data-import-count]").forEach((value) => {
+          value.textContent = String(s[value.dataset.importCount] ?? 0) + "개";
         });
-        const queueLabels = {
-          QUEUED: "신규 Source " + result.collection_source_count + "건의 수집 작업이 대기 중입니다.",
-          FAILED_TO_QUEUE: "등록은 완료되었지만 즉시 수집 작업을 시작하지 못했습니다. 수집 소스 목록에서 다시 수집할 수 있습니다.",
-          NO_NEW_SOURCES: "신규 Source가 없어 즉시 수집 작업을 만들지 않았습니다.",
-          NOT_REQUESTED: "즉시 수집을 요청하지 않았습니다.",
+        const excluded = s.duplicates_skipped + s.conflicts + s.invalid_rows;
+        if (s.unexpected_failures > 0) {
+          completeOutcome.textContent = "등록 가능한 항목은 처리되었으며 일부 행은 등록하지 못했습니다.";
+        } else if (s.created_bindings === 0) {
+          completeOutcome.textContent = "새로 등록된 연결 없이 파일 처리가 완료되었습니다.";
+        } else if (excluded > 0) {
+          completeOutcome.textContent = "등록 가능한 항목의 처리가 완료되었습니다.";
+        } else {
+          completeOutcome.textContent = "모든 입력 행의 등록 처리가 완료되었습니다.";
+        }
+        const queueStates = {
+          QUEUED: {
+            state: "queued", badge: "접수됨 · 대기 중", title: "즉시 수집 작업 접수",
+            message: "신규 Source " + result.collection_source_count + "개가 수집 대기열에 등록되었습니다.",
+          },
+          FAILED_TO_QUEUE: {
+            state: "failed", badge: "등록 실패", title: "즉시 수집 작업 등록 실패",
+            message: "소스 등록은 완료되었습니다. 수집 소스 목록에서 다시 수집할 수 있습니다.",
+          },
+          NO_NEW_SOURCES: {
+            state: "idle", badge: "미생성", title: "즉시 수집 작업 없음",
+            message: "신규 Source가 없어 즉시 수집 작업을 만들지 않았습니다.",
+          },
+          NOT_REQUESTED: {
+            state: "idle", badge: "요청 안 함", title: "즉시 수집",
+            message: "즉시 수집은 요청하지 않았습니다.",
+          },
         };
-        collectionResult.textContent = queueLabels[result.collection_queue_status] || result.collection_queue_status;
+        const queueState = queueStates[result.collection_queue_status] || {
+          state: "idle", badge: "상태 확인 필요", title: "즉시 수집",
+          message: "즉시 수집 작업 상태를 확인할 수 없습니다.",
+        };
+        collectionState.dataset.state = queueState.state;
+        collectionBadge.textContent = queueState.badge;
+        collectionTitle.textContent = queueState.title;
+        collectionResult.textContent = queueState.message;
         historyLink.hidden = result.collection_queue_status !== "QUEUED";
         compactFile.hidden = true;
         previewBox.hidden = true;
         previewFooter.hidden = true;
         completeBox.hidden = false;
+        setCompleteMode(true);
         setStep("complete");
       } catch (error) {
         errorBox.textContent = error.message;
@@ -2323,6 +2361,15 @@
       summaryBox.replaceChildren();
       confirmButton.disabled = true;
       collectAfterConfirm.checked = false;
+      completeBox.querySelectorAll("[data-import-count]").forEach((value) => { value.textContent = "0개"; });
+      completeSubtitle.textContent = "";
+      completeOutcome.textContent = "";
+      collectionState.dataset.state = "idle";
+      collectionBadge.textContent = "";
+      collectionTitle.textContent = "";
+      collectionResult.textContent = "";
+      historyLink.hidden = true;
+      setCompleteMode(false);
       setStep("select");
     };
     fileChangeButton.addEventListener("click", () => {
@@ -2333,7 +2380,6 @@
       discardPreview();
       resetPreviewUi();
     }));
-    importWorkflow.querySelector("[data-import-refresh]").addEventListener("click", () => window.location.reload());
   }
   document.querySelectorAll("[data-review-action]").forEach((button) => {
     button.addEventListener("click", async () => {

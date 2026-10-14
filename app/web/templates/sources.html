@@ -316,7 +316,7 @@
 
 <div class="modal-backdrop modal-backdrop--import" data-modal="excel-import" hidden>
   <section class="modal-shell modal-shell--import" role="dialog" aria-modal="true" aria-labelledby="excel-import-title">
-    <header class="modal-heading"><div><h2 id="excel-import-title">수집 소스 대량 등록</h2><p>기관과 URL 목록을 Excel/CSV로 등록합니다. 등록 전 중복·오류를 확인하며, 신규 기관과 부서는 필요한 경우 함께 생성합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
+    <header class="modal-heading"><div><h2 id="excel-import-title" data-import-modal-title>수집 소스 대량 등록</h2><p data-import-modal-subtitle>기관과 URL 목록을 Excel/CSV로 등록합니다. 등록 전 중복·오류를 확인하며, 신규 기관과 부서는 필요한 경우 함께 생성합니다.</p></div><button class="modal-close" type="button" data-modal-close aria-label="닫기">×</button></header>
     <div class="modal-body import-workflow" data-import-workflow>
       <div class="import-steps"><span class="import-step is-active" data-import-step="select">파일 선택</span><span class="import-step" data-import-step="columns">컬럼 확인</span><span class="import-step" data-import-step="preview">미리보기</span><span class="import-step" data-import-step="result">결과 확인</span><span class="import-step" data-import-step="complete">등록 완료</span></div>
       <form class="import-select-panel" data-import-preview action="/api/source-bindings/imports/preview"><label>가져올 파일<input class="control" type="file" name="file" accept=".xlsx,.csv" required></label><div class="import-template-actions"><a class="button button--secondary" href="/api/source-bindings/imports/template.xlsx">Excel 양식 다운로드</a><a class="button button--secondary" href="/api/source-bindings/imports/template.csv">CSV 양식 다운로드</a></div><div class="modal-actions"><button class="button button--primary" type="submit">미리보기</button></div></form>
@@ -328,7 +328,15 @@
         <div class="table-scroll import-preview-scroll" data-import-table-scroll><table class="data-table import-table"><thead><tr><th>행</th><th>판정</th><th>기관</th><th>부서</th><th>URL</th><th>수집 방식</th><th>상세</th><th>판정 사유</th></tr></thead><tbody data-import-rows></tbody></table></div>
         <div class="import-pagination"><span data-import-page-summary></span><div><button class="button button--ghost" type="button" data-import-prev disabled>이전</button><button class="button button--ghost" type="button" data-import-next disabled>다음</button></div></div>
       </div>
-      <div data-import-complete hidden><h3>등록 완료</h3><dl class="import-summary-grid" data-import-complete-summary></dl><p data-import-collection-result></p><div class="modal-actions"><a class="button button--secondary" href="/runs" data-import-history hidden>수집 이력에서 확인</a><button class="button button--primary" type="button" data-import-refresh>목록에서 확인</button></div></div>
+      <div class="import-complete" data-import-complete hidden>
+        <div class="import-complete-scroll">
+          <div class="import-complete-intro"><span class="import-complete-mark" aria-hidden="true">✓</span><div><h3>등록 결과</h3><p data-import-complete-subtitle></p><strong data-import-complete-outcome></strong></div></div>
+          <section class="import-complete-section" aria-labelledby="import-primary-title"><h4 id="import-primary-title">등록 핵심 결과</h4><dl class="import-complete-primary"><div><dt>신규 기관</dt><dd data-import-count="created_agencies">0개</dd></div><div><dt>신규 Source</dt><dd data-import-count="created_sources">0개</dd></div><div><dt>등록 연결</dt><dd data-import-count="created_bindings">0개</dd></div></dl></section>
+          <section class="import-complete-section" aria-labelledby="import-secondary-title"><h4 id="import-secondary-title">상세 처리 결과</h4><dl class="import-complete-secondary"><div><dt>신규 부서</dt><dd data-import-count="created_org_units">0개</dd></div><div><dt>기존 Source 새 연결</dt><dd data-import-count="existing_source_new_bindings">0개</dd></div><div><dt>중복 건너뜀</dt><dd data-import-count="duplicates_skipped">0개</dd></div><div><dt>충돌</dt><dd data-import-count="conflicts">0개</dd></div><div><dt>오류</dt><dd data-import-count="invalid_rows">0개</dd></div><div><dt>등록 실패</dt><dd data-import-count="unexpected_failures">0개</dd></div></dl></section>
+          <section class="import-collection-result" data-import-collection-state aria-live="polite"><div><span data-import-collection-badge></span><h4 data-import-collection-title></h4></div><p data-import-collection-result></p></section>
+        </div>
+        <footer class="import-complete-actions"><a class="button button--secondary" href="/runs" data-import-history hidden>수집 이력에서 확인</a><a class="button button--primary" href="/sources" data-import-refresh>소스 목록으로</a></footer>
+      </div>
       <footer class="import-preview-footer" data-import-footer hidden><label class="check-row"><input type="checkbox" data-import-collect-after-confirm> 등록 완료 후 신규 Source 즉시 수집</label><div><button class="button button--ghost" type="button" data-modal-close>취소</button><button class="button button--primary" type="button" data-import-confirm disabled>등록 확인</button></div></footer>
     </div>
   </section>

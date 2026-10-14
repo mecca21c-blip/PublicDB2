@@ -456,6 +456,6 @@ def test_import_modal_production_dom_headless_path(astra_env):
     contract = json.loads(rendered.body["data-astra-import-contract"])
     assert contract == {
         "initialRows": 50, "secondPage": "120건 중 2 / 3 페이지", "filteredRows": 3,
-        "completed": True, "queued": "신규 Source 117건의 수집 작업이 대기 중입니다.",
+        "completed": True, "queued": "신규 Source 117개가 수집 대기열에 등록되었습니다.",
         "historyVisible": True, "objectText": False,
     }

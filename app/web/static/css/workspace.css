@@ -216,6 +216,35 @@ select.control { appearance: auto; }
 .import-preview-footer .check-row { margin: 0; font-size: 12px; }
 .import-preview-footer > div { flex: 0 0 auto; display: flex; gap: 8px; }
 .import-workflow > [data-import-error] { flex: 0 0 auto; margin: 0; padding: 8px 18px; color: #9f2931; background: #fff5f5; font-size: 12px; font-weight: 700; }
+.modal-shell--import.is-complete { width: min(720px, calc(100vw - 56px)); height: auto; max-height: calc(100vh - 56px); }
+.modal-shell--import.is-complete .import-workflow { flex: 0 1 auto; }
+.modal-shell--import.is-complete .import-steps { display: none; }
+.import-complete { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+.import-complete-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px; }
+.import-complete-intro { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.import-complete-mark { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #1f8a5b; font-size: 20px; font-weight: 900; }
+.import-complete-intro h3 { margin: 0; font-size: 18px; }
+.import-complete-intro p { margin: 2px 0 0; color: var(--color-text-subtle); font-size: 12px; }
+.import-complete-intro strong { display: block; margin-top: 4px; color: #176b48; font-size: 12px; }
+.import-complete-section + .import-complete-section { margin-top: 14px; }
+.import-complete-section h4 { margin: 0 0 7px; color: var(--color-text-subtle); font-size: 11px; }
+.import-complete-primary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.import-complete-primary > div { min-width: 0; padding: 11px 12px; border: 1px solid #cfe4d9; border-radius: var(--radius-sm); background: #f1faf5; }
+.import-complete-primary dt { color: #39705a; font-size: 11px; font-weight: 750; }
+.import-complete-primary dd { margin: 3px 0 0; color: #145c3e; font-size: 21px; font-weight: 850; }
+.import-complete-secondary { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: 0; padding: 8px 10px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm); background: #f8fafc; }
+.import-complete-secondary > div { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.import-complete-secondary dt { color: var(--color-text-muted); font-size: 11px; font-weight: 700; }
+.import-complete-secondary dd { margin: 0; font-size: 13px; font-weight: 800; }
+.import-collection-result { margin-top: 16px; padding: 12px 14px; border: 1px solid #cbd9e8; border-radius: var(--radius-sm); background: #f3f7fb; }
+.import-collection-result > div { display: flex; align-items: center; gap: 8px; }
+.import-collection-result h4 { margin: 0; font-size: 13px; }
+.import-collection-result span { padding: 3px 7px; border-radius: 999px; color: #315673; background: #dce9f5; font-size: 10px; font-weight: 800; }
+.import-collection-result p { margin: 6px 0 0; color: var(--color-text-subtle); font-size: 12px; }
+.import-collection-result[data-state="queued"] { border-color: #bfd8ee; background: #eef6fc; }
+.import-collection-result[data-state="failed"] { border-color: #efc8c8; background: #fff5f5; }
+.import-collection-result[data-state="failed"] span { color: #8a2931; background: #f8dfe1; }
+.import-complete-actions { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--color-border); background: #fff; box-shadow: 0 -8px 18px rgba(13,27,45,.04); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .modal-actions--sticky { position: sticky; bottom: -20px; z-index: 2; margin: 0 -22px -20px; padding: 14px 22px; border-top: 1px solid var(--color-border); background: rgba(255,255,255,.97); }
 .modal-shell--agency-create { width: min(700px, calc(100vw - 48px)); max-width: 100%; }
@@ -481,12 +510,17 @@ select.control { appearance: auto; }
   .source-create-form .source-wizard-actions { min-height: 64px; padding: 10px 16px; }
   .modal-backdrop--import { padding: 12px; }
   .modal-shell--import { width: calc(100vw - 24px); height: calc(100vh - 24px); max-height: calc(100vh - 24px); }
+  .modal-shell--import.is-complete { width: calc(100vw - 24px); height: auto; max-height: calc(100vh - 24px); }
   .modal-shell--import > .modal-heading { padding: 10px 12px; }
   .modal-shell--import > .modal-heading p { display: none; }
   .modal-shell--import .import-steps { padding: 6px 12px; }
   .import-file-compact, .import-preview-result { padding-right: 12px; padding-left: 12px; }
   .import-preview-footer { align-items: stretch; flex-direction: column; padding: 8px 12px; }
   .import-preview-footer > div { justify-content: flex-end; }
+  .import-complete-scroll { padding: 14px 12px; }
+  .import-complete-primary { gap: 6px; }
+  .import-complete-primary > div { padding: 9px; }
+  .import-complete-actions { padding: 10px 12px; }
 }
 .workspace-pager {
   align-items: center;
